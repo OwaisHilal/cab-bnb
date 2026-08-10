@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #101118;
+
+  --kmr-blue: #1631db;
+  --kmr-blue-dark: #0f23ae;
+  --kmr-orange: #f4491d;
+  --kmr-orange-dark: #d93a10;
+  --kmr-green: #1fad53;
+  --kmr-green-dark: #118743;
+  --kmr-ink: #101118;
+  --kmr-muted-1: #5b5e70;
+  --kmr-muted-2: #8a8da0;
+  --kmr-muted-3: #9a9dac;
+  --kmr-surface: #f2f2f4;
+  --kmr-surface-hover: #e9e9ec;
+  --kmr-backdrop: #e7e7ea;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-kmr-blue: var(--kmr-blue);
+  --color-kmr-blue-dark: var(--kmr-blue-dark);
+  --color-kmr-orange: var(--kmr-orange);
+  --color-kmr-orange-dark: var(--kmr-orange-dark);
+  --color-kmr-green: var(--kmr-green);
+  --color-kmr-green-dark: var(--kmr-green-dark);
+  --color-kmr-ink: var(--kmr-ink);
+  --color-kmr-muted-1: var(--kmr-muted-1);
+  --color-kmr-muted-2: var(--kmr-muted-2);
+  --color-kmr-muted-3: var(--kmr-muted-3);
+  --color-kmr-surface: var(--kmr-surface);
+  --color-kmr-surface-hover: var(--kmr-surface-hover);
+  --color-kmr-backdrop: var(--kmr-backdrop);
+  --font-archivo: var(--font-archivo);
+  --font-mono: var(--font-ibm-plex-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+@keyframes kmr-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes kmr-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes kmr-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes kmr-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 73, 29, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(244, 73, 29, 0);
+  }
+}
+
+@keyframes kmr-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-kmr-fade {
+  animation: kmr-fade 0.3s ease both;
+}
+
+.animate-kmr-sheet-up {
+  animation: kmr-sheet-up 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.animate-kmr-reveal {
+  animation: kmr-reveal 0.5s ease both;
+}
+
+.animate-kmr-pulse {
+  animation: kmr-pulse 1.2s infinite;
+}
+
+.animate-kmr-pop {
+  animation: kmr-pop 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.font-archivo {
+  font-family: var(--font-archivo), sans-serif;
+}
+
+.font-mono {
+  font-family: var(--font-ibm-plex-mono), monospace;
+}

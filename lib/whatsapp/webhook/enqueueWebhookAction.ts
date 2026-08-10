@@ -1,0 +1,95 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { InboundWhatsAppMessage, ParsedAction } from "./types";
+
+/**
+ * Checklist 2.5: "insert job_queue row per action (never process WhatsApp
+ * send synchronously inside webhook handler)". Every branch below only
+ * writes to `job_queue` — no worker consumes these yet (Checklist 2.8/3.10,
+ * later phases), so nothing further happens until that's built.
+ */
+export async function enqueueWebhookAction(
+  supabase: SupabaseClient,
+  action: ParsedAction,
+  message: InboundWhatsAppMessage,
+): Promise<void> {
+  const waMessageId = message.waMessageId;
+
+  switch (action.type) {
+    case "book_full":
+      await enqueueJob(supabase, "finalize_booking", {
+        quote_snapshot_id: action.quoteSnapshotId,
+        lock_type: "full_payment",
+        wa_message_id: waMessageId,
+      });
+      return;
+
+    case "book_token":
+      await enqueueJob(supabase, "finalize_booking", {
+        quote_snapshot_id: action.quoteSnapshotId,
+        lock_type: "token_99",
+        wa_message_id: waMessageId,
+      });
+      return;
+
+    case "negotiate":
+      await enqueueJob(supabase, "compute_negotiation", {
+        quote_snapshot_id: action.quoteSnapshotId,
+        wa_message_id: waMessageId,
+      });
+      return;
+
+    case "checkin_ok":
+      await enqueueJob(supabase, "record_lifecycle_response", {
+        lifecycle_event_id: action.lifecycleEventId,
+        response: "ok",
+        wa_message_id: waMessageId,
+      });
+      return;
+
+    case "checkin_help":
+      await enqueueJob(supabase, "record_lifecycle_response", {
+        lifecycle_event_id: action.lifecycleEventId,
+        response: "help_requested",
+        wa_message_id: waMessageId,
+      });
+      await enqueueJob(supabase, "ops_alert", {
+        reason: "checkin_help_requested",
+        lifecycle_event_id: action.lifecycleEventId,
+        wa_message_id: waMessageId,
+      });
+      return;
+
+    case "rate":
+      await enqueueJob(supabase, "record_review", {
+        booking_id: action.bookingId,
+        rating: action.rating,
+        wa_message_id: waMessageId,
+      });
+      return;
+
+    case "driver_details":
+      await enqueueJob(supabase, "parse_driver_details", {
+        raw_message_text: message.textBody,
+        from_phone: message.fromPhone,
+        parsed_preview: action.driverDetails,
+        wa_message_id: waMessageId,
+      });
+      return;
+
+    case "unknown":
+      // Already recorded via whatsapp_message_log — no job, to avoid
+      // acting on arbitrary/unsupported inbound text.
+      return;
+  }
+}
+
+async function enqueueJob(
+  supabase: SupabaseClient,
+  jobType: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const { error } = await supabase.from("job_queue").insert({ job_type: jobType, payload });
+  if (error) {
+    throw new Error(`Failed to enqueue ${jobType} job: ${error.message}`);
+  }
+}

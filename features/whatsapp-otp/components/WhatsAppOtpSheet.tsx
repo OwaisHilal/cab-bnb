@@ -1,0 +1,159 @@
+import { Button } from "@/components/ui/Button";
+import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
+import type { OtpState } from "@/features/whatsapp-otp/types";
+
+interface WhatsAppOtpSheetProps {
+  otp: OtpState;
+  onPhoneChange: (phone: string) => void;
+  onCodeChange: (code: string) => void;
+  onSendOtp: () => void;
+  onVerifyOtp: () => void;
+  onEditPhone: () => void;
+}
+
+/**
+ * Plan §5: quotes are matched instantly server-side; this sheet only gates
+ * WhatsApp delivery behind phone verification, per the "no WhatsApp send
+ * before OTP verify" invariant. Copy intentionally avoids implying vendors are
+ * live-pricing the request in real time.
+ */
+export function WhatsAppOtpSheet({
+  otp,
+  onPhoneChange,
+  onCodeChange,
+  onSendOtp,
+  onVerifyOtp,
+  onEditPhone,
+}: WhatsAppOtpSheetProps) {
+  return (
+    <>
+      <div className="absolute inset-0 animate-kmr-fade bg-black/45" aria-hidden />
+      <div className="absolute inset-x-0 bottom-0 flex max-h-[92%] flex-col gap-3.5 overflow-y-auto rounded-t-xl bg-white px-5 pb-7 pt-3.5 animate-kmr-sheet-up">
+        <span className="mx-auto h-1 w-9 rounded-full bg-black/15" />
+
+        {otp.step === "phone" && (
+          <div className="flex flex-col gap-3.5">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-[38px] flex-none items-center justify-center rounded-full bg-kmr-green">
+                <WhatsAppIcon />
+              </span>
+              <span className="font-mono text-[9px] font-semibold tracking-[1.5px] text-kmr-green-dark">
+                WHATSAPP UPDATES
+              </span>
+            </div>
+            <h2 className="font-archivo text-[23px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink">
+              Your quotes are matched. Verify your number to see them.
+            </h2>
+            <p className="font-archivo text-[12.5px] font-medium leading-[1.55] text-kmr-muted-1">
+              Every matched vendor quote lands in your WhatsApp chat the moment
+              you&apos;re verified. Compare, negotiate, and book — all from the chat.
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <ChecklistItem>EVERY MATCHED QUOTE, SENT TO YOUR CHAT</ChecklistItem>
+              <ChecklistItem>CHAT &amp; BOOK WITHOUT REOPENING THE APP</ChecklistItem>
+              <ChecklistItem>NO CALLS, NO SPAM — JUST YOUR QUOTES</ChecklistItem>
+            </div>
+            <div className="flex gap-2">
+              <span className="flex flex-none items-center justify-center rounded-sm bg-kmr-surface px-3 font-mono text-sm font-semibold text-kmr-ink">
+                +91
+              </span>
+              <input
+                type="tel"
+                inputMode="numeric"
+                placeholder="98765 43210"
+                value={otp.phone}
+                onChange={(event) => onPhoneChange(event.target.value)}
+                className="min-w-0 flex-1 rounded-sm bg-kmr-surface px-3.5 font-mono text-base font-semibold tracking-[1px] text-kmr-ink outline-none"
+                style={{ height: 52 }}
+              />
+            </div>
+            {otp.error && (
+              <span className="font-mono text-[10px] font-semibold text-kmr-orange">
+                {otp.error}
+              </span>
+            )}
+            <Button onClick={onSendOtp} disabled={otp.isSubmitting}>
+              {otp.isSubmitting ? "Sending…" : "Get updates on WhatsApp"}
+            </Button>
+            <span className="text-center font-mono text-[9px] font-medium tracking-[1px] text-kmr-muted-3">
+              ONE-TIME CODE TO VERIFY — THAT&apos;S IT
+            </span>
+          </div>
+        )}
+
+        {otp.step === "code" && (
+          <div className="flex flex-col gap-3.5">
+            <h2 className="font-archivo text-[23px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink">
+              Enter the code from WhatsApp.
+            </h2>
+            <p className="font-archivo text-xs font-medium text-kmr-muted-2">
+              Sent to +91 {otp.phone} ·{" "}
+              <button type="button" onClick={onEditPhone} className="text-kmr-blue underline">
+                change
+              </button>
+            </p>
+            <input
+              type="tel"
+              inputMode="numeric"
+              maxLength={OTP_CODE_LENGTH}
+              placeholder={"·".repeat(OTP_CODE_LENGTH)}
+              value={otp.code}
+              onChange={(event) => onCodeChange(event.target.value.replace(/\D/g, ""))}
+              className="box-border w-full rounded-sm bg-kmr-surface text-center font-mono text-[30px] font-extrabold tracking-[14px] text-kmr-blue outline-none"
+              style={{ height: 64 }}
+            />
+            {otp.error && (
+              <span className="text-center font-mono text-[10px] font-semibold text-kmr-orange">
+                {otp.error}
+              </span>
+            )}
+            <Button onClick={onVerifyOtp} disabled={otp.isSubmitting}>
+              {otp.isSubmitting ? "Verifying…" : "Verify & see my quotes"}
+            </Button>
+          </div>
+        )}
+
+        {otp.step === "verified" && (
+          <div className="flex flex-col items-center gap-3 px-0 py-4.5 pb-2.5 animate-kmr-pop">
+            <span className="flex size-14 items-center justify-center rounded-full bg-kmr-green font-archivo text-[26px] font-extrabold text-white">
+              ✓
+            </span>
+            <h2 className="font-archivo text-[23px] font-extrabold tracking-[-0.5px] text-kmr-ink">
+              You&apos;re in.
+            </h2>
+            <p className="text-center font-archivo text-[12.5px] font-medium leading-[1.55] text-kmr-muted-1">
+              Your matched quotes are on their way to WhatsApp. You can close the
+              app — we&apos;ve got it.
+            </p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ChecklistItem({ children }: { children: string }) {
+  return (
+    <span className="flex items-center gap-2 font-mono text-[9.5px] font-semibold tracking-[0.8px] text-[#3C3F52]">
+      <span className="text-kmr-green-dark">✓</span>
+      {children}
+    </span>
+  );
+}
+
+function WhatsAppIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M12 4a8 8 0 0 0-6.9 12L4 20l4.1-1A8 8 0 1 0 12 4Z"
+        stroke="#fff"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9 9.5c.4 2.2 3 4.7 5.2 5.1l1.3-1.5-1.9-1-1 .5c-.8-.5-1.5-1.2-1.9-2l.5-1-1-1.9L9 9.5Z"
+        fill="#fff"
+      />
+    </svg>
+  );
+}

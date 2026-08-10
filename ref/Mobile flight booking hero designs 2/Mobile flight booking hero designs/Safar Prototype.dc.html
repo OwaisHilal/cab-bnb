@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&amp;family=IBM+Plex+Mono:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;background:#E7E7EA;height:100%}
+a{color:#1631DB}a:hover{color:#0F23AE}
+@keyframes omFade{from{opacity:0}to{opacity:1}}
+@keyframes omSheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes omReveal{from{opacity:0;transform:translateY(18px);filter:blur(8px)}to{opacity:1;transform:none;filter:none}}
+@keyframes omFlow{to{background-position:0 20px}}
+@keyframes omPulse{0%,100%{box-shadow:0 0 0 0 rgba(244,73,29,.45)}50%{box-shadow:0 0 0 6px rgba(244,73,29,0)}}
+@keyframes omBlink{0%,100%{opacity:.3}50%{opacity:1}}
+@keyframes omPop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+</style>
+</helmet>
+<div style="position:relative;background:#fff;width:100%;max-width:430px;margin:0 auto;height:100dvh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(16,17,24,.12)">
+  <sc-if value="{{ kShowHome }}" hint-placeholder-val="{{ true }}">
+  <div data-screen-label="Home" style="flex:1;padding:30px 22px 22px;display:flex;flex-direction:column;gap:16px;min-height:0;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;animation:{{ kRv1 }}">
+      <div style="display:grid;grid-template-columns:repeat(2,10px);gap:3px"><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span></div>
+      <span style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#1631DB">KMR / <span style="color:#F4491D">LIVE</span></span>
+    </div>
+    <h1 style="margin:8px 0 0;font:800 40px/1.05 'Archivo',sans-serif;letter-spacing:-1.2px;animation:{{ kRv2 }}"><span style="color:#101118;display:block">Cabs in Kashmir,</span><span style="color:#1631DB;display:block">sorted. All of it.</span></h1>
+    <p style="margin:0;font:500 14px/1.55 'Archivo',sans-serif;color:#5B5E70;animation:{{ kRv3 }}">One request, quotes from every operator worth riding with. No calls, no haggling.</p>
+    <div style="position:relative;height:100px;margin:0 -22px;flex:none">
+      <div ref="{{ kOrbitRef }}" style="position:absolute;inset:0"></div>
+      <div style="position:absolute;top:0;bottom:0;left:0;width:60px;background:linear-gradient(90deg,#fff 12%,rgba(255,255,255,0));pointer-events:none"></div>
+      <div style="position:absolute;top:0;bottom:0;right:0;width:60px;background:linear-gradient(270deg,#fff 12%,rgba(255,255,255,0));pointer-events:none"></div>
+    </div>
+    <div style="flex:1"></div>
+    <div style="display:flex;flex-direction:column;gap:8px;animation:{{ kRv4 }}">
+      <span style="font:600 9px 'IBM Plex Mono',monospace;letter-spacing:1.5px;color:#9A9DAC">QUOTES FROM VERIFIED OPERATORS</span>
+      <div style="display:flex;align-items:center;gap:16px;overflow-x:auto;padding-bottom:2px">
+        <span style="flex:none;font:800 12px 'Archivo',sans-serif;letter-spacing:.5px;color:#565A72">VALE CABS</span>
+        <span style="flex:none;width:4px;height:4px;border-radius:50%;background:#F4491D"></span>
+        <span style="flex:none;font:500 12px 'IBM Plex Mono',monospace;color:#565A72">himways</span>
+        <span style="flex:none;width:4px;height:4px;border-radius:50%;background:#F4491D"></span>
+        <span style="flex:none;font:700 12px 'Archivo',sans-serif;letter-spacing:2px;color:#565A72">GK TOURS</span>
+        <span style="flex:none;width:4px;height:4px;border-radius:50%;background:#F4491D"></span>
+        <span style="flex:none;font:500 12px 'Archivo',sans-serif;letter-spacing:3px;color:#565A72">SNOWLINE</span>
+        <span style="flex:none;width:4px;height:4px;border-radius:50%;background:#F4491D"></span>
+        <span style="flex:none;font:800 12px 'Archivo',sans-serif;letter-spacing:1px;color:#565A72">ZOJI GO</span>
+      </div>
+    </div>
+    <button onClick="{{ kOpenSheet }}" style="display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:20px;background:#1631DB;border:none;border-radius:2px;cursor:pointer;text-align:left;animation:{{ kRv5 }}" style-hover="background:#0F23AE">
+      <span style="display:flex;flex-direction:column;gap:5px">
+        <span style="font:800 19px 'Archivo',sans-serif;letter-spacing:-.4px;color:#fff">Add cabs to your trip</span>
+        <span style="font:500 9.5px 'IBM Plex Mono',monospace;letter-spacing:1px;color:rgba(255,255,255,.6)">DAYS · TRAVELLERS · CAB — 3 QUICK TAPS</span>
+      </span>
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" style="flex:none"><path d="M5 19 L17.5 6.5 M8 6 H18 V16" stroke="#fff" stroke-width="2.6" stroke-linecap="square"/></svg>
+    </button>
+    <div style="display:flex;flex-direction:column;gap:8px;animation:{{ kRv6 }}">
+      <span style="font:600 9px 'IBM Plex Mono',monospace;letter-spacing:1.5px;color:#9A9DAC">TRIPS TRAVELLERS KEEP TAKING</span>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <sc-for list="{{ kPresets }}" as="p" hint-placeholder-count="4">
+          <button onClick="{{ p.set }}" style="text-align:left;padding:14px;background:#F2F2F4;border:none;border-radius:2px;cursor:pointer;display:flex;flex-direction:column;gap:9px" style-hover="background:#E9E9EC">
+            <span style="display:flex;align-items:center;width:100%;gap:0">
+              <sc-for list="{{ p.ticks }}" as="tk" hint-placeholder-count="4">
+                <span style="display:{{ tk.segDisplay }};flex:1;height:1.5px;background:rgba(22,49,219,.4)"></span>
+                <span style="flex:none;width:5px;height:5px;border-radius:50%;background:#1631DB"></span>
+              </sc-for>
+              <span style="flex:none;font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:.5px;color:#8A8DA0;margin-left:7px">{{ p.daysLabel }}</span>
+            </span>
+            <span style="font:700 14.5px/1.2 'Archivo',sans-serif;letter-spacing:-.2px;color:#101118">{{ p.name }}</span>
+            <span style="font:500 9.5px 'IBM Plex Mono',monospace;color:#6E7180">{{ p.meta }}</span>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+    <span style="flex:none;height:{{ kHomePad }}"></span>
+  </div>
+  </sc-if>
+  <sc-if value="{{ kShowDispatch }}" hint-placeholder-val="{{ false }}">
+  <div data-screen-label="Sending quotes" style="position:absolute;inset:0;background:#fff;padding:30px 22px 22px;display:flex;flex-direction:column;gap:16px;animation:omFade .3s">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:grid;grid-template-columns:repeat(2,10px);gap:3px"><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span></div>
+      <span style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#1631DB">KMR / <span style="color:#F4491D">LIVE</span></span>
+    </div>
+    <h1 style="margin:8px 0 0;font:800 34px/1.08 'Archivo',sans-serif;letter-spacing:-1px;color:#101118">Request away.</h1>
+    <p style="margin:0;font:500 13.5px/1.55 'Archivo',sans-serif;color:#5B5E70">Your package is going out to every verified operator on the route. Real people price it — quotes take a few minutes to come back.</p>
+    <div style="display:flex;flex-direction:column;margin-top:6px">
+      <div style="display:flex;gap:12px">
+        <div style="display:flex;flex-direction:column;align-items:center;width:12px;padding-top:3px">
+          <span style="flex:none;width:12px;height:12px;background:#F4491D"></span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:3px;padding-bottom:4px">
+          <span style="font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:1.5px;color:#9A9DAC">REQUEST #KMR-2381</span>
+          <span style="font:700 14.5px/1.35 'Archivo',sans-serif;letter-spacing:-.2px;color:#101118">{{ kSumm }}</span>
+        </div>
+      </div>
+      <sc-for list="{{ kOps }}" as="o" hint-placeholder-count="5">
+        <div style="display:flex;gap:12px;opacity:{{ o.rowOp }}">
+          <div style="display:flex;flex-direction:column;align-items:center;width:12px">
+            <span style="width:2px;height:32px;background:{{ o.segBg }};background-size:2px 20px;animation:{{ o.segAnim }}"></span>
+            <span style="flex:none;width:10px;height:10px;border-radius:50%;background:{{ o.dotBg }};border:2px solid {{ o.dotBd }};box-sizing:border-box;animation:{{ o.dotAnim }}"></span>
+          </div>
+          <div style="flex:1;display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:1px">
+            <span style="font:{{ o.font }};letter-spacing:{{ o.ls }};color:#3C3F52">{{ o.name }}</span>
+            <span style="font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:1px;color:{{ o.stFg }}">{{ o.st }}</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="flex:1"></div>
+    <span style="font:600 9px 'IBM Plex Mono',monospace;letter-spacing:1.5px;color:#9A9DAC;text-align:center;padding-bottom:6px">{{ kDispFoot }}</span>
+  </div>
+  </sc-if>
+  <sc-if value="{{ kShowBooking }}" hint-placeholder-val="{{ false }}">
+  <div data-screen-label="Current booking" style="position:absolute;inset:0;background:#fff;padding:30px 22px 90px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;animation:omFade .3s">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:grid;grid-template-columns:repeat(2,10px);gap:3px"><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span></div>
+      <span style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#1631DB">KMR / <span style="color:#F4491D">LIVE</span></span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">
+      <span style="font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:1.5px;color:#9A9DAC">BOOKING #KMR-2381</span>
+      <h1 style="margin:0;font:800 30px/1.1 'Archivo',sans-serif;letter-spacing:-.8px;color:#101118">Quotes incoming.</h1>
+      <p style="margin:2px 0 0;font:700 13.5px/1.4 'Archivo',sans-serif;letter-spacing:-.2px;color:#1631DB">{{ kSumm }}</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:.8px;padding:2px 0">
+      <span style="color:#1631DB">SENT ✓</span>
+      <span style="flex:1;height:1.5px;background:#1631DB"></span>
+      <span style="display:flex;align-items:center;gap:5px;color:#F4491D"><span style="width:6px;height:6px;border-radius:50%;background:#F4491D;animation:omPulse 1.2s infinite"></span>QUOTES</span>
+      <span style="flex:1;height:1.5px;background:rgba(16,17,24,.12)"></span>
+      <span style="color:#9A9DAC">CHOOSE</span>
+      <span style="flex:1;height:1.5px;background:rgba(16,17,24,.12)"></span>
+      <span style="color:#9A9DAC">RIDE</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <sc-for list="{{ kQuoteRows }}" as="q" hint-placeholder-count="5">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:15px 14px;background:{{ q.bg }};border-radius:2px">
+          <span style="display:flex;align-items:center;gap:8px">
+            <span style="font:{{ q.font }};letter-spacing:{{ q.ls }};color:{{ q.fg }}">{{ q.name }}</span>
+            <span style="display:{{ q.newDisp }};padding:2px 5px;background:#F4491D;color:#fff;font:700 7.5px 'IBM Plex Mono',monospace;letter-spacing:1px;border-radius:2px">NEW</span>
+          </span>
+          <span style="font:{{ q.rightFont }};letter-spacing:.5px;color:{{ q.rightFg }};animation:{{ q.dotAnim }}">{{ q.right }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <span style="font:500 8.5px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#9A9DAC">{{ kQuoteNote }}</span>
+    <div style="display:flex;flex-direction:column;gap:8px;padding:16px;background:#1FAD53;border-radius:2px">
+      <span style="font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:1.5px;color:rgba(255,255,255,.75)">LIVE ON WHATSAPP · {{ kPhoneFull }}</span>
+      <p style="margin:0;font:700 15px/1.4 'Archivo',sans-serif;letter-spacing:-.2px;color:#fff">New quotes ping your chat the moment they land. Reply there to compare and book.</p>
+      <button style="align-self:flex-start;padding:10px 14px;background:#fff;color:#118743;border:none;border-radius:2px;font:700 12px 'Archivo',sans-serif;cursor:pointer">Open the chat</button>
+    </div>
+  </div>
+  </sc-if>
+  <sc-if value="{{ kShowProfile }}" hint-placeholder-val="{{ false }}">
+  <div data-screen-label="Profile" style="position:absolute;inset:0;background:#fff;padding:30px 22px 90px;display:flex;flex-direction:column;gap:16px;overflow-y:auto;animation:omFade .3s">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:grid;grid-template-columns:repeat(2,10px);gap:3px"><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span><span style="width:10px;height:10px;border-radius:50%;background:#1631DB"></span></div>
+      <span style="font:600 10px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#1631DB">KMR / <span style="color:#F4491D">LIVE</span></span>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;margin-top:6px">
+      <span style="flex:none;width:54px;height:54px;border-radius:50%;background:#1631DB;color:#fff;display:grid;place-items:center;font:800 22px 'Archivo',sans-serif">T</span>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="font:800 20px 'Archivo',sans-serif;letter-spacing:-.4px;color:#101118">Traveller</span>
+        <span style="font:500 11px 'IBM Plex Mono',monospace;letter-spacing:.5px;color:#8A8DA0">{{ kPhoneFull }}</span>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button onClick="{{ kNavBooking }}" style="display:flex;flex-direction:column;gap:4px;text-align:left;padding:14px;background:#F2F2F4;border:none;border-radius:2px;cursor:pointer">
+        <span style="font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:1.5px;color:#F4491D">ACTIVE BOOKING</span>
+        <span style="font:700 14px 'Archivo',sans-serif;letter-spacing:-.2px;color:#101118">{{ kSumm }}</span>
+      </button>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:#F2F2F4;border-radius:2px">
+        <span style="font:700 14px 'Archivo',sans-serif;letter-spacing:-.2px;color:#101118">WhatsApp updates</span>
+        <span style="font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#118743">ON</span>
+      </div>
+      <button onClick="{{ kSignOut }}" style="display:flex;padding:14px;background:none;border:none;cursor:pointer;text-align:left">
+        <span style="font:700 13px 'Archivo',sans-serif;color:#D93A10">Sign out</span>
+      </button>
+    </div>
+  </div>
+  </sc-if>
+  <sc-if value="{{ kShowNav }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-top:1px solid rgba(16,17,24,.1);display:flex;padding:6px 0 14px">
+    <button onClick="{{ kNavHome }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:6px 0">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-8Z" stroke="{{ kNavHomeFg }}" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      <span style="font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:1px;color:{{ kNavHomeFg }}">HOME</span>
+    </button>
+    <button onClick="{{ kNavBooking }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:6px 0">
+      <span style="position:relative;display:inline-flex">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 16v-3l2-5h12l2 5v3h-2.5m-11 0H4m2.5 0a1.5 1.5 0 1 0 3 0m5 0a1.5 1.5 0 1 0 3 0m-8 0h5" stroke="{{ kNavBookFg }}" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        <span style="position:absolute;top:-2px;right:-5px;width:6px;height:6px;border-radius:50%;background:#F4491D"></span>
+      </span>
+      <span style="font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:1px;color:{{ kNavBookFg }}">BOOKING</span>
+    </button>
+    <button onClick="{{ kNavProfile }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;cursor:pointer;padding:6px 0">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.5" stroke="{{ kNavProfFg }}" stroke-width="1.8"/><path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5" stroke="{{ kNavProfFg }}" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span style="font:600 8.5px 'IBM Plex Mono',monospace;letter-spacing:1px;color:{{ kNavProfFg }}">PROFILE</span>
+    </button>
+  </div>
+  </sc-if>
+  <sc-if value="{{ kOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ kClose }}" style="position:absolute;inset:0;background:rgba(16,17,24,.45);animation:omFade .3s"></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:12px 12px 0 0;animation:omSheetUp .35s cubic-bezier(.2,.8,.2,1);padding:12px 20px 26px;display:flex;flex-direction:column;gap:14px;max-height:92%;overflow-y:auto">
+      <span style="align-self:center;width:36px;height:4px;border-radius:2px;background:rgba(16,17,24,.15)"></span>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <button onClick="{{ kBack }}" style="width:32px;height:32px;background:#F2F2F4;border:none;border-radius:2px;font:600 16px 'Archivo',sans-serif;color:#101118;cursor:pointer">‹</button>
+        <span style="font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:1.5px;color:#8A8DA0">{{ kStepLabel }}</span>
+        <button onClick="{{ kClose }}" style="width:32px;height:32px;background:#F2F2F4;border:none;border-radius:2px;font:600 14px 'Archivo',sans-serif;color:#101118;cursor:pointer">×</button>
+      </div>
+      <div style="display:flex;align-items:center">
+        <span style="flex:none;width:8px;height:8px;border-radius:50%;background:#1631DB"></span>
+        <span style="flex:1;height:2px;background:{{ kSeg1 }}"></span>
+        <span style="flex:none;width:8px;height:8px;border-radius:50%;background:{{ kNode1 }}"></span>
+        <span style="flex:1;height:2px;background:{{ kSeg2 }}"></span>
+        <span style="flex:none;width:8px;height:8px;border-radius:50%;background:{{ kNode2 }}"></span>
+        <span style="flex:1;height:2px;background:{{ kSeg3 }}"></span>
+        <span style="flex:none;width:8px;height:8px;border-radius:50%;background:{{ kNode3 }}"></span>
+      </div>
+      <sc-if value="{{ kStep0 }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <h2 style="margin:0;font:800 22px/1.15 'Archivo',sans-serif;letter-spacing:-.5px;color:#101118">How many days should your cab stay with you?</h2>
+          <div style="display:flex;align-items:center;justify-content:center;gap:20px;padding:8px 0">
+            <button onClick="{{ kDaysDn }}" style="width:44px;height:44px;background:#F2F2F4;border:none;font:600 18px 'Archivo',sans-serif;color:#101118;cursor:pointer">−</button>
+            <span style="font:900 62px/1 'Archivo',sans-serif;letter-spacing:-2px;color:#1631DB;min-width:96px;text-align:center">{{ kDays }}</span>
+            <button onClick="{{ kDaysUp }}" style="width:44px;height:44px;background:#F2F2F4;border:none;font:600 18px 'Archivo',sans-serif;color:#101118;cursor:pointer">+</button>
+          </div>
+          <span style="font:500 11.5px/1.5 'Archivo',sans-serif;color:#8A8DA0;text-align:center">Airport to airport. Most first-timers do 4–5 days — Srinagar, Gulmarg, Pahalgam, done properly.</span>
+          <button onClick="{{ kNext }}" style="height:50px;background:#F4491D;color:#fff;border:none;font:700 15px 'Archivo',sans-serif;cursor:pointer" style-hover="background:#D93A10">{{ kNextLabel }}</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ kStep1 }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <h2 style="margin:0;font:800 22px/1.15 'Archivo',sans-serif;letter-spacing:-.5px;color:#101118">How many of you are coming?</h2>
+          <div style="display:flex;align-items:center;justify-content:center;gap:20px;padding:8px 0">
+            <button onClick="{{ kPeopleDn }}" style="width:44px;height:44px;background:#F2F2F4;border:none;font:600 18px 'Archivo',sans-serif;color:#101118;cursor:pointer">−</button>
+            <span style="font:900 62px/1 'Archivo',sans-serif;letter-spacing:-2px;color:#1631DB;min-width:96px;text-align:center">{{ kPeople }}</span>
+            <button onClick="{{ kPeopleUp }}" style="width:44px;height:44px;background:#F2F2F4;border:none;font:600 18px 'Archivo',sans-serif;color:#101118;cursor:pointer">+</button>
+          </div>
+          <span style="font:500 11.5px/1.5 'Archivo',sans-serif;color:#8A8DA0;text-align:center">{{ kFitHint }}</span>
+          <button onClick="{{ kNext }}" style="height:50px;background:#F4491D;color:#fff;border:none;font:700 15px 'Archivo',sans-serif;cursor:pointer" style-hover="background:#D93A10">{{ kNextLabel }}</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ kStep2 }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <h2 style="margin:0;font:800 22px/1.15 'Archivo',sans-serif;letter-spacing:-.5px;color:#101118">What kind of ride suits you?</h2>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ kCars }}" as="c" hint-placeholder-count="3">
+              <button onClick="{{ c.set }}" style="display:flex;align-items:center;gap:12px;width:100%;padding:12px;background:{{ c.bg2 }};border:none;border-radius:2px;cursor:pointer;text-align:left">
+                <span style="flex:none;width:64px;height:44px;background:#fff;border-radius:2px;display:grid;place-items:center;font:600 8px 'IBM Plex Mono',monospace;letter-spacing:.5px;color:#9A9DAC">3D CAB</span>
+                <span style="flex:1;display:flex;flex-direction:column;gap:3px">
+                  <span style="font:700 15px 'Archivo',sans-serif;color:{{ c.rowFg }}">{{ c.label }}</span>
+                  <span style="font:500 9.5px 'IBM Plex Mono',monospace;letter-spacing:.3px;color:#8A8DA0">{{ c.who }}</span>
+                </span>
+                <span style="flex:none;width:16px;height:16px;border-radius:50%;border:2px solid {{ c.dotBd }};background:{{ c.dotBg }};box-sizing:border-box;box-shadow:inset 0 0 0 2.5px #fff"></span>
+              </button>
+            </sc-for>
+          </div>
+          <p style="margin:0;font:500 12px/1.5 'Archivo',sans-serif;color:#1631DB">{{ kRec }}</p>
+          <span style="font:500 9px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#9A9DAC;text-align:center">NO FIXED FARES HERE — OPERATORS QUOTE, YOU CHOOSE</span>
+          <button onClick="{{ kNext }}" style="height:50px;background:#F4491D;color:#fff;border:none;font:700 15px 'Archivo',sans-serif;cursor:pointer" style-hover="background:#D93A10">{{ kNextLabel }}</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{ kStep3 }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <h2 style="margin:0;font:800 22px/1.15 'Archivo',sans-serif;letter-spacing:-.5px;color:#101118">Lovely. When do you land?</h2>
+            <p style="margin:0;font:500 12px/1.5 'Archivo',sans-serif;color:#8A8DA0">Pick a departure date and we'll do the rest.</p>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+            <sc-for list="{{ kDates }}" as="dt" hint-placeholder-count="4">
+              <button onClick="{{ dt.set }}" style="padding:9px 10px;font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.5px;white-space:nowrap;border:none;color:{{ dt.fg }};background:{{ dt.bg }};border-radius:2px;cursor:pointer">{{ dt.short }}</button>
+            </sc-for>
+            <label style="display:flex;align-items:center;gap:6px;padding:7px 10px;background:{{ kCustomBg }};border-radius:2px;cursor:pointer">
+              <span style="font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.5px;color:{{ kCustomFg }}">{{ kCustomLabel }}</span>
+              <input type="date" onChange="{{ kDateInput }}" value="{{ kCustomVal }}" style="border:none;background:none;font:600 9.5px 'IBM Plex Mono',monospace;color:{{ kCustomFg }};width:14px;padding:0;cursor:pointer;outline:none">
+            </label>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;padding:16px;background:#F6F6F7;border-radius:2px">
+            <span style="font:600 9px 'IBM Plex Mono',monospace;letter-spacing:1.5px;color:#9A9DAC">YOUR PACKAGE — TAP ANYTHING TO CHANGE IT</span>
+            <p style="margin:0;font:700 19px/1.5 'Archivo',sans-serif;letter-spacing:-.3px;color:#101118"><button onClick="{{ kDaysCyc }}" style="font:inherit;letter-spacing:inherit;background:none;border:none;padding:0;color:#1631DB;border-bottom:2px solid rgba(244,73,29,.7);cursor:pointer">{{ kDaysW }} days</button> in the valley, <button onClick="{{ kPeopleCyc }}" style="font:inherit;letter-spacing:inherit;background:none;border:none;padding:0;color:#1631DB;border-bottom:2px solid rgba(244,73,29,.7);cursor:pointer">{{ kPeopleW }} travellers</button>, one <button onClick="{{ kCarCyc }}" style="font:inherit;letter-spacing:inherit;background:none;border:none;padding:0;color:#1631DB;border-bottom:2px solid rgba(244,73,29,.7);cursor:pointer">{{ kCarW }}</button>.</p>
+            <p style="margin:0;font:500 11.5px/1.5 'Archivo',sans-serif;color:#3C3F52">{{ kRec }}</p>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;flex-direction:column;gap:2px">
+              <span style="font:500 9.5px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#8A8DA0">EXPECTED RANGE · {{ kCount }}</span>
+              <span style="font:800 28px/1 'Archivo',sans-serif;letter-spacing:-.5px;color:#101118">{{ kPrice }}</span>
+            </div>
+            <button onClick="{{ kSubmit }}" style="height:52px;background:#F4491D;color:#fff;border:none;font:700 16px 'Archivo',sans-serif;cursor:pointer" style-hover="background:#D93A10">Get my quotes</button>
+            <span style="font:500 9px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#9A9DAC;text-align:center">REAL FARES ARRIVE AS QUOTES — USUALLY WITHIN 5–10 MIN</span>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+  <sc-if value="{{ kWaOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;background:rgba(16,17,24,.45);animation:omFade .3s"></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:12px 12px 0 0;animation:omSheetUp .4s cubic-bezier(.2,.8,.2,1);padding:14px 20px 28px;display:flex;flex-direction:column;gap:14px;max-height:92%;overflow-y:auto">
+      <span style="align-self:center;width:36px;height:4px;border-radius:2px;background:rgba(16,17,24,.15)"></span>
+      <sc-if value="{{ kWaPhone }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="flex:none;width:38px;height:38px;border-radius:50%;background:#1FAD53;display:grid;place-items:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 4a8 8 0 0 0-6.9 12L4 20l4.1-1A8 8 0 1 0 12 4Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 9.5c.4 2.2 3 4.7 5.2 5.1l1.3-1.5-1.9-1-1 .5c-.8-.5-1.5-1.2-1.9-2l.5-1-1-1.9L9 9.5Z" fill="#fff"/></svg></span>
+            <span style="font:600 9px 'IBM Plex Mono',monospace;letter-spacing:1.5px;color:#118743">WHATSAPP UPDATES</span>
+          </div>
+          <h2 style="margin:0;font:800 23px/1.15 'Archivo',sans-serif;letter-spacing:-.5px;color:#101118">Quotes take 5–10 minutes. Don't sit here waiting.</h2>
+          <p style="margin:0;font:500 12.5px/1.55 'Archivo',sans-serif;color:#5B5E70">Operators are real people — they check your route before committing a fare. Drop your WhatsApp number and every quote lands in your chat the moment it's in. Compare, ask questions, book — all from the chat.</p>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <span style="display:flex;align-items:center;gap:8px;font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.8px;color:#3C3F52"><span style="color:#118743">✓</span>EVERY QUOTE, PINGED TO YOU LIVE</span>
+            <span style="display:flex;align-items:center;gap:8px;font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.8px;color:#3C3F52"><span style="color:#118743">✓</span>CHAT &amp; BOOK WITHOUT REOPENING THE APP</span>
+            <span style="display:flex;align-items:center;gap:8px;font:600 9.5px 'IBM Plex Mono',monospace;letter-spacing:.8px;color:#3C3F52"><span style="color:#118743">✓</span>NO CALLS, NO SPAM — JUST YOUR QUOTES</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            <span style="flex:none;display:grid;place-items:center;padding:0 12px;background:#F2F2F4;border-radius:2px;font:600 14px 'IBM Plex Mono',monospace;color:#101118">+91</span>
+            <input type="tel" placeholder="98765 43210" value="{{ kPhone }}" onChange="{{ kPhoneInput }}" style="flex:1;min-width:0;height:52px;border:none;background:#F2F2F4;padding:0 14px;font:600 16px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#101118;outline:none;border-radius:2px">
+          </div>
+          <button onClick="{{ kSendOtp }}" style="height:52px;background:{{ kSendBg }};color:#fff;border:none;font:700 15px 'Archivo',sans-serif;cursor:pointer;border-radius:2px">Get updates on WhatsApp</button>
+          <span style="font:500 9px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#9A9DAC;text-align:center">ONE-TIME CODE TO VERIFY — THAT'S IT</span>
+        </div>
+      </sc-if>
+      <sc-if value="{{ kWaOtp }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <h2 style="margin:0;font:800 23px/1.15 'Archivo',sans-serif;letter-spacing:-.5px;color:#101118">Enter the code from WhatsApp.</h2>
+          <p style="margin:0;font:500 12px/1.5 'Archivo',sans-serif;color:#8A8DA0">Sent to {{ kPhoneFull }} · <button onClick="{{ kEditPhone }}" style="font:inherit;background:none;border:none;padding:0;color:#1631DB;cursor:pointer;text-decoration:underline">change</button></p>
+          <input type="tel" maxLength="4" placeholder="····" value="{{ kOtp }}" onChange="{{ kOtpInput }}" style="width:100%;box-sizing:border-box;height:64px;text-align:center;font:800 30px 'IBM Plex Mono',monospace;letter-spacing:14px;background:#F2F2F4;border:none;outline:none;border-radius:2px;color:#1631DB">
+          <span style="font:500 9px 'IBM Plex Mono',monospace;letter-spacing:1px;color:#9A9DAC;text-align:center">DEMO — ANY 4 DIGITS WORK</span>
+        </div>
+      </sc-if>
+      <sc-if value="{{ kWaDone }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 0 10px;animation:omPop .4s cubic-bezier(.2,.8,.2,1)">
+          <span style="width:56px;height:56px;border-radius:50%;background:#1FAD53;display:grid;place-items:center;color:#fff;font:800 26px 'Archivo',sans-serif">✓</span>
+          <h2 style="margin:0;font:800 23px 'Archivo',sans-serif;letter-spacing:-.5px;color:#101118">You're in.</h2>
+          <p style="margin:0;font:500 12.5px/1.55 'Archivo',sans-serif;color:#5B5E70;text-align:center">Quotes will ping your WhatsApp the moment they land. You can even close the app — we've got it.</p>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:430,&quot;height&quot;:900},&quot;season&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Standard&quot;,&quot;Peak season&quot;],&quot;default&quot;:&quot;Standard&quot;,&quot;section&quot;:&quot;Pricing&quot;},&quot;skipIntro&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Demo&quot;},&quot;fastDemo&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Demo&quot;}}">
+class Component extends DCLogic {
+  state = {k:{intro:true,screen:'home',tab:'booking',open:false,step:0,days:4,people:2,car:0,date:0,customDate:'',disp:-1,wa:'',phone:'',otp:'',logged:false,quotes:0}};
+  upd(o,p){ this.setState(s=>({[o]:Object.assign({},s[o],p)})); }
+  componentDidMount(){
+    this.startOrbit();
+    if(this.props.skipIntro??false) this.upd('k',{intro:false});
+    else this._ki=setTimeout(()=>this.upd('k',{intro:false}),4800);
+  }
+  componentWillUnmount(){ clearTimeout(this._ki); clearInterval(this._kd); clearInterval(this._kq); }
+  spd(){ return (this.props.fastDemo??false)?0.45:1; }
+  runDispatch(){
+    clearInterval(this._kd); this.upd('k',{disp:0});
+    let i=0;
+    this._kd=setInterval(()=>{
+      i++;
+      this.upd('k',{disp:Math.min(i,5)});
+      if(i===4&&!this.state.k.logged) setTimeout(()=>this.upd('k',{wa:'phone'}),450);
+      if(i>=5){
+        clearInterval(this._kd);
+        if(this.state.k.logged) setTimeout(()=>{ this.upd('k',{screen:'app',tab:'booking',quotes:0}); this.startQuotes(); },900);
+      }
+    },950*this.spd());
+  }
+  startQuotes(){
+    clearInterval(this._kq);
+    this._kq=setInterval(()=>{
+      const q=this.state.k.quotes;
+      if(q>=3){ clearInterval(this._kq); return; }
+      this.upd('k',{quotes:q+1});
+    },4200*this.spd());
+  }
+  finishLogin(){ this.upd('k',{logged:true,screen:'app',tab:'booking',wa:'',quotes:0}); this.startQuotes(); }
+  startOrbit(){
+    window.__omProtoInst=this;
+    if(window.__omProtoLoop) return;
+    window.__omProtoLoop=true;
+    const DEST=['SRINAGAR','GULMARG','PAHALGAM','SONAMARG','DOODHPATHRI','YUSMARG','AHARBAL','GUREZ'];
+    const N=DEST.length, TWO=Math.PI*2, REV=16000, W=TWO*0.34, SP=TWO/N;
+    const H0=-1.075, PHI0=-0.352, TA=1120, TB=1104;
+    let t0=0;
+    const draw=(now)=>{
+      if(!t0) t0=now;
+      const t=now-t0, om=TWO/REV;
+      const base=t<TA?0:om*(t-TA);
+      let hd;
+      if(t<TA){ const u=t/TA, e=1-Math.pow(1-u,3); hd=H0+(PHI0-H0)*e; }
+      else if(t<TA+TB){ const u=(t-TA)/TB, e=u*u*(3-2*u); hd=PHI0*(1-e); }
+      else hd=0;
+      const Hw=hd+base, forming=Hw<H0+TWO;
+      const zu=Math.min(1,t/(TA+TB)), z=0.86+0.14*(zu*zu*(3-2*zu));
+      const inst=window.__omProtoInst;
+      if(!inst){ window.__omProtoRaf=requestAnimationFrame(draw); return; }
+      if(now-(window.__omProtoLast||0)<33){ window.__omProtoRaf=requestAnimationFrame(draw); return; }
+      window.__omProtoLast=now;
+      const host=inst.kOrbitRef&&inst.kOrbitRef.current;
+      if(host&&host.isConnected&&inst.state.k.screen!=='dispatch'){
+        let cv=host.__omCv;
+        if(!cv||!host.contains(cv)){
+          cv=host.querySelector('canvas');
+          if(!cv){ cv=document.createElement('canvas'); cv.style.cssText='width:100%;height:100%;display:block'; host.appendChild(cv); }
+          host.__omCv=cv;
+        }
+        const ctx=cv.getContext('2d');
+        const dpr=window.devicePixelRatio||1, w=host.clientWidth, hgt=host.clientHeight;
+        if(w){
+          if(cv.width!==Math.round(w*dpr)){ cv.width=Math.round(w*dpr); cv.height=Math.round(hgt*dpr); }
+          const cx=w/2, cy=38, A=w*0.58, B=25;
+          ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,hgt);
+          ctx.translate(cx,cy); ctx.scale(z,z); ctx.translate(-cx,-cy);
+          const pos=th=>({x:cx+A*Math.sin(th), y:cy+B*Math.cos(th), d:Math.cos(th)});
+          ctx.lineWidth=1.5;
+          for(let s=0;s<120;s++){
+            const f1=H0+s/120*TWO, f2=H0+(s+1)/120*TWO;
+            if(forming&&(f1+f2)/2>Hw) continue;
+            const p1=pos(f1-base), p2=pos(f2-base), dm=(p1.d+p2.d)/2;
+            ctx.strokeStyle='rgba(22,49,219,'+(dm>0?0.10+0.15*dm:0.05)+')';
+            ctx.beginPath(); ctx.moveTo(p1.x,p1.y); ctx.lineTo(p2.x,p2.y); ctx.stroke();
+          }
+          for(let i=0;i<N;i++){
+            const fi=PHI0+i*SP, ci=Hw-fi;
+            if(ci<0) continue;
+            const th=fi-base, p=pos(th);
+            const rel=ci%TWO, covered=rel<W, age=rel/om;
+            const df=Math.max(0,p.d), alpha=p.d>0?0.25+0.75*df:0.14;
+            const pop=covered?1+0.5*Math.exp(-age/450):1, r=(2.6+2.6*df)*pop;
+            const edge=Math.min(1,Math.abs(p.x-cx)/A);
+            const fade=edge>0.72?Math.max(0.25,1-(edge-0.72)*2.5):(p.d<0?0.6:1);
+            ctx.globalAlpha=fade;
+            ctx.beginPath(); ctx.arc(p.x,p.y,r,0,TWO);
+            if(covered){
+              ctx.fillStyle='rgba(22,49,219,'+alpha+')'; ctx.fill();
+              if(age<900){ ctx.beginPath(); ctx.arc(p.x,p.y,r+7*(age/900),0,TWO); ctx.strokeStyle='rgba(244,73,29,'+(0.65*(1-age/900)).toFixed(3)+')'; ctx.lineWidth=1.5; ctx.stroke(); }
+            } else {
+              ctx.fillStyle='#fff'; ctx.fill();
+              ctx.strokeStyle='rgba(22,49,219,'+(alpha*0.8).toFixed(3)+')'; ctx.lineWidth=1.8; ctx.stroke();
+            }
+            if(p.d>0.3){
+              ctx.font='600 8.5px "IBM Plex Mono",monospace'; ctx.textAlign='center';
+              ctx.fillStyle=covered?('rgba(22,49,219,'+alpha.toFixed(3)+')'):('rgba(110,113,128,'+(alpha*0.9).toFixed(3)+')');
+              ctx.fillText(DEST[i],p.x,p.y+r+15);
+            }
+            ctx.globalAlpha=1;
+          }
+          const TL=0.5;
+          let prev=pos(hd);
+          for(let j=1;j<=14;j++){
+            const fk=Hw-TL*j/14;
+            if(fk<H0) break;
+            const pk=pos(fk-base);
+            ctx.strokeStyle='rgba(244,73,29,'+(0.75*(1-j/14)).toFixed(3)+')';
+            ctx.lineWidth=3-2*(j/14);
+            ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(pk.x,pk.y); ctx.stroke();
+            prev=pk;
+          }
+          const hp=pos(hd);
+          const glow=ctx.createRadialGradient(hp.x,hp.y,0,hp.x,hp.y,10);
+          glow.addColorStop(0,'rgba(244,73,29,.55)'); glow.addColorStop(1,'rgba(244,73,29,0)');
+          ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(hp.x,hp.y,10,0,TWO); ctx.fill();
+          ctx.fillStyle='#F4491D'; ctx.beginPath(); ctx.arc(hp.x,hp.y,3.2,0,TWO); ctx.fill();
+        }
+      }
+      window.__omProtoRaf=requestAnimationFrame(draw);
+    };
+    cancelAnimationFrame(window.__omProtoRaf);
+    window.__omProtoRaf=requestAnimationFrame(draw);
+  }
+  renderVals(){
+    this.kOrbitRef=this.kOrbitRef||React.createRef();
+    this.startOrbit();
+    const CARS=[{label:'Sedan',seats:4,rate:3400},{label:'SUV',seats:7,rate:5400},{label:'Traveller',seats:12,rate:8200}];
+    const DATES=['Sat 01 Aug','Sun 02 Aug','Mon 03 Aug','Wed 05 Aug','Sat 08 Aug'];
+    const mult=(this.props.season??'Standard')==='Standard'?1:1.2;
+    const inr=n=>'₹'+(Math.round(n/100)*100).toLocaleString('en-IN');
+    const calc=(d,p,c)=>{const n=Math.ceil(p/CARS[c].seats);const low=n*CARS[c].rate*d*mult;return{n,txt:inr(low)+'–'+inr(low*1.22).slice(1),short:'₹'+Math.round(low/1000)+'–'+Math.ceil(low*1.22/1000)+'k'};};
+    const rec=(p,c)=>{
+      const best=p<=4?0:p<=7?1:2;
+      const cnt=i=>Math.ceil(p/CARS[i].seats);
+      if(c===best)return best===0?`1 sedan seats ${p} — right-sized for this group.`:best===1?`1 SUV seats up to 7 — the right call for ${p}.`:`1 traveller keeps ${p} together — one vehicle, one driver.`;
+      if(best===1&&c===0)return `${cnt(0)} sedans possible · Recommended: 1 SUV — better comfort, and usually better value than splitting across ${cnt(0)} sedans.`;
+      if(best===2&&c===0)return `${cnt(0)} sedans possible · Recommended: 1 traveller — one vehicle beats a convoy on value.`;
+      if(best===2&&c===1)return `${cnt(1)} SUVs possible · Recommended: 1 traveller for groups past 8.`;
+      if(best===0&&c===1)return `1 SUV works for ${p} — extra luggage room, though a sedan usually costs less.`;
+      if(best===0&&c===2)return `A traveller is oversized for ${p} — 1 sedan usually costs less.`;
+      return `1 SUV covers ${p} — a traveller only pays off past 8.`;
+    };
+    const gWho=['4 SEATS · COUPLES & PAIRS','7 SEATS · FAMILIES & FRIENDS','12 SEATS · THE FULL GANG'];
+    const GPRESETS=[{name:'Just the two of us',days:4,people:2,car:0},{name:'Family trip',days:5,people:5,car:1},{name:'The whole gang',days:5,people:7,car:1},{name:'Weekend dash',days:2,people:2,car:0}];
+    const out={};
+    out.kOrbitRef=this.kOrbitRef;
+    const ks=this.state.k, kPr=calc(ks.days,ks.people,ks.car);
+    out.kShowHome=ks.screen==='home'||(ks.screen==='app'&&ks.tab==='home');
+    out.kShowDispatch=ks.screen==='dispatch';
+    out.kShowBooking=ks.screen==='app'&&ks.tab==='booking';
+    out.kShowProfile=ks.screen==='app'&&ks.tab==='profile';
+    out.kShowNav=ks.logged&&ks.screen!=='dispatch';
+    out.kHomePad=out.kShowNav?'64px':'0px';
+    const kRv=d=>ks.intro?('omReveal .85s cubic-bezier(.16,.84,.28,1) '+d+'s both'):'none';
+    out.kRv1=kRv(3);out.kRv2=kRv(3.08);out.kRv3=kRv(3.24);out.kRv4=kRv(3.42);out.kRv5=kRv(3.58);out.kRv6=kRv(3.74);
+    out.kOpen=ks.open;
+    for(let i=0;i<4;i++) out['kStep'+i]=ks.open&&ks.step===i;
+    out.kOpenSheet=()=>this.upd('k',{open:true,step:0});
+    out.kClose=()=>this.upd('k',{open:false});
+    out.kBack=()=>{ if(ks.step===0){this.upd('k',{open:false});}else{this.upd('k',{step:ks.step-1});} };
+    out.kNext=()=>this.upd('k',{step:Math.min(3,ks.step+1)});
+    out.kNextLabel=ks.step===2?'Almost done — review':'Next';
+    out.kStepLabel=ks.step<3?('STEP '+(ks.step+1)+' / 3'):'YOUR PACKAGE';
+    out.kDays=String(ks.days).padStart(2,'0'); out.kPeople=String(ks.people).padStart(2,'0');
+    out.kDaysUp=()=>this.upd('k',{days:Math.min(14,ks.days+1)});
+    out.kDaysDn=()=>this.upd('k',{days:Math.max(1,ks.days-1)});
+    out.kPeopleUp=()=>this.upd('k',{people:Math.min(14,ks.people+1)});
+    out.kPeopleDn=()=>this.upd('k',{people:Math.max(1,ks.people-1)});
+    out.kFitHint=ks.people<=2?'Two of you — a sedan, the window seats, and the whole back row for shawls.':ks.people<=4?'Four travel easy in one sedan, luggage and all.':ks.people<=7?'One SUV keeps the whole gang in one car — one playlist, one chai stop.':'Big group! A traveller van keeps everyone together — no convoy, no waiting.';
+    out.kRec=rec(ks.people,ks.car);
+    out.kPrice=kPr.txt; out.kCount=kPr.n+' × '+CARS[ks.car].label.toUpperCase();
+    out.kCars=CARS.map((cc,i)=>{const on=i===ks.car;return{label:cc.label,who:gWho[i],bg2:on?'#E9EDFD':'#F4F4F6',rowFg:on?'#1631DB':'#101118',dotBd:on?'#1631DB':'rgba(16,17,24,.25)',dotBg:on?'#1631DB':'transparent',set:()=>this.upd('k',{car:i})};});
+    out.kDates=DATES.map((dd,i)=>{const on=i===ks.date&&!ks.customDate;return{short:dd.toUpperCase().slice(4),fg:on?'#fff':'#3C3F52',bg:on?'#1631DB':'#F4F4F6',set:()=>this.upd('k',{date:i,customDate:''})};});
+    out.kCustomBg=ks.customDate?'#1631DB':'#F4F4F6';
+    out.kCustomFg=ks.customDate?'#fff':'#3C3F52';
+    out.kCustomLabel=ks.customDate?new Date(ks.customDate+'T12:00').toDateString().toUpperCase().slice(0,10):'ANOTHER DATE';
+    out.kCustomVal=ks.customDate;
+    out.kDateInput=(ev)=>this.upd('k',{customDate:ev.target.value,date:-1});
+    out.kDaysW=ks.days; out.kPeopleW=ks.people; out.kCarW=['sedan','SUV','traveller van'][ks.car];
+    out.kDaysCyc=()=>this.upd('k',{days:ks.days>=9?2:ks.days+1});
+    out.kPeopleCyc=()=>this.upd('k',{people:ks.people>=9?1:ks.people+1});
+    out.kCarCyc=()=>this.upd('k',{car:(ks.car+1)%3});
+    out.kSeg1=ks.step>=1?'#1631DB':'rgba(22,49,219,.2)';
+    out.kNode1=ks.step>=1?'#1631DB':'rgba(22,49,219,.25)';
+    out.kSeg2=ks.step>=2?'#1631DB':'rgba(22,49,219,.2)';
+    out.kNode2=ks.step>=2?'#1631DB':'rgba(22,49,219,.25)';
+    out.kSeg3=ks.step>=3?'#1631DB':'rgba(22,49,219,.2)';
+    out.kNode3=ks.step>=3?'#1631DB':'rgba(22,49,219,.25)';
+    out.kPresets=GPRESETS.map(p=>{const q=calc(p.days,p.people,p.car);return{name:p.name,daysLabel:p.days+' DAYS',meta:p.people+' PEOPLE · '+q.short,ticks:Array.from({length:Math.min(p.days,7)},(_,i)=>({segDisplay:i===0?'none':'block'})),set:()=>this.upd('k',{days:p.days,people:p.people,car:p.car,open:true,step:3})};});
+    out.kSubmit=()=>{ this.upd('k',{open:false,screen:'dispatch',wa:''}); this.runDispatch(); };
+    const kDateW=ks.customDate?new Date(ks.customDate+'T12:00').toDateString().toUpperCase().slice(0,10):DATES[Math.max(0,ks.date)].toUpperCase();
+    out.kSumm=ks.days+' days · '+ks.people+' travellers · '+CARS[ks.car].label+' · '+kDateW;
+    const KOPS=[{name:'VALE CABS',font:"800 13px 'Archivo',sans-serif",ls:'.5px'},{name:'himways',font:"500 13px 'IBM Plex Mono',monospace",ls:'0px'},{name:'GK TOURS',font:"700 13px 'Archivo',sans-serif",ls:'2px'},{name:'SNOWLINE',font:"500 13px 'Archivo',sans-serif",ls:'3px'},{name:'ZOJI GO',font:"800 13px 'Archivo',sans-serif",ls:'1px'}];
+    out.kOps=KOPS.map((op,i)=>{ const sent=ks.disp>i, sending=ks.disp===i;
+      return{name:op.name,font:op.font,ls:op.ls,rowOp:sent||sending?1:0.45,
+        segBg:sent?'#1631DB':sending?'repeating-linear-gradient(180deg,#F4491D 0 5px,rgba(244,73,29,.15) 5px 10px)':'rgba(16,17,24,.12)',
+        segAnim:sending?'omFlow .5s linear infinite':'none',
+        dotBg:sent?'#1631DB':sending?'#F4491D':'#fff',
+        dotBd:sent?'#1631DB':sending?'#F4491D':'rgba(16,17,24,.25)',
+        dotAnim:sending?'omPulse 1.1s infinite':'none',
+        st:sent?'DELIVERED ✓':sending?'SENDING':'QUEUED',
+        stFg:sent?'#1631DB':sending?'#F4491D':'#9A9DAC'};});
+    out.kDispFoot=ks.disp>=5?'ALL 5 DELIVERED — REAL PEOPLE PRICE REAL FARES':Math.max(0,ks.disp)+' OF 5 DELIVERED';
+    out.kWaOpen=!!ks.wa; out.kWaPhone=ks.wa==='phone'; out.kWaOtp=ks.wa==='otp'; out.kWaDone=ks.wa==='done';
+    out.kPhone=ks.phone;
+    out.kPhoneInput=(ev)=>this.upd('k',{phone:ev.target.value.replace(/\D/g,'').slice(0,10)});
+    out.kSendBg=ks.phone.length===10?'#1FAD53':'#C9CBD3';
+    out.kSendOtp=()=>{ if(this.state.k.phone.length===10) this.upd('k',{wa:'otp',otp:''}); };
+    out.kPhoneFull='+91 '+(ks.phone?ks.phone.replace(/^(\d{5})(\d+)$/,'$1 $2'):'—');
+    out.kOtp=ks.otp;
+    out.kOtpInput=(ev)=>{ const v=ev.target.value.replace(/\D/g,'').slice(0,4); this.upd('k',{otp:v});
+      if(v.length===4) setTimeout(()=>{ this.upd('k',{wa:'done'}); setTimeout(()=>this.finishLogin(),1100); },350); };
+    out.kEditPhone=()=>this.upd('k',{wa:'phone',otp:''});
+    const kLow=Math.ceil(ks.people/CARS[ks.car].seats)*CARS[ks.car].rate*ks.days*mult;
+    const kMul=[0.98,1.07,1.14];
+    out.kQuoteRows=KOPS.map((op,i)=>{ const got=i<ks.quotes, next=i===ks.quotes;
+      return{name:op.name,font:op.font,ls:op.ls,fg:got?'#101118':'#9A9DAC',bg:got?'#E9EDFD':'#F6F6F7',
+        right:got?inr(kLow*kMul[i]):next?'TYPING…':'REQUEST SENT',
+        rightFg:got?'#1631DB':next?'#F4491D':'#9A9DAC',
+        rightFont:got?"800 15px 'Archivo',sans-serif":"600 8.5px 'IBM Plex Mono',monospace",
+        dotAnim:next?'omBlink 1.1s infinite':'none',
+        newDisp:got&&i===ks.quotes-1?'inline-block':'none'};});
+    out.kQuoteNote=ks.quotes>=3?'3 OF 5 IN — THE REST PING YOUR WHATSAPP AS THEY LAND':'QUOTES USUALLY LAND IN 5–10 MIN — WE PING YOUR WHATSAPP';
+    out.kNavHome=()=>this.upd('k',{tab:'home'});
+    out.kNavBooking=()=>this.upd('k',{tab:'booking'});
+    out.kNavProfile=()=>this.upd('k',{tab:'profile'});
+    out.kNavHomeFg=out.kShowHome?'#1631DB':'#9A9DAC';
+    out.kNavBookFg=out.kShowBooking?'#1631DB':'#9A9DAC';
+    out.kNavProfFg=out.kShowProfile?'#1631DB':'#9A9DAC';
+    out.kSignOut=()=>{ clearInterval(this._kq); clearInterval(this._kd); this.upd('k',{logged:false,screen:'home',tab:'booking',wa:'',phone:'',otp:'',disp:-1,quotes:0,open:false,intro:false}); };
+    return out;
+  }
+}
+</script>
+</body>
+</html>
