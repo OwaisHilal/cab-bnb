@@ -15,27 +15,17 @@ export interface SendWhatsAppResult {
 }
 
 /**
- * Sends an interactive quick-reply button message via the WhatsApp Cloud
- * API. Mirrors the fetch shape in lib/whatsapp/sendAuthTemplateOtp.ts (Next
+ * Shared Graph API POST + response handling for both message shapes below.
+ * Mirrors the fetch shape in lib/whatsapp/sendAuthTemplateOtp.ts (Next
  * app), duplicated here rather than imported because Edge Functions run in
  * Deno and deploy independently of the Next.js app — that file also imports
  * the `server-only` package, which doesn't resolve outside Next.js.
- *
- * Buttons are capped at 3 per Meta's constraint (Plan §6.1 footnote) —
- * callers are responsible for keeping `buttons.length <= 3`.
  */
-export async function sendWhatsAppButtonMessage(
-  phoneE164: string,
-  bodyText: string,
-  buttons: WhatsAppButton[],
+async function postWhatsAppMessage(
+  phoneNumberId: string,
+  accessToken: string,
+  messageBody: Record<string, unknown>,
 ): Promise<SendWhatsAppResult> {
-  const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
-  const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
-
-  if (!accessToken || !phoneNumberId) {
-    return { configured: false, success: false, error: "WhatsApp Cloud API credentials are not configured" };
-  }
-
   try {
     const response = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${phoneNumberId}/messages`, {
       method: "POST",
@@ -43,21 +33,7 @@ export async function sendWhatsAppButtonMessage(
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: phoneE164.replace(/^\+/, ""),
-        type: "interactive",
-        interactive: {
-          type: "button",
-          body: { text: bodyText },
-          action: {
-            buttons: buttons.map((button) => ({
-              type: "reply",
-              reply: { id: button.id, title: button.title },
-            })),
-          },
-        },
-      }),
+      body: JSON.stringify(messageBody),
     });
 
     const responseBody = await response.json().catch(() => null);
@@ -79,6 +55,66 @@ export async function sendWhatsAppButtonMessage(
       error: error instanceof Error ? error.message : "Unknown WhatsApp send error",
     };
   }
+}
+
+/**
+ * Sends an interactive quick-reply button message via the WhatsApp Cloud
+ * API.
+ *
+ * Buttons are capped at 3 per Meta's constraint (Plan §6.1 footnote) —
+ * callers are responsible for keeping `buttons.length <= 3`.
+ */
+export async function sendWhatsAppButtonMessage(
+  phoneE164: string,
+  bodyText: string,
+  buttons: WhatsAppButton[],
+): Promise<SendWhatsAppResult> {
+  const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
+  const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
+
+  if (!accessToken || !phoneNumberId) {
+    return { configured: false, success: false, error: "WhatsApp Cloud API credentials are not configured" };
+  }
+
+  return postWhatsAppMessage(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp",
+    to: phoneE164.replace(/^\+/, ""),
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: bodyText },
+      action: {
+        buttons: buttons.map((button) => ({
+          type: "reply",
+          reply: { id: button.id, title: button.title },
+        })),
+      },
+    },
+  });
+}
+
+/**
+ * Sends a plain text WhatsApp message — used by Phase 3 handlers that
+ * don't need quick-reply buttons (vendor notification §6.3, customer
+ * confirmation card §6.4, pre-pickup reminder §6.5).
+ */
+export async function sendWhatsAppTextMessage(
+  phoneE164: string,
+  bodyText: string,
+): Promise<SendWhatsAppResult> {
+  const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
+  const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
+
+  if (!accessToken || !phoneNumberId) {
+    return { configured: false, success: false, error: "WhatsApp Cloud API credentials are not configured" };
+  }
+
+  return postWhatsAppMessage(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp",
+    to: phoneE164.replace(/^\+/, ""),
+    type: "text",
+    text: { body: bodyText },
+  });
 }
 
 /**

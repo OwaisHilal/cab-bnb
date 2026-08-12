@@ -4,8 +4,8 @@ import type { InboundWhatsAppMessage, ParsedAction } from "./types";
 /**
  * Checklist 2.5: "insert job_queue row per action (never process WhatsApp
  * send synchronously inside webhook handler)". Every branch below only
- * writes to `job_queue` — no worker consumes these yet (Checklist 2.8/3.10,
- * later phases), so nothing further happens until that's built.
+ * writes to `job_queue` — `job-queue-worker` (Checklist 3.10) has a
+ * registered handler for every job_type enqueued here.
  */
 export async function enqueueWebhookAction(
   supabase: SupabaseClient,

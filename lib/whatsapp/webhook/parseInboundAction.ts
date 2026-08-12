@@ -7,6 +7,13 @@ import type { InboundWhatsAppMessage, ParsedAction } from "./types";
 // example has a space there. Fixed here by allowing `\s*` before every
 // delimiter, confirmed against the exact example string in testing.
 const DRIVER_DETAILS_REGEX = /^DRIVER:\s*([^|]+?)\s*\|\s*(\+?\d{10,13})\s*\|\s*([A-Z0-9\- ]+?)\s*\|\s*(.+)$/i;
+// Loosely matches anything that looks like a driver-detail reply attempt
+// (right prefix, wrong delimiters/field count) so it still reaches the
+// `parse-driver-details` job (Checklist 3.6) instead of being dropped as
+// `unknown` — that job re-runs the strict regex above against the raw text
+// and is what actually files `parse_failed` + `ops_alert` for malformed
+// replies (Plan §7.3).
+const DRIVER_DETAILS_PREFIX_REGEX = /^DRIVER:/i;
 const RATE_ACTION_PREFIX = "RATE_";
 
 /**
@@ -61,16 +68,22 @@ function parseRatingAction(action: string | undefined, entityId: string | undefi
 
 function parseTextBody(text: string): ParsedAction {
   const match = text.match(DRIVER_DETAILS_REGEX);
-  if (!match) return { type: "unknown" };
+  if (match) {
+    const [, name, phone, vehicleNumber, vehicleModel] = match;
+    return {
+      type: "driver_details",
+      driverDetails: {
+        name: name.trim(),
+        phone: phone.trim(),
+        vehicleNumber: vehicleNumber.trim(),
+        vehicleModel: vehicleModel.trim(),
+      },
+    };
+  }
 
-  const [, name, phone, vehicleNumber, vehicleModel] = match;
-  return {
-    type: "driver_details",
-    driverDetails: {
-      name: name.trim(),
-      phone: phone.trim(),
-      vehicleNumber: vehicleNumber.trim(),
-      vehicleModel: vehicleModel.trim(),
-    },
-  };
+  if (DRIVER_DETAILS_PREFIX_REGEX.test(text.trim())) {
+    return { type: "driver_details" };
+  }
+
+  return { type: "unknown" };
 }

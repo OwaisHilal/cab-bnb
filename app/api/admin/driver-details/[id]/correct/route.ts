@@ -15,10 +15,8 @@ const correctSchema = z.object({
 /**
  * Checklist 2.7: ops manually corrects a `parse_failed`
  * driver_detail_submissions row (Plan §7.3's regex fallback queue), then
- * triggers the confirmation-card send job. `send_confirmation_card` has no
- * handler yet (Checklist 3.7 — Phase 2e) — it will sit `queued` like the
- * other not-yet-implemented job_types (e.g. notify_vendor_booking) until
- * that phase lands.
+ * triggers the confirmation-card send job (Checklist 3.7, dispatched by
+ * job-queue-worker's `send_confirmation_card` handler).
  */
 export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/admin/driver-details/[id]/correct">) {
   const auth = checkAdminAuth(request);

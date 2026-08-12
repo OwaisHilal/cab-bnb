@@ -4,6 +4,14 @@ import { verifyServiceRoleCaller } from "../_shared/verifyServiceRoleCaller.ts";
 import { handleSendQuotes } from "../_shared/handlers/sendQuotes.ts";
 import { handleComputeNegotiation } from "../_shared/handlers/computeNegotiation.ts";
 import { handleFinalizeBooking } from "../_shared/handlers/finalizeBooking.ts";
+import { handleNotifyVendorBooking } from "../_shared/handlers/notifyVendorBooking.ts";
+import { handleParseDriverDetails } from "../_shared/handlers/parseDriverDetails.ts";
+import { handleSendConfirmationCard } from "../_shared/handlers/sendConfirmationCard.ts";
+import { handleDispatchLifecycleEvents } from "../_shared/handlers/dispatchLifecycleEvents.ts";
+import { handleExpireStaleQuotes } from "../_shared/handlers/expireStaleQuotes.ts";
+import { handleRecordLifecycleResponse } from "../_shared/handlers/recordLifecycleResponse.ts";
+import { handleOpsAlert } from "../_shared/handlers/opsAlert.ts";
+import { handleRecordReview } from "../_shared/handlers/recordReview.ts";
 
 const BATCH_SIZE = 20;
 const MAX_BACKOFF_MINUTES = 60;
@@ -18,18 +26,53 @@ interface JobQueueRow {
 
 /**
  * Checklist 3.10: central job_queue dispatcher, invoked every 1 min by
- * app/api/cron/dispatch-jobs/route.ts (Checklist 2.8). Only claims
- * job_types with a registered handler below — anything else (e.g.
- * notify_vendor_booking, parse_driver_details — Phase 2d/2e) is left
- * `queued` untouched rather than mis-marked as failed.
+ * app/api/cron/dispatch-jobs/route.ts (Checklist 2.8). Registers a handler
+ * for every job_type currently enqueued anywhere in the app (WhatsApp
+ * webhook, `finalize_quote_booking` RPC, admin driver-details correction
+ * route) — anything with no registered handler is left `queued` untouched
+ * rather than mis-marked as failed.
+ *
+ * Checklist 3.1/3.3/3.4 compatibility note: `match-vendor-rate-bands`
+ * stays as the colocated `lib/matching/matchVendorRateBands.ts` server
+ * function (Checklist 3.1 explicitly allows "direct SQL if colocated").
+ * `compute-negotiation` and `finalize-booking` are implemented through
+ * this worker's shared handlers plus locked Postgres RPCs (migration
+ * 0009) rather than as separate always-standalone-invoked function
+ * folders — functionally equivalent for every caller that matters
+ * (this worker and the webhook-enqueued jobs it processes), so no rework
+ * was needed there for this phase.
+ *
+ * `dispatch_lifecycle_events`/`expire_stale_quotes` are cron-triggered
+ * directly (Checklist 3.8/3.9, via their own Edge Function + Next cron
+ * route) rather than through `job_queue` — they're still registered here
+ * so a manually-enqueued job of either type is also handled.
  */
 const HANDLERS: Record<string, (supabase: SupabaseClient, payload: Record<string, unknown>) => Promise<void>> = {
-  // deno-lint-ignore no-explicit-any
-  send_quotes: (supabase, payload) => handleSendQuotes(supabase, payload as any),
-  // deno-lint-ignore no-explicit-any
-  compute_negotiation: (supabase, payload) => handleComputeNegotiation(supabase, payload as any),
-  // deno-lint-ignore no-explicit-any
-  finalize_booking: (supabase, payload) => handleFinalizeBooking(supabase, payload as any),
+  send_quotes: (supabase, payload) =>
+    handleSendQuotes(supabase, payload as unknown as { trip_request_id: string }),
+  compute_negotiation: (supabase, payload) =>
+    handleComputeNegotiation(supabase, payload as unknown as { quote_snapshot_id: string }),
+  finalize_booking: (supabase, payload) =>
+    handleFinalizeBooking(supabase, payload as unknown as { quote_snapshot_id: string; lock_type: "full_payment" | "token_99" }),
+  notify_vendor_booking: (supabase, payload) =>
+    handleNotifyVendorBooking(supabase, payload as unknown as { booking_id: string }),
+  parse_driver_details: (supabase, payload) =>
+    handleParseDriverDetails(
+      supabase,
+      payload as unknown as { raw_message_text: string; from_phone: string; wa_message_id?: string },
+    ),
+  send_confirmation_card: (supabase, payload) =>
+    handleSendConfirmationCard(supabase, payload as unknown as { booking_id: string }),
+  dispatch_lifecycle_events: (supabase) => handleDispatchLifecycleEvents(supabase).then(() => undefined),
+  expire_stale_quotes: (supabase) => handleExpireStaleQuotes(supabase).then(() => undefined),
+  record_lifecycle_response: (supabase, payload) =>
+    handleRecordLifecycleResponse(
+      supabase,
+      payload as unknown as { lifecycle_event_id: string; response: "ok" | "help_requested" },
+    ),
+  ops_alert: (supabase, payload) => handleOpsAlert(supabase, payload),
+  record_review: (supabase, payload) =>
+    handleRecordReview(supabase, payload as unknown as { booking_id: string; rating: number }),
 };
 
 function backoffRunAfter(attempts: number): string {
