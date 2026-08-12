@@ -1,10 +1,23 @@
-import type { DateOption, TripPreset, VehicleTypeOption } from "./types";
+import type { DateOption, TripPreset, VehicleTypeOption, VehicleTypeCode } from "./types";
 
 export const VEHICLE_TYPES: VehicleTypeOption[] = [
   { code: "sedan", label: "Sedan", seatCapacity: 4, who: "Couples & small families" },
   { code: "suv", label: "SUV", seatCapacity: 6, who: "Groups up to 6" },
   { code: "tempo", label: "Tempo Traveller", seatCapacity: 12, who: "Large groups" },
 ];
+
+/**
+ * POST /api/trip-requests needs a numeric `requested_vehicle_type_id`
+ * (vehicle_types.id), but the app never fetches vehicle_types over the
+ * network today. These ids mirror the fixed, deterministic seed order in
+ * supabase/migrations/20260810000100_0001_core_actors.sql (sedan, suv,
+ * tempo) — if that seed ever changes, this map must change with it.
+ */
+export const VEHICLE_TYPE_IDS_BY_CODE: Record<VehicleTypeCode, number> = {
+  sedan: 1,
+  suv: 2,
+  tempo: 3,
+};
 
 export const TRIP_PRESETS: TripPreset[] = [
   { id: "valley-loop", name: "Srinagar - Gulmarg - Pahalgam", days: 5, meta: "Classic valley loop" },

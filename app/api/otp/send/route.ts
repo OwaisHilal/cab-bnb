@@ -68,7 +68,16 @@ export async function POST(request: NextRequest) {
   }
 
   if (!channel) {
-    return jsonError(500, "OTP delivery failed on all channels (WhatsApp and SMS are unavailable or unconfigured)");
+    // WhatsApp and SMS are both unavailable — surface a controlled fallback
+    // signal (Plan §2) instead of a dead-end error, so the UI can offer
+    // Phone.Email verification instead of the OTP code-entry step. No
+    // otp_verifications row is written here since no code was delivered.
+    return jsonOk({
+      sent: false,
+      channel: null,
+      fallback: "phone_email" as const,
+      message: "WhatsApp verification is unavailable. Verify securely with Phone.Email instead.",
+    });
   }
 
   const otpCodeHash = await hashOtpCode(code);

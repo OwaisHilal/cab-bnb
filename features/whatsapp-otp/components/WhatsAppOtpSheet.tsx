@@ -1,6 +1,10 @@
 import { Button } from "@/components/ui/Button";
 import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
-import type { OtpState } from "@/features/whatsapp-otp/types";
+import type { OtpDeliveryChannel, OtpState } from "@/features/whatsapp-otp/types";
+import {
+  PhoneEmailAdapter,
+  type PhoneEmailClientPayload,
+} from "@/features/phone-email/components/PhoneEmailAdapter";
 
 interface WhatsAppOtpSheetProps {
   otp: OtpState;
@@ -9,7 +13,13 @@ interface WhatsAppOtpSheetProps {
   onSendOtp: () => void;
   onVerifyOtp: () => void;
   onEditPhone: () => void;
+  onVerifyPhoneEmail: (payload: PhoneEmailClientPayload) => void;
 }
+
+const CODE_ENTRY_COPY: Record<Exclude<OtpDeliveryChannel, "phone_email">, string> = {
+  whatsapp: "Enter the code from WhatsApp.",
+  sms: "Enter the code from SMS.",
+};
 
 /**
  * Plan §5: quotes are matched instantly server-side; this sheet only gates
@@ -24,6 +34,7 @@ export function WhatsAppOtpSheet({
   onSendOtp,
   onVerifyOtp,
   onEditPhone,
+  onVerifyPhoneEmail,
 }: WhatsAppOtpSheetProps) {
   return (
     <>
@@ -84,7 +95,9 @@ export function WhatsAppOtpSheet({
         {otp.step === "code" && (
           <div className="flex flex-col gap-3.5">
             <h2 className="font-archivo text-[23px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink">
-              Enter the code from WhatsApp.
+              {otp.deliveryChannel && otp.deliveryChannel !== "phone_email"
+                ? CODE_ENTRY_COPY[otp.deliveryChannel]
+                : CODE_ENTRY_COPY.whatsapp}
             </h2>
             <p className="font-archivo text-xs font-medium text-kmr-muted-2">
               Sent to +91 {otp.phone} ·{" "}
@@ -110,6 +123,30 @@ export function WhatsAppOtpSheet({
             <Button onClick={onVerifyOtp} disabled={otp.isSubmitting}>
               {otp.isSubmitting ? "Verifying…" : "Verify & see my quotes"}
             </Button>
+          </div>
+        )}
+
+        {otp.step === "phone_email" && (
+          <div className="flex flex-col gap-3.5">
+            <h2 className="font-archivo text-[23px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink">
+              WhatsApp verification is unavailable.
+            </h2>
+            <p className="font-archivo text-[12.5px] font-medium leading-[1.55] text-kmr-muted-1">
+              Verify securely with Phone.Email instead.
+            </p>
+            <PhoneEmailAdapter onVerified={onVerifyPhoneEmail} />
+            {otp.error && (
+              <span className="text-center font-mono text-[10px] font-semibold text-kmr-orange">
+                {otp.error}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={onEditPhone}
+              className="text-center font-mono text-[9px] font-medium tracking-[1px] text-kmr-blue underline"
+            >
+              TRY WHATSAPP AGAIN
+            </button>
           </div>
         )}
 

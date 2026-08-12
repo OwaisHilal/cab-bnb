@@ -4,6 +4,7 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk, jsonValidationError } from "@/lib/api/errors";
 import { OTP_CODE_LENGTH, OTP_MAX_ATTEMPTS } from "@/lib/otp/config";
 import { verifyOtpCode } from "@/lib/otp/hashOtpCode";
+import { completePhoneVerification } from "@/lib/otp/completePhoneVerification";
 
 const otpVerifySchema = z.object({
   session_id: z.string().min(1),
@@ -79,17 +80,19 @@ export async function POST(request: NextRequest) {
     return jsonError(400, "Incorrect OTP");
   }
 
-  const { data: tripRequest, error: tripRequestError } = await supabase
-    .from("trip_requests")
-    .select("id")
-    .eq("id", trip_request_id)
-    .maybeSingle();
+  // Run the shared linking/enqueue step before marking the OTP row verified:
+  // if this fails (e.g. session/trip_request mismatch), the code itself is
+  // still untouched and the tourist can retry with the same OTP.
+  const completionResult = await completePhoneVerification({
+    supabase,
+    sessionId: session_id,
+    phoneE164: phone_e164,
+    tripRequestId: trip_request_id,
+    verifiedBy: "otp_code",
+  });
 
-  if (tripRequestError) {
-    return jsonError(500, `Failed to fetch trip request: ${tripRequestError.message}`);
-  }
-  if (!tripRequest) {
-    return jsonError(404, `trip_request ${trip_request_id} not found`);
+  if (!completionResult.ok) {
+    return jsonError(completionResult.status, completionResult.message);
   }
 
   const { error: otpVerifiedUpdateError } = await supabase
@@ -99,34 +102,6 @@ export async function POST(request: NextRequest) {
 
   if (otpVerifiedUpdateError) {
     return jsonError(500, `Failed to mark OTP verified: ${otpVerifiedUpdateError.message}`);
-  }
-
-  const { data: tourist, error: touristUpsertError } = await supabase
-    .from("tourists")
-    .upsert({ phone_e164 }, { onConflict: "phone_e164" })
-    .select("id")
-    .single();
-
-  if (touristUpsertError || !tourist) {
-    return jsonError(500, `Failed to upsert tourist: ${touristUpsertError?.message ?? "unknown error"}`);
-  }
-
-  const { error: tripRequestUpdateError } = await supabase
-    .from("trip_requests")
-    .update({ tourist_id: tourist.id, status: "otp_pending" })
-    .eq("id", trip_request_id);
-
-  if (tripRequestUpdateError) {
-    return jsonError(500, `Failed to link trip request: ${tripRequestUpdateError.message}`);
-  }
-
-  const { error: jobEnqueueError } = await supabase.from("job_queue").insert({
-    job_type: "send_quotes",
-    payload: { trip_request_id },
-  });
-
-  if (jobEnqueueError) {
-    return jsonError(500, `Failed to enqueue send_quotes job: ${jobEnqueueError.message}`);
   }
 
   return jsonOk({ verified: true, trip_request_id });

@@ -7,6 +7,8 @@ import {
   MIN_PAX_COUNT,
   MIN_TRIP_DAYS,
   SEDAN_SEAT_CAPACITY,
+  UPCOMING_DATES,
+  VEHICLE_TYPE_IDS_BY_CODE,
   VEHICLE_TYPES,
 } from "@/features/booking-request/constants";
 import type {
@@ -19,8 +21,12 @@ import {
 } from "@/features/quote-dispatch/constants";
 import type { DispatchVendorRow } from "@/features/quote-dispatch/types";
 import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
-import type { OtpState } from "@/features/whatsapp-otp/types";
+import type { OtpDeliveryChannel, OtpState } from "@/features/whatsapp-otp/types";
 import type { BookingSummaryUi, QuoteRowUi } from "@/features/booking-status/types";
+import { getOrCreateClientSessionId } from "@/lib/utils/clientSession";
+import { toIndianE164 } from "@/lib/utils/phone";
+import { getPhoneEmailProviderMode } from "@/features/phone-email/components/PhoneEmailAdapter";
+import type { PhoneEmailClientPayload } from "@/features/phone-email/components/PhoneEmailAdapter";
 
 type PrimaryScreen = "home" | "booking" | "profile";
 type Overlay = "none" | "sheet" | "dispatch" | "otp";
@@ -50,6 +56,8 @@ function createOtpState(): OtpState {
     step: "phone",
     phone: "",
     code: "",
+    deliveryChannel: null,
+    phoneEmailMode: getPhoneEmailProviderMode(),
     isSubmitting: false,
     error: null,
   };
@@ -92,6 +100,14 @@ export function useBookingFlow() {
   const [otp, setOtp] = useState<OtpState>(createOtpState);
   const [isVerified, setIsVerified] = useState(false);
   const [booking, setBooking] = useState<BookingSummaryUi | null>(null);
+  // Lazy-initialized rather than set in an effect: sessionStorage isn't
+  // available during SSR, so this resolves to "" on the server and the
+  // real session id on the client's first render — no rendered output
+  // depends on this value, so there's nothing for hydration to mismatch on.
+  const [sessionId] = useState<string>(() =>
+    typeof window === "undefined" ? "" : getOrCreateClientSessionId(),
+  );
+  const [tripRequestId, setTripRequestId] = useState<string | null>(null);
 
   const dispatchTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -164,10 +180,35 @@ export function useBookingFlow() {
     }, DISPATCH_ROW_INTERVAL_MS);
   }, [isVerified]);
 
-  const submitRequest = useCallback(() => {
+  const submitRequest = useCallback(async () => {
     setOverlay("none");
     runDispatch();
-  }, [runDispatch]);
+
+    if (!sessionId) return;
+
+    const isoDate =
+      draft.customDate ??
+      UPCOMING_DATES.find((date) => date.id === draft.selectedDateId)?.isoDate ??
+      UPCOMING_DATES[0].isoDate;
+
+    try {
+      const response = await fetch("/api/trip-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          trip_start_date: isoDate,
+          trip_days: draft.days,
+          pax_count: draft.paxCount,
+          requested_vehicle_type_id: VEHICLE_TYPE_IDS_BY_CODE[draft.vehicleType],
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as { trip_request_id?: string } | null;
+      setTripRequestId(response.ok && typeof data?.trip_request_id === "string" ? data.trip_request_id : null);
+    } catch {
+      setTripRequestId(null);
+    }
+  }, [draft, runDispatch, sessionId]);
 
   const setPhone = useCallback((phone: string) => {
     setOtp((prev) => ({ ...prev, phone, error: null }));
@@ -177,41 +218,157 @@ export function useBookingFlow() {
     setOtp((prev) => ({ ...prev, code, error: null }));
   }, []);
 
-  const sendOtp = useCallback(() => {
-    if (otp.phone.replace(/\D/g, "").length < 10) {
+  // Shared by both verification paths (Plan §8): OTP-code success and
+  // Phone.Email fallback success both land here.
+  const completeVerification = useCallback(() => {
+    const quotes = buildMockQuotes(draft.days, draft.vehicleType);
+    setBooking({
+      bookingRef: "KMR-2381",
+      summaryLabel: `${draft.days} days · ${draft.paxCount} travellers · ${draft.vehicleType.toUpperCase()}`,
+      quotes,
+    });
+    setIsVerified(true);
+    setOtp((prev) => ({ ...prev, isSubmitting: false, step: "verified", error: null }));
+    setTimeout(() => {
+      setOverlay("none");
+      setScreen("booking");
+    }, 900);
+  }, [draft.days, draft.paxCount, draft.vehicleType]);
+
+  const sendOtp = useCallback(async () => {
+    const localDigits = otp.phone.replace(/\D/g, "");
+    if (localDigits.length < 10) {
       setOtp((prev) => ({ ...prev, error: "Enter a valid 10-digit number" }));
       return;
     }
-    setOtp((prev) => ({ ...prev, isSubmitting: true }));
-    setTimeout(() => {
-      setOtp((prev) => ({ ...prev, isSubmitting: false, step: "code" }));
-    }, 500);
-  }, [otp.phone]);
+    if (!sessionId) {
+      setOtp((prev) => ({ ...prev, error: "Still getting things ready — try again in a moment." }));
+      return;
+    }
 
-  const verifyOtp = useCallback(() => {
+    setOtp((prev) => ({ ...prev, isSubmitting: true, error: null }));
+
+    try {
+      const response = await fetch("/api/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, phone_e164: toIndianE164(localDigits) }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setOtp((prev) => ({
+          ...prev,
+          isSubmitting: false,
+          error: (data as { error?: string } | null)?.error ?? "Couldn't send OTP. Try again.",
+        }));
+        return;
+      }
+
+      if (data?.fallback === "phone_email") {
+        setOtp((prev) => ({
+          ...prev,
+          isSubmitting: false,
+          step: "phone_email",
+          deliveryChannel: null,
+          phoneEmailMode: getPhoneEmailProviderMode(),
+          error: null,
+        }));
+        return;
+      }
+
+      const channel = data?.channel as OtpDeliveryChannel | undefined;
+      if (data?.sent && (channel === "whatsapp" || channel === "sms")) {
+        setOtp((prev) => ({ ...prev, isSubmitting: false, step: "code", deliveryChannel: channel, error: null }));
+        return;
+      }
+
+      setOtp((prev) => ({ ...prev, isSubmitting: false, error: "Couldn't send OTP. Try again." }));
+    } catch {
+      setOtp((prev) => ({ ...prev, isSubmitting: false, error: "Network error. Try again." }));
+    }
+  }, [otp.phone, sessionId]);
+
+  const verifyOtp = useCallback(async () => {
     if (otp.code.length < OTP_CODE_LENGTH) {
       setOtp((prev) => ({ ...prev, error: `Enter the ${OTP_CODE_LENGTH}-digit code` }));
       return;
     }
-    setOtp((prev) => ({ ...prev, isSubmitting: true }));
-    setTimeout(() => {
-      const quotes = buildMockQuotes(draft.days, draft.vehicleType);
-      setBooking({
-        bookingRef: "KMR-2381",
-        summaryLabel: `${draft.days} days · ${draft.paxCount} travellers · ${draft.vehicleType.toUpperCase()}`,
-        quotes,
+    if (!sessionId || !tripRequestId) {
+      setOtp((prev) => ({ ...prev, error: "Something went wrong with your request. Please start over." }));
+      return;
+    }
+
+    setOtp((prev) => ({ ...prev, isSubmitting: true, error: null }));
+
+    try {
+      const response = await fetch("/api/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          phone_e164: toIndianE164(otp.phone),
+          otp_code: otp.code,
+          trip_request_id: tripRequestId,
+        }),
       });
-      setIsVerified(true);
-      setOtp((prev) => ({ ...prev, isSubmitting: false, step: "verified" }));
-      setTimeout(() => {
-        setOverlay("none");
-        setScreen("booking");
-      }, 900);
-    }, 600);
-  }, [draft.days, draft.paxCount, draft.vehicleType, otp.code.length]);
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setOtp((prev) => ({
+          ...prev,
+          isSubmitting: false,
+          error: (data as { error?: string } | null)?.error ?? "Incorrect OTP",
+        }));
+        return;
+      }
+
+      completeVerification();
+    } catch {
+      setOtp((prev) => ({ ...prev, isSubmitting: false, error: "Network error. Try again." }));
+    }
+  }, [completeVerification, otp.code, otp.phone, sessionId, tripRequestId]);
+
+  const verifyPhoneEmail = useCallback(
+    async (providerPayload: PhoneEmailClientPayload) => {
+      if (!sessionId || !tripRequestId) {
+        setOtp((prev) => ({ ...prev, error: "Something went wrong with your request. Please start over." }));
+        return;
+      }
+
+      setOtp((prev) => ({ ...prev, isSubmitting: true, error: null }));
+
+      try {
+        const response = await fetch("/api/otp/phone-email/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            trip_request_id: tripRequestId,
+            provider_payload: providerPayload,
+          }),
+        });
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          setOtp((prev) => ({
+            ...prev,
+            isSubmitting: false,
+            error: (data as { error?: string } | null)?.error ?? "Couldn't verify with Phone.Email.",
+          }));
+          return;
+        }
+
+        completeVerification();
+      } catch {
+        setOtp((prev) => ({ ...prev, isSubmitting: false, error: "Network error. Try again." }));
+      }
+    },
+    [completeVerification, sessionId, tripRequestId],
+  );
 
   const editPhone = useCallback(() => {
-    setOtp((prev) => ({ ...prev, step: "phone", code: "", error: null }));
+    setOtp((prev) => ({ ...prev, step: "phone", code: "", deliveryChannel: null, error: null }));
   }, []);
 
   const recommendation = buildRecommendation(draft.days, draft.paxCount, draft.vehicleType);
@@ -242,6 +399,7 @@ export function useBookingFlow() {
     setCode,
     sendOtp,
     verifyOtp,
+    verifyPhoneEmail,
     editPhone,
   };
 }
