@@ -1,8 +1,10 @@
 import "server-only";
+import { jwtVerify } from "jose";
 import type { PhoneEmailVerificationPayload, VerifyPhoneEmailProofResult } from "./types";
 
 const DEFAULT_ALLOWED_HOST = "user.phone.email";
 const FETCH_TIMEOUT_MS = 5000;
+const GETUSER_ENDPOINT = "https://eapi.phone.email/getuser";
 
 /**
  * Server-only allowlist for the `user_json_url` Phone.Email hands back to
@@ -114,6 +116,113 @@ async function verifyViaUserJsonUrl(userJsonUrl: string): Promise<VerifyPhoneEma
   };
 }
 
+interface PhoneEmailGetUserResponse {
+  status?: number;
+  country_code?: string;
+  phone_no?: string;
+  ph_email_jwt?: string;
+}
+
+function normalizePhoneParts(countryCode: string, phoneNumber: string): string | null {
+  const normalizedCountryCode = countryCode.replace(/[^\d]/g, "");
+  const normalizedPhoneNumber = phoneNumber.replace(/[^\d]/g, "");
+  if (!normalizedCountryCode || !normalizedPhoneNumber) return null;
+  return `+${normalizedCountryCode}${normalizedPhoneNumber}`;
+}
+
+/**
+ * Phone.Email's current docs-backed flow for this project's credentials
+ * (Plan §2 audit): the frontend hands back an `access_token` from its auth
+ * popup, and the backend exchanges it — server-side, with the server-only
+ * `PHONE_EMAIL_CLIENT_ID` — for the actual verified phone number via
+ * `eapi.phone.email/getuser`. The response also carries `ph_email_jwt`,
+ * which we validate against `PHONE_VERIFICATION_API_KEY` before trusting
+ * the phone number it (redundantly) carries as claims, per Phone.Email's
+ * documented API-key usage.
+ */
+async function verifyViaAccessToken(accessToken: string): Promise<VerifyPhoneEmailProofResult> {
+  const clientId = process.env.PHONE_EMAIL_CLIENT_ID || process.env.NEXT_PUBLIC_PHONE_EMAIL_CLIENT_ID;
+  const apiKey = process.env.PHONE_VERIFICATION_API_KEY;
+
+  if (!clientId) {
+    return { ok: false, status: 500, message: "Phone.Email is not configured on the server (missing client id)" };
+  }
+  if (!apiKey) {
+    return { ok: false, status: 500, message: "Phone.Email is not configured on the server (missing API key)" };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    const body = new URLSearchParams({ access_token: accessToken, client_id: clientId });
+    response = await fetch(GETUSER_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      status: 502,
+      message: `Failed to reach Phone.Email getuser API: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) {
+    return { ok: false, status: 502, message: `Phone.Email getuser API returned ${response.status}` };
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    return { ok: false, status: 502, message: "Phone.Email getuser API returned invalid JSON" };
+  }
+
+  if (typeof payload !== "object" || payload === null) {
+    return { ok: false, status: 502, message: "Phone.Email getuser API returned an unexpected payload" };
+  }
+
+  const record = payload as PhoneEmailGetUserResponse;
+  if (record.status !== 200) {
+    return { ok: false, status: 401, message: "Phone.Email could not verify this access token" };
+  }
+
+  const { country_code: countryCode, phone_no: phoneNumber, ph_email_jwt: jwt } = record;
+  if (typeof countryCode !== "string" || !countryCode.trim() || typeof phoneNumber !== "string" || !phoneNumber.trim()) {
+    return { ok: false, status: 502, message: "Phone.Email getuser API is missing phone number fields" };
+  }
+  if (typeof jwt !== "string" || !jwt) {
+    return { ok: false, status: 502, message: "Phone.Email getuser API did not return a verification token" };
+  }
+
+  try {
+    await jwtVerify(jwt, new TextEncoder().encode(apiKey), { algorithms: ["HS256"] });
+  } catch (error) {
+    return {
+      ok: false,
+      status: 401,
+      message: `Phone.Email verification token failed validation: ${
+        error instanceof Error ? error.message : "unknown error"
+      }`,
+    };
+  }
+
+  const phoneE164 = normalizePhoneParts(countryCode, phoneNumber);
+  if (!phoneE164) {
+    return { ok: false, status: 502, message: "Phone.Email getuser API returned an unparseable phone number" };
+  }
+
+  return { ok: true, user: { phoneE164 } };
+}
+
 /**
  * The React `phone-email-auth` / `clientId` flow's `userInfo` contract has
  * not been confirmed against TL-provided dashboard configuration yet (Plan
@@ -132,6 +241,9 @@ function verifyViaUserInfo(): VerifyPhoneEmailProofResult {
 export async function verifyPhoneEmailProof(
   payload: PhoneEmailVerificationPayload,
 ): Promise<VerifyPhoneEmailProofResult> {
+  if (payload.mode === "access_token") {
+    return verifyViaAccessToken(payload.access_token);
+  }
   if (payload.mode === "user_json_url") {
     return verifyViaUserJsonUrl(payload.user_json_url);
   }

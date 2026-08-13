@@ -10,10 +10,12 @@ export type OtpDeliveryChannel = "whatsapp" | "sms" | "phone_email";
 /**
  * Mirrors the isolation boundary in features/phone-email/components/PhoneEmailAdapter.tsx:
  * this UI never assumes which Phone.Email frontend integration is configured,
- * only whether one is ("generated_button" | "react_client") or isn't yet
- * ("unconfigured") — see Plan §5/§7.
+ * only whether one is ("access_token" | "generated_button" | "react_client")
+ * or isn't yet ("unconfigured") — see Plan §5/§7. "access_token" is the
+ * implemented CLIENT_ID + popup + eapi.phone.email/getuser flow; the other
+ * two configured modes remain placeholders pending their own dashboard flow.
  */
-export type PhoneEmailProviderMode = "generated_button" | "react_client" | "unconfigured";
+export type PhoneEmailProviderMode = "access_token" | "generated_button" | "react_client" | "unconfigured";
 
 export interface OtpState {
   step: OtpStep;

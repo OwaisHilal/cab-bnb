@@ -6,6 +6,7 @@ import { verifyPhoneEmailProof } from "@/lib/phone-email/verifyPhoneEmailProof";
 import { completePhoneVerification } from "@/lib/otp/completePhoneVerification";
 
 const providerPayloadSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("access_token"), access_token: z.string().min(1) }),
   z.object({ mode: z.literal("user_json_url"), user_json_url: z.string().min(1) }),
   z.object({ mode: z.literal("user_info"), user_info: z.unknown() }),
 ]);
