@@ -71,16 +71,27 @@ export async function completePhoneVerification(
     };
   }
 
+  // A duplicate or late verification (e.g. a replayed OTP submit, or
+  // Phone.Email finishing after the OTP-code path already advanced this
+  // trip_request) must never push status back to `otp_pending` once it
+  // has moved on to quotes_sent/negotiating/booked/etc. Only advance the
+  // status when it's still in a pre-send state; always link the tourist.
+  const shouldAdvanceToOtpPending = QUOTE_JOB_ELIGIBLE_STATUSES.has(tripRequest.status);
+
   const { error: tripRequestUpdateError } = await supabase
     .from("trip_requests")
-    .update({ tourist_id: tourist.id, status: "otp_pending" })
+    .update(
+      shouldAdvanceToOtpPending
+        ? { tourist_id: tourist.id, status: "otp_pending" }
+        : { tourist_id: tourist.id },
+    )
     .eq("id", tripRequestId);
 
   if (tripRequestUpdateError) {
     return { ok: false, status: 500, message: `Failed to link trip request: ${tripRequestUpdateError.message}` };
   }
 
-  if (QUOTE_JOB_ELIGIBLE_STATUSES.has(tripRequest.status)) {
+  if (shouldAdvanceToOtpPending) {
     const { error: jobEnqueueError } = await supabase.from("job_queue").insert({
       job_type: "send_quotes",
       payload: { trip_request_id: tripRequestId, verified_by: verifiedBy },

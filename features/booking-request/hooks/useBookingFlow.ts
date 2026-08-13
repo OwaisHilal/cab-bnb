@@ -357,6 +357,16 @@ export function useBookingFlow() {
   // has no anon SELECT policy today (migration 0008). Stops as soon as any
   // quote rows come back, on exhausting QUOTE_POLL_MAX_ATTEMPTS, or once a
   // newer trip request supersedes this one via `activePollTripRequestId`.
+  //
+  // Phase 5 readiness fix pass (audit gap G3): Realtime is intentionally
+  // deferred rather than implemented here. Wiring browser Supabase Realtime
+  // today would require either an anon SELECT policy on trip_requests/
+  // quote_snapshots (widening exposure beyond the service-role-only model
+  // in 0008_rls_policies.sql) or a UUID-only access-control workaround,
+  // both of which are security regressions. Revisit once the auth/RLS
+  // model has a real per-session/per-tourist identity to scope Realtime
+  // subscriptions to; keep this polling fallback as the sole delivery
+  // path until then.
   const pollTripRequestSnapshot = useCallback(async (requestId: string) => {
     activePollTripRequestId.current = requestId;
 
