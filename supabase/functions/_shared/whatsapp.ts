@@ -118,6 +118,32 @@ export async function sendWhatsAppTextMessage(
 }
 
 /**
+ * Sends a WhatsApp image message with a caption via the Cloud API's
+ * link-based media send (`image.link`) — no upload/media-id step needed,
+ * so any publicly reachable HTTPS image URL (Supabase Storage public URL,
+ * CDN asset, etc.) works directly (Checklist 3.7 final pass / Plan §6.4).
+ */
+export async function sendWhatsAppImageMessage(
+  phoneE164: string,
+  imageUrl: string,
+  caption: string,
+): Promise<SendWhatsAppResult> {
+  const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
+  const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
+
+  if (!accessToken || !phoneNumberId) {
+    return { configured: false, success: false, error: "WhatsApp Cloud API credentials are not configured" };
+  }
+
+  return postWhatsAppMessage(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp",
+    to: phoneE164.replace(/^\+/, ""),
+    type: "image",
+    image: { link: imageUrl, caption },
+  });
+}
+
+/**
  * SMS fallback stub — no SMS provider has been chosen yet, mirroring the
  * documented gap in lib/sms/sendOtpSms.ts. Reports `configured: false`
  * rather than faking success, so callers correctly treat this as a failed

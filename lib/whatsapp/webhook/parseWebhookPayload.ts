@@ -1,4 +1,4 @@
-import type { InboundInteractionType, InboundWhatsAppMessage } from "./types";
+import type { InboundInteractionType, InboundWhatsAppMessage, InboundWhatsAppStatus } from "./types";
 
 interface RawInteractiveReply {
   id?: string;
@@ -16,8 +16,15 @@ interface RawMessage {
   };
 }
 
+interface RawStatus {
+  id?: string;
+  status?: string;
+  timestamp?: string;
+}
+
 interface RawChangeValue {
   messages?: RawMessage[];
+  statuses?: RawStatus[];
 }
 
 interface RawChange {
@@ -35,8 +42,9 @@ interface RawWebhookPayload {
 /**
  * Meta nests inbound messages under entry[].changes[].value.messages[]
  * (Checklist 2.5). Status-only webhook deliveries (delivered/read
- * receipts) carry no `messages` array and are intentionally skipped —
- * Plan §7 only cares about customer/vendor replies, not delivery receipts.
+ * receipts) carry no `messages` array and are skipped here — see
+ * `parseWebhookStatuses` below for that separate event shape (Phase 3
+ * final pass, Plan §8's `viewed` quote_snapshot state).
  */
 export function parseWebhookPayload(payload: unknown): InboundWhatsAppMessage[] {
   const raw = payload as RawWebhookPayload;
@@ -73,4 +81,34 @@ export function parseWebhookPayload(payload: unknown): InboundWhatsAppMessage[] 
   }
 
   return messages;
+}
+
+/**
+ * Meta nests message delivery-status events under
+ * entry[].changes[].value.statuses[] — a completely separate array from
+ * `messages[]` on the same webhook `value` object (a single POST can
+ * carry either, both, or neither). Phase 3 final pass: only `status ===
+ * "read"` is consumed today, to advance `quote_snapshots.status` from
+ * `sent` to `viewed` (Plan §8) — `delivered`/`sent`/`failed` statuses are
+ * parsed but left for callers to ignore.
+ */
+export function parseWebhookStatuses(payload: unknown): InboundWhatsAppStatus[] {
+  const raw = payload as RawWebhookPayload;
+  const statuses: InboundWhatsAppStatus[] = [];
+
+  for (const entry of raw?.entry ?? []) {
+    for (const change of entry?.changes ?? []) {
+      for (const status of change?.value?.statuses ?? []) {
+        if (!status.id || !status.status) continue;
+
+        statuses.push({
+          waMessageId: status.id,
+          status: status.status,
+          timestamp: status.timestamp ?? new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  return statuses;
 }

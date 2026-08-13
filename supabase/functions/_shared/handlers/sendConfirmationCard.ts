@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { sendWhatsAppTextMessage } from "../whatsapp.ts";
+import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "../whatsapp.ts";
 import { logOutboundWhatsAppMessage } from "../messageLog.ts";
 import { firstOrSelf } from "../relations.ts";
 
@@ -14,6 +14,7 @@ interface BookingRow {
   tourists: { phone_e164: string } | { phone_e164: string }[] | null;
   vendors: { business_name: string } | { business_name: string }[] | null;
   trip_requests: { pickup_location: string | null } | { pickup_location: string | null }[] | null;
+  vehicle_types: { code: string } | { code: string }[] | null;
 }
 
 interface DriverDetailRow {
@@ -100,14 +101,30 @@ async function scheduleLifecycleEvents(
 }
 
 /**
+ * Resolves the optional confirmation-card image URL from env, preferring a
+ * per-vehicle override over the generic fallback (Plan §6.4 final pass):
+ * `CONFIRMATION_CARD_IMAGE_URL_<VEHICLE_CODE_UPPER>` (e.g. `_SEDAN`) then
+ * `CONFIRMATION_CARD_IMAGE_URL`. Returns null when neither is configured,
+ * which callers treat as "stay text-only".
+ */
+function resolveConfirmationCardImageUrl(vehicleCode: string | null): string | null {
+  if (vehicleCode) {
+    const perVehicleUrl = Deno.env.get(`CONFIRMATION_CARD_IMAGE_URL_${vehicleCode.toUpperCase()}`);
+    if (perVehicleUrl) return perVehicleUrl;
+  }
+
+  return Deno.env.get("CONFIRMATION_CARD_IMAGE_URL") ?? null;
+}
+
+/**
  * Checklist 3.7 / Plan §6.4: sends the customer confirmation card once
  * driver details are attached, then schedules the post-booking lifecycle
  * touchpoints (Plan §6.5) and advances the booking to `ready_for_pickup`.
  *
- * Image/media confirmation cards aren't modeled yet (no media storage
- * wired up) — sends text-only for now; the data access here is already
- * structured so a media URL can be added to the WhatsApp payload later
- * without changing this job's payload shape.
+ * Sends an image+caption message when a `CONFIRMATION_CARD_IMAGE_URL*` env
+ * var resolves to a URL for this booking's vehicle type, otherwise falls
+ * back to the original text-only message — no media storage/upload step
+ * is needed since the Cloud API accepts a public image link directly.
  */
 export async function handleSendConfirmationCard(
   supabase: SupabaseClient,
@@ -118,7 +135,7 @@ export async function handleSendConfirmationCard(
   const { data: booking, error: bookingError } = await supabase
     .from("bookings")
     .select(
-      "id, status, pickup_at, trip_days, tourist_id, tourists(phone_e164), vendors(business_name), trip_requests(pickup_location)",
+      "id, status, pickup_at, trip_days, tourist_id, tourists(phone_e164), vendors(business_name), trip_requests(pickup_location), vehicle_types(code)",
     )
     .eq("id", booking_id)
     .maybeSingle();
@@ -146,7 +163,12 @@ export async function handleSendConfirmationCard(
   if (!driverDetail) throw new Error(`booking ${booking_id} has no parsed driver details yet`);
 
   const bodyText = buildConfirmationMessage(row, driverDetail as DriverDetailRow);
-  const sendResult = await sendWhatsAppTextMessage(touristPhone, bodyText);
+  const vehicleCode = firstOrSelf(row.vehicle_types)?.code ?? null;
+  const imageUrl = resolveConfirmationCardImageUrl(vehicleCode);
+
+  const sendResult = imageUrl
+    ? await sendWhatsAppImageMessage(touristPhone, imageUrl, bodyText)
+    : await sendWhatsAppTextMessage(touristPhone, bodyText);
 
   if (!sendResult.success) {
     throw new Error(`Failed to send confirmation card: ${sendResult.error}`);

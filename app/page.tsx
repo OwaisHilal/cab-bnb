@@ -43,6 +43,7 @@ export default function Home() {
           step={flow.sheetStep}
           draft={flow.draft}
           recommendation={flow.recommendation}
+          requestError={flow.requestError}
           onClose={flow.closeSheet}
           onStepChange={flow.goToStep}
           onDaysChange={flow.setDays}
@@ -58,6 +59,7 @@ export default function Home() {
         <DispatchScreen
           rows={flow.dispatchRows}
           summaryLabel={`${flow.draft.days} days · ${flow.draft.paxCount} travellers · ${flow.draft.vehicleType.toUpperCase()}`}
+          requestRef={flow.requestRef}
         />
       )}
 

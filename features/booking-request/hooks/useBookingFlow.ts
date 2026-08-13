@@ -16,13 +16,11 @@ import type {
   BookingRequestStep,
   VehicleTypeCode,
 } from "@/features/booking-request/types";
-import {
-  DISPATCH_ROW_INTERVAL_MS,
-} from "@/features/quote-dispatch/constants";
+import { QUOTE_REVEAL_DELAY_MS } from "@/features/quote-dispatch/constants";
 import type { DispatchVendorRow } from "@/features/quote-dispatch/types";
 import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
 import type { OtpDeliveryChannel, OtpState } from "@/features/whatsapp-otp/types";
-import type { BookingSummaryUi, QuoteRowUi } from "@/features/booking-status/types";
+import type { BookingSummaryUi, QuoteRowUi, QuoteSnapshotStatusUi } from "@/features/booking-status/types";
 import { getOrCreateClientSessionId } from "@/lib/utils/clientSession";
 import { toIndianE164 } from "@/lib/utils/phone";
 import { getPhoneEmailProviderMode } from "@/features/phone-email/components/PhoneEmailAdapter";
@@ -31,7 +29,51 @@ import type { PhoneEmailClientPayload } from "@/features/phone-email/components/
 type PrimaryScreen = "home" | "booking" | "profile";
 type Overlay = "none" | "sheet" | "dispatch" | "otp";
 
-const VENDOR_ROSTER = ["Vale Cabs", "Himways", "GK Tours", "Snowline", "Zoji Go"];
+// Retries for ~90s: covers one app/api/cron/dispatch-jobs cycle (every 1
+// min, per vercel.json) plus buffer for send-quotes to actually deliver,
+// without polling indefinitely if something upstream is stuck.
+const QUOTE_POLL_INTERVAL_MS = 3000;
+const QUOTE_POLL_MAX_ATTEMPTS = 30;
+
+const QUOTE_SNAPSHOT_STATUSES: readonly QuoteSnapshotStatusUi[] = [
+  "pending_send",
+  "sent",
+  "viewed",
+  "negotiating",
+  "finalized",
+  "expired",
+  "lost",
+];
+
+function isKnownQuoteStatus(value: string): value is QuoteSnapshotStatusUi {
+  return (QUOTE_SNAPSHOT_STATUSES as readonly string[]).includes(value);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface TripRequestCreateResponse {
+  trip_request_id: string;
+  matched_vendor_count: number;
+  recommendation: { recommended_vehicle_type_id: number; reason: string | null } | null;
+}
+
+interface TripRequestSnapshotQuote {
+  id: string;
+  vendor_name: string;
+  vehicle_type_label: string;
+  current_quote: number;
+  is_best_price: boolean;
+  status: string;
+}
+
+interface TripRequestSnapshotResponse {
+  trip_request_id: string;
+  status: string;
+  matched_vendor_count: number;
+  quotes: TripRequestSnapshotQuote[];
+}
 
 function createDraft(): BookingRequestDraft {
   return {
@@ -43,11 +85,11 @@ function createDraft(): BookingRequestDraft {
   };
 }
 
-function createDispatchRows(): DispatchVendorRow[] {
-  return VENDOR_ROSTER.map((name, index) => ({
+function createDispatchRows(vendorCount: number): DispatchVendorRow[] {
+  return Array.from({ length: vendorCount }, (_, index) => ({
     id: `vendor-${index}`,
-    name,
-    status: "pending",
+    name: `Verified operator ${index + 1}`,
+    status: "pending" as const,
   }));
 }
 
@@ -71,24 +113,19 @@ function buildRecommendation(days: number, pax: number, vehicleType: VehicleType
   return `${sedanCount} sedans won't seat ${pax} comfortably for ${days} days — matched vendors include SUV quotes too.`;
 }
 
-function buildMockQuotes(days: number, vehicleType: VehicleTypeCode): QuoteRowUi[] {
-  const baseByVehicle: Record<VehicleTypeCode, number> = {
-    sedan: 3400,
-    suv: 5400,
-    tempo: 8200,
+function buildRequestRef(tripRequestId: string | null): string {
+  return tripRequestId ? `REQ-${tripRequestId.slice(0, 8).toUpperCase()}` : "REQUEST PENDING";
+}
+
+function toQuoteRowUi(quote: TripRequestSnapshotQuote, previouslySeenIds: ReadonlySet<string>): QuoteRowUi {
+  return {
+    id: quote.id,
+    vendorName: quote.vendor_name,
+    priceLabel: `\u20b9${quote.current_quote.toLocaleString("en-IN")}`,
+    isBestPrice: quote.is_best_price,
+    status: isKnownQuoteStatus(quote.status) ? quote.status : "sent",
+    isNew: !previouslySeenIds.has(quote.id),
   };
-  const base = baseByVehicle[vehicleType] * days;
-  return VENDOR_ROSTER.slice(0, 3).map((name, index) => {
-    const price = Math.round((base + index * 1500) / 50) * 50;
-    return {
-      id: `quote-${index}`,
-      vendorName: name,
-      priceLabel: `₹${price.toLocaleString("en-IN")}`,
-      isBestPrice: index === 0,
-      status: "sent",
-      isNew: index === 0,
-    };
-  });
 }
 
 export function useBookingFlow() {
@@ -96,10 +133,11 @@ export function useBookingFlow() {
   const [overlay, setOverlay] = useState<Overlay>("none");
   const [sheetStep, setSheetStep] = useState<BookingRequestStep>(0);
   const [draft, setDraft] = useState<BookingRequestDraft>(createDraft);
-  const [dispatchRows, setDispatchRows] = useState<DispatchVendorRow[]>(createDispatchRows);
+  const [dispatchRows, setDispatchRows] = useState<DispatchVendorRow[]>([]);
   const [otp, setOtp] = useState<OtpState>(createOtpState);
   const [isVerified, setIsVerified] = useState(false);
   const [booking, setBooking] = useState<BookingSummaryUi | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
   // Lazy-initialized rather than set in an effect: sessionStorage isn't
   // available during SSR, so this resolves to "" on the server and the
   // real session id on the client's first render — no rendered output
@@ -110,12 +148,27 @@ export function useBookingFlow() {
   const [tripRequestId, setTripRequestId] = useState<string | null>(null);
 
   const dispatchTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const dispatchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activePollTripRequestId = useRef<string | null>(null);
+  const seenQuoteIdsRef = useRef<Set<string>>(new Set());
+
+  const clearDispatchTimers = useCallback(() => {
+    if (dispatchTimer.current) {
+      clearInterval(dispatchTimer.current);
+      dispatchTimer.current = null;
+    }
+    if (dispatchTimeout.current) {
+      clearTimeout(dispatchTimeout.current);
+      dispatchTimeout.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
-      if (dispatchTimer.current) clearInterval(dispatchTimer.current);
+      clearDispatchTimers();
+      activePollTripRequestId.current = null;
     };
-  }, []);
+  }, [clearDispatchTimers]);
 
   const openSheet = useCallback(() => {
     setSheetStep(0);
@@ -156,35 +209,53 @@ export function useBookingFlow() {
     setDraft((prev) => ({ ...prev, days }));
   }, []);
 
-  const runDispatch = useCallback(() => {
-    setDispatchRows(createDispatchRows());
-    setOverlay("dispatch");
-    let index = 0;
-    dispatchTimer.current = setInterval(() => {
-      index += 1;
-      setDispatchRows((rows) =>
-        rows.map((row, rowIndex) => ({
-          ...row,
-          status: rowIndex < index ? "matched" : rowIndex === index ? "matching" : "pending",
-        })),
-      );
-      if (index >= VENDOR_ROSTER.length) {
-        if (dispatchTimer.current) clearInterval(dispatchTimer.current);
-        setTimeout(() => {
-          setOverlay(isVerified ? "none" : "otp");
-          if (isVerified) {
-            setScreen("booking");
-          }
-        }, 500);
-      }
-    }, DISPATCH_ROW_INTERVAL_MS);
-  }, [isVerified]);
+  // Paces the "checking vendors" animation to the trip's actual matched
+  // vendor count (Checklist Phase 4 / Plan §5) while still guaranteeing the
+  // OTP modal appears after exactly QUOTE_REVEAL_DELAY_MS, regardless of
+  // how many rows there are to animate through.
+  const runDispatch = useCallback(
+    (vendorCount: number) => {
+      clearDispatchTimers();
+      setDispatchRows(createDispatchRows(vendorCount));
+      setOverlay("dispatch");
+
+      const rowIntervalMs = Math.max(300, Math.floor(QUOTE_REVEAL_DELAY_MS / (vendorCount + 1)));
+      let index = 0;
+
+      dispatchTimer.current = setInterval(() => {
+        index += 1;
+        setDispatchRows((rows) =>
+          rows.map((row, rowIndex) => ({
+            ...row,
+            status: rowIndex < index ? "matched" : rowIndex === index ? "matching" : "pending",
+          })),
+        );
+        if (index >= vendorCount && dispatchTimer.current) {
+          clearInterval(dispatchTimer.current);
+          dispatchTimer.current = null;
+        }
+      }, rowIntervalMs);
+
+      dispatchTimeout.current = setTimeout(() => {
+        clearDispatchTimers();
+        setOverlay(isVerified ? "none" : "otp");
+        if (isVerified) setScreen("booking");
+      }, QUOTE_REVEAL_DELAY_MS);
+    },
+    [clearDispatchTimers, isVerified],
+  );
 
   const submitRequest = useCallback(async () => {
+    clearDispatchTimers();
     setOverlay("none");
-    runDispatch();
+    setRequestError(null);
+    setDispatchRows([]);
 
-    if (!sessionId) return;
+    if (!sessionId) {
+      setRequestError("Still getting things ready — try again in a moment.");
+      setOverlay("sheet");
+      return;
+    }
 
     const isoDate =
       draft.customDate ??
@@ -203,12 +274,32 @@ export function useBookingFlow() {
           requested_vehicle_type_id: VEHICLE_TYPE_IDS_BY_CODE[draft.vehicleType],
         }),
       });
-      const data = (await response.json().catch(() => null)) as { trip_request_id?: string } | null;
-      setTripRequestId(response.ok && typeof data?.trip_request_id === "string" ? data.trip_request_id : null);
+      const data = (await response.json().catch(() => null)) as Partial<TripRequestCreateResponse> | null;
+
+      if (!response.ok || typeof data?.trip_request_id !== "string") {
+        setTripRequestId(null);
+        setRequestError("Couldn't create your request. Please try again.");
+        setOverlay("sheet");
+        return;
+      }
+
+      setTripRequestId(data.trip_request_id);
+
+      const matchedVendorCount = typeof data.matched_vendor_count === "number" ? data.matched_vendor_count : 0;
+
+      if (matchedVendorCount <= 0) {
+        setRequestError("No verified operators are available for this route yet. Try different dates or group size.");
+        setOverlay("sheet");
+        return;
+      }
+
+      runDispatch(matchedVendorCount);
     } catch {
       setTripRequestId(null);
+      setRequestError("Network error. Please try again.");
+      setOverlay("sheet");
     }
-  }, [draft, runDispatch, sessionId]);
+  }, [clearDispatchTimers, draft, runDispatch, sessionId]);
 
   const setPhone = useCallback((phone: string) => {
     setOtp((prev) => ({ ...prev, phone, error: null }));
@@ -218,22 +309,70 @@ export function useBookingFlow() {
     setOtp((prev) => ({ ...prev, code, error: null }));
   }, []);
 
+  // Polls the customer-safe GET /api/trip-requests/[id] snapshot (Checklist
+  // 2.2 fallback path — option "b" from the Phase 4 audit) instead of a
+  // browser Realtime subscription, since RLS on trip_requests/quote_snapshots
+  // has no anon SELECT policy today (migration 0008). Stops as soon as any
+  // quote rows come back, on exhausting QUOTE_POLL_MAX_ATTEMPTS, or once a
+  // newer trip request supersedes this one via `activePollTripRequestId`.
+  const pollTripRequestSnapshot = useCallback(async (requestId: string) => {
+    activePollTripRequestId.current = requestId;
+
+    for (let attempt = 0; attempt < QUOTE_POLL_MAX_ATTEMPTS; attempt += 1) {
+      if (activePollTripRequestId.current !== requestId) return;
+
+      try {
+        const response = await fetch(`/api/trip-requests/${requestId}`);
+        const data = (await response.json().catch(() => null)) as Partial<TripRequestSnapshotResponse> | null;
+
+        if (response.ok && data && Array.isArray(data.quotes) && data.quotes.length > 0) {
+          const rows = data.quotes.map((quote) => toQuoteRowUi(quote, seenQuoteIdsRef.current));
+          seenQuoteIdsRef.current = new Set(data.quotes.map((quote) => quote.id));
+          if (activePollTripRequestId.current === requestId) {
+            setBooking((prev) => (prev ? { ...prev, quotes: rows, isAwaitingQuotes: false } : prev));
+          }
+          return;
+        }
+      } catch {
+        // Transient network error — fall through and retry on the next attempt.
+      }
+
+      if (activePollTripRequestId.current !== requestId) return;
+      await sleep(QUOTE_POLL_INTERVAL_MS);
+    }
+
+    if (activePollTripRequestId.current === requestId) {
+      setBooking((prev) => (prev ? { ...prev, isAwaitingQuotes: false } : prev));
+    }
+  }, []);
+
   // Shared by both verification paths (Plan §8): OTP-code success and
   // Phone.Email fallback success both land here.
   const completeVerification = useCallback(() => {
-    const quotes = buildMockQuotes(draft.days, draft.vehicleType);
+    if (!tripRequestId) {
+      setOtp((prev) => ({
+        ...prev,
+        isSubmitting: false,
+        error: "Something went wrong with your request. Please start over.",
+      }));
+      return;
+    }
+
+    seenQuoteIdsRef.current = new Set();
     setBooking({
-      bookingRef: "KMR-2381",
+      bookingRef: buildRequestRef(tripRequestId),
       summaryLabel: `${draft.days} days · ${draft.paxCount} travellers · ${draft.vehicleType.toUpperCase()}`,
-      quotes,
+      quotes: [],
+      isAwaitingQuotes: true,
     });
     setIsVerified(true);
     setOtp((prev) => ({ ...prev, isSubmitting: false, step: "verified", error: null }));
+    void pollTripRequestSnapshot(tripRequestId);
     setTimeout(() => {
       setOverlay("none");
       setScreen("booking");
     }, 900);
-  }, [draft.days, draft.paxCount, draft.vehicleType]);
+  }, [draft.days, draft.paxCount, draft.vehicleType, pollTripRequestSnapshot, tripRequestId]);
 
   const sendOtp = useCallback(async () => {
     const localDigits = otp.phone.replace(/\D/g, "");
@@ -372,6 +511,7 @@ export function useBookingFlow() {
   }, []);
 
   const recommendation = buildRecommendation(draft.days, draft.paxCount, draft.vehicleType);
+  const requestRef = buildRequestRef(tripRequestId);
 
   return {
     screen,
@@ -382,6 +522,8 @@ export function useBookingFlow() {
     otp,
     booking,
     recommendation,
+    requestError,
+    requestRef,
     navigateHome: () => setScreen("home"),
     navigateBooking: () => setScreen("booking"),
     navigateProfile: () => setScreen("profile"),

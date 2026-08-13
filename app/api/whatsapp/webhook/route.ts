@@ -3,12 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk } from "@/lib/api/errors";
 import { verifyWebhookSignature } from "@/lib/whatsapp/webhook/verifyWebhookSignature";
-import { parseWebhookPayload } from "@/lib/whatsapp/webhook/parseWebhookPayload";
+import { parseWebhookPayload, parseWebhookStatuses } from "@/lib/whatsapp/webhook/parseWebhookPayload";
 import { parseInboundAction } from "@/lib/whatsapp/webhook/parseInboundAction";
 import { enqueueWebhookAction } from "@/lib/whatsapp/webhook/enqueueWebhookAction";
-import type { InboundWhatsAppMessage } from "@/lib/whatsapp/webhook/types";
+import type { InboundWhatsAppMessage, InboundWhatsAppStatus } from "@/lib/whatsapp/webhook/types";
 
 const DUPLICATE_KEY_ERROR_CODE = "23505";
+const READ_STATUS = "read";
 
 /**
  * Checklist 2.5 GET: Meta's webhook subscription challenge-response.
@@ -80,7 +81,47 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const statuses = parseWebhookStatuses(payload);
+
+  for (const status of statuses) {
+    try {
+      await applyStatusUpdate(supabase, status);
+    } catch (error) {
+      // Same fast-ack contract as inbound messages above — status events
+      // are DB-only side effects (Plan §8's `viewed` state), never worth
+      // failing the whole webhook delivery over.
+      console.error("[whatsapp webhook] failed to process status event", error);
+    }
+  }
+
   return jsonOk({ received: true });
+}
+
+/**
+ * Phase 3 final pass / Plan §8: a `read` status on a `sent` quote_snapshot
+ * means the customer opened the consolidated quote message — advance it
+ * to `viewed`. Guarded by `.eq("status", "sent")` so this is a no-op once
+ * negotiation/booking has already moved the snapshot further along the
+ * state machine. Also mirrors the raw status onto whatsapp_message_log for
+ * observability, independent of whether any quote_snapshot matched.
+ */
+async function applyStatusUpdate(supabase: SupabaseClient, status: InboundWhatsAppStatus): Promise<void> {
+  const { error: logError } = await supabase
+    .from("whatsapp_message_log")
+    .update({ wa_status: status.status })
+    .eq("wa_message_id", status.waMessageId);
+
+  if (logError) throw new Error(`Failed to update whatsapp_message_log status: ${logError.message}`);
+
+  if (status.status !== READ_STATUS) return;
+
+  const { error: snapshotError } = await supabase
+    .from("quote_snapshots")
+    .update({ status: "viewed" })
+    .eq("wa_message_id", status.waMessageId)
+    .eq("status", "sent");
+
+  if (snapshotError) throw new Error(`Failed to mark quote_snapshot viewed: ${snapshotError.message}`);
 }
 
 /**

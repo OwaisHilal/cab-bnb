@@ -12,6 +12,10 @@
     {
       "path": "/api/cron/expire-stale-quotes",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/vendor-reply-timeouts",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

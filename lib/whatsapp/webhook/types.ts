@@ -35,3 +35,10 @@ export interface ParsedAction {
   rating?: number;
   driverDetails?: ParsedDriverDetails;
 }
+
+/** Meta message delivery-status event (`entry[].changes[].value.statuses[]`). */
+export interface InboundWhatsAppStatus {
+  waMessageId: string;
+  status: string;
+  timestamp: string;
+}

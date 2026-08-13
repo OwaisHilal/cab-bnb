@@ -12,6 +12,7 @@ import { handleExpireStaleQuotes } from "../_shared/handlers/expireStaleQuotes.t
 import { handleRecordLifecycleResponse } from "../_shared/handlers/recordLifecycleResponse.ts";
 import { handleOpsAlert } from "../_shared/handlers/opsAlert.ts";
 import { handleRecordReview } from "../_shared/handlers/recordReview.ts";
+import { handleVendorReplyTimeouts } from "../_shared/handlers/vendorReplyTimeouts.ts";
 
 const BATCH_SIZE = 20;
 const MAX_BACKOFF_MINUTES = 60;
@@ -42,10 +43,11 @@ interface JobQueueRow {
  * (this worker and the webhook-enqueued jobs it processes), so no rework
  * was needed there for this phase.
  *
- * `dispatch_lifecycle_events`/`expire_stale_quotes` are cron-triggered
- * directly (Checklist 3.8/3.9, via their own Edge Function + Next cron
- * route) rather than through `job_queue` — they're still registered here
- * so a manually-enqueued job of either type is also handled.
+ * `dispatch_lifecycle_events`/`expire_stale_quotes`/`vendor_reply_timeouts`
+ * are cron-triggered directly (Checklist 3.8/3.9, Plan §9, via their own
+ * Edge Function + Next cron route) rather than through `job_queue` —
+ * they're still registered here so a manually-enqueued job of any of
+ * those types is also handled.
  */
 const HANDLERS: Record<string, (supabase: SupabaseClient, payload: Record<string, unknown>) => Promise<void>> = {
   send_quotes: (supabase, payload) =>
@@ -73,6 +75,7 @@ const HANDLERS: Record<string, (supabase: SupabaseClient, payload: Record<string
   ops_alert: (supabase, payload) => handleOpsAlert(supabase, payload),
   record_review: (supabase, payload) =>
     handleRecordReview(supabase, payload as unknown as { booking_id: string; rating: number }),
+  vendor_reply_timeouts: (supabase) => handleVendorReplyTimeouts(supabase).then(() => undefined),
 };
 
 function backoffRunAfter(attempts: number): string {

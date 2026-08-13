@@ -5,6 +5,7 @@ import type { DispatchVendorRow } from "@/features/quote-dispatch/types";
 interface DispatchScreenProps {
   rows: DispatchVendorRow[];
   summaryLabel: string;
+  requestRef: string;
 }
 
 /**
@@ -13,7 +14,7 @@ interface DispatchScreenProps {
  * has already completed server-side — this animation never blocks on live
  * vendor replies.
  */
-export function DispatchScreen({ rows, summaryLabel }: DispatchScreenProps) {
+export function DispatchScreen({ rows, summaryLabel, requestRef }: DispatchScreenProps) {
   return (
     <div className="absolute inset-0 flex flex-col gap-4 bg-white p-[30px] pb-6 pt-[30px] animate-kmr-fade">
       <TopBar />
@@ -33,7 +34,7 @@ export function DispatchScreen({ rows, summaryLabel }: DispatchScreenProps) {
           </div>
           <div className="flex flex-1 flex-col gap-0.5 pb-1">
             <span className="font-mono text-[8.5px] font-semibold tracking-[1.5px] text-kmr-muted-3">
-              REQUEST #KMR-2381
+              {requestRef}
             </span>
             <span className="font-archivo text-[14.5px] font-bold leading-[1.35] tracking-[-0.2px] text-kmr-ink">
               {summaryLabel}

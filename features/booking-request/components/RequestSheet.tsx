@@ -14,6 +14,7 @@ interface RequestSheetProps {
   step: BookingRequestStep;
   draft: BookingRequestDraft;
   recommendation: string | null;
+  requestError: string | null;
   onClose: () => void;
   onStepChange: (step: BookingRequestStep) => void;
   onDaysChange: (delta: number) => void;
@@ -28,6 +29,7 @@ export function RequestSheet({
   step,
   draft,
   recommendation,
+  requestError,
   onClose,
   onStepChange,
   onDaysChange,
@@ -94,6 +96,7 @@ export function RequestSheet({
           <StepSummary
             draft={draft}
             recommendation={recommendation}
+            requestError={requestError}
             onSelectDate={onSelectDate}
             onCustomDate={onCustomDate}
             onEditDays={() => onStepChange(0)}
@@ -268,6 +271,7 @@ function StepVehicle({
 function StepSummary({
   draft,
   recommendation,
+  requestError,
   onSelectDate,
   onCustomDate,
   onEditDays,
@@ -277,6 +281,7 @@ function StepSummary({
 }: {
   draft: BookingRequestDraft;
   recommendation: string | null;
+  requestError: string | null;
   onSelectDate: (dateId: string) => void;
   onCustomDate: (isoDate: string) => void;
   onEditDays: () => void;
@@ -369,6 +374,12 @@ function StepSummary({
           </p>
         )}
       </div>
+
+      {requestError && (
+        <span className="text-center font-mono text-[10px] font-semibold text-kmr-orange">
+          {requestError}
+        </span>
+      )}
 
       <Button onClick={onSubmit}>Get my quotes</Button>
       <span className="text-center font-mono text-[9px] font-medium tracking-[1px] text-kmr-muted-3">
