@@ -3,19 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PhoneEmailProviderMode } from "@/features/whatsapp-otp/types";
 
-/**
- * Mirrors lib/phone-email/types.ts's PhoneEmailVerificationPayload. Kept as
- * a separate frontend-local type (rather than importing the server module
- * directly into a "use client" file) since this is the client-side half of
- * the same contract.
- */
-export type PhoneEmailClientPayload =
-  | { mode: "access_token"; access_token: string }
-  | { mode: "user_json_url"; user_json_url: string }
-  | { mode: "user_info"; user_info: unknown };
-
 interface PhoneEmailAdapterProps {
-  onVerified: (payload: PhoneEmailClientPayload) => void;
+  /**
+   * Called synchronously right before the Phone.Email popup opens — the
+   * caller's last chance to persist whatever it needs into sessionStorage
+   * (session/trip request id, draft) so
+   * features/booking-request/hooks/useBookingFlow.ts can resume once the
+   * main tab is redirected to /phone-email/callback. Phone.Email's own
+   * hosted popup does that redirect via `window.opener.location` once the
+   * user finishes verifying — not this component — so persisting has to
+   * happen up front, before we lose control of when the tab navigates.
+   */
+  onBeforeRedirect?: () => void;
   onUnavailable?: (message: string) => void;
 }
 
@@ -36,89 +35,55 @@ export function getPhoneEmailProviderMode(): PhoneEmailProviderMode {
 
 const UNAVAILABLE_MESSAGE =
   "Backup verification is being configured. Please try WhatsApp again shortly.";
-const POPUP_BLOCKED_MESSAGE =
-  "Your browser blocked the verification pop-up. Please allow pop-ups for this site and try again.";
+const POPUP_BLOCKED_MESSAGE = "Please allow pop-ups for this site, then try again.";
 const CALLBACK_PATH = "/phone-email/callback";
-const CALLBACK_MESSAGE_SOURCE = "phone-email-callback";
-const POPUP_FEATURES = "width=420,height=640,noopener=no,noreferrer=no";
+const POPUP_NAME = "peLoginWindow";
+const POPUP_WIDTH = 500;
+const POPUP_HEIGHT = 560;
+const POPUP_POLL_MS = 500;
 
-interface PhoneEmailCallbackMessage {
-  source: string;
-  access_token?: string;
-  error?: string;
-}
-
-function isPhoneEmailCallbackMessage(data: unknown): data is PhoneEmailCallbackMessage {
-  return (
-    typeof data === "object" &&
-    data !== null &&
-    (data as { source?: unknown }).source === CALLBACK_MESSAGE_SOURCE
-  );
+function buildPopupFeatures(): string {
+  const top = Math.max(0, Math.round((window.screen.height - POPUP_HEIGHT) / 2));
+  const left = Math.max(0, Math.round((window.screen.width - POPUP_WIDTH) / 2));
+  return `toolbar=0,scrollbars=0,location=0,statusbar=0,menubar=0,resizable=0,width=${POPUP_WIDTH},height=${POPUP_HEIGHT},top=${top},left=${left}`;
 }
 
 /**
  * The only component in this codebase allowed to know about Phone.Email's
  * frontend integration details (Plan §7). Implements the docs-backed
- * "access_token" popup flow that matches this project's CLIENT_ID + API Key
- * credentials (Plan §2 audit): opens Phone.Email's hosted auth page in a
- * popup, receives `access_token` via a same-origin postMessage relayed by
- * app/phone-email/callback, and hands it to the backend to exchange +
- * validate. The `generated_button`/`react_client` modes stay controlled
- * placeholders — their exact dashboard-generated wiring is still unconfirmed.
- *
- * `onVerified` is the single seam the rest of the app depends on: this
- * component never forwards a raw phone number read from the browser, only
- * Phone.Email's own provider proof.
+ * "access_token" flow that matches this project's CLIENT_ID + API Key
+ * credentials (Plan §2 audit), following Phone.Email's own reference
+ * integration exactly: a named popup that *they* redirect via
+ * `window.opener.location` once the user verifies, then close themselves.
+ * That only works because next.config.ts sends
+ * `Cross-Origin-Opener-Policy: same-origin-allow-popups` on every response
+ * — without it, Chrome's default heuristics sever `window.opener` partway
+ * through Phone.Email's own cross-origin navigation chain, which is what
+ * broke both this and a since-reverted full-redirect attempt. This
+ * component never calls `popup.close()` itself (that's Phone.Email's job,
+ * and is exactly the operation the browser restricts to the window's own
+ * script) — it only reads `popup.closed`, which is always safe cross-origin,
+ * to reset the button if the user abandons the popup. The
+ * `generated_button`/`react_client` modes stay controlled placeholders —
+ * their exact dashboard-generated wiring is still unconfirmed.
  */
-export function PhoneEmailAdapter({ onVerified, onUnavailable }: PhoneEmailAdapterProps) {
+export function PhoneEmailAdapter({ onBeforeRedirect, onUnavailable }: PhoneEmailAdapterProps) {
   const mode = getPhoneEmailProviderMode();
-  const [isWaitingForPopup, setIsWaitingForPopup] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const popupRef = useRef<Window | null>(null);
-  const onVerifiedRef = useRef(onVerified);
-  useEffect(() => {
-    onVerifiedRef.current = onVerified;
-  }, [onVerified]);
-
-  const closePopup = useCallback(() => {
-    if (popupRef.current && !popupRef.current.closed) {
-      popupRef.current.close();
-    }
-    popupRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    if (mode !== "access_token") return;
-
-    function handleMessage(event: MessageEvent) {
-      if (event.origin !== window.location.origin) return;
-      if (!isPhoneEmailCallbackMessage(event.data)) return;
-
-      setIsWaitingForPopup(false);
-      closePopup();
-
-      if (event.data.access_token) {
-        setLocalError(null);
-        onVerifiedRef.current({ mode: "access_token", access_token: event.data.access_token });
-        return;
-      }
-
-      setLocalError(event.data.error || "Phone.Email verification did not complete. Please try again.");
-    }
-
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, [mode, closePopup]);
-
-  useEffect(() => {
-    return () => closePopup();
-  }, [closePopup]);
+  const [isAwaitingPopup, setIsAwaitingPopup] = useState(false);
+  const popupPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (mode === "generated_button" || mode === "react_client" || mode === "unconfigured") {
       onUnavailable?.(UNAVAILABLE_MESSAGE);
     }
   }, [mode, onUnavailable]);
+
+  useEffect(() => {
+    return () => {
+      if (popupPollRef.current) clearInterval(popupPollRef.current);
+    };
+  }, []);
 
   const handleSignIn = useCallback(() => {
     const clientId = process.env.NEXT_PUBLIC_PHONE_EMAIL_CLIENT_ID;
@@ -128,18 +93,27 @@ export function PhoneEmailAdapter({ onVerified, onUnavailable }: PhoneEmailAdapt
     }
 
     setLocalError(null);
+    onBeforeRedirect?.();
+
     const redirectUrl = `${window.location.origin}${CALLBACK_PATH}`;
     const authUrl = `https://www.phone.email/auth/log-in?client_id=${encodeURIComponent(clientId)}&redirect_url=${encodeURIComponent(redirectUrl)}`;
 
-    const popup = window.open(authUrl, "phoneEmailLogin", POPUP_FEATURES);
+    const popup = window.open(authUrl, POPUP_NAME, buildPopupFeatures());
     if (!popup) {
       setLocalError(POPUP_BLOCKED_MESSAGE);
       return;
     }
 
-    popupRef.current = popup;
-    setIsWaitingForPopup(true);
-  }, []);
+    setIsAwaitingPopup(true);
+    if (popupPollRef.current) clearInterval(popupPollRef.current);
+    popupPollRef.current = setInterval(() => {
+      if (popup.closed) {
+        if (popupPollRef.current) clearInterval(popupPollRef.current);
+        popupPollRef.current = null;
+        setIsAwaitingPopup(false);
+      }
+    }, POPUP_POLL_MS);
+  }, [onBeforeRedirect]);
 
   if (mode !== "access_token") {
     return <PhoneEmailUnavailableNotice message={UNAVAILABLE_MESSAGE} />;
@@ -150,13 +124,13 @@ export function PhoneEmailAdapter({ onVerified, onUnavailable }: PhoneEmailAdapt
       <button
         type="button"
         onClick={handleSignIn}
-        disabled={isWaitingForPopup}
+        disabled={isAwaitingPopup}
         aria-label="Sign in with Phone.Email to verify your number"
         className="flex w-full items-center justify-center gap-2.5 rounded-sm bg-kmr-blue px-4 py-3.5 font-archivo text-sm font-bold text-white transition-opacity disabled:opacity-60"
         style={{ height: 52 }}
       >
         <PhoneEmailIcon />
-        {isWaitingForPopup ? "Waiting for verification…" : "Sign In with Phone"}
+        {isAwaitingPopup ? "Waiting for verification…" : "Sign In with Phone"}
       </button>
       {localError && (
         <span

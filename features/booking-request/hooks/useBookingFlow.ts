@@ -24,7 +24,12 @@ import type { BookingSummaryUi, QuoteRowUi, QuoteSnapshotStatusUi } from "@/feat
 import { getOrCreateClientSessionId } from "@/lib/utils/clientSession";
 import { toIndianE164 } from "@/lib/utils/phone";
 import { getPhoneEmailProviderMode } from "@/features/phone-email/components/PhoneEmailAdapter";
-import type { PhoneEmailClientPayload } from "@/features/phone-email/components/PhoneEmailAdapter";
+import {
+  clearVerifiedPhoneEmailResume,
+  peekVerifiedPhoneEmailResume,
+  writePendingPhoneEmailResume,
+} from "@/lib/phone-email/resumeState";
+import type { PhoneEmailResumePayload } from "@/lib/phone-email/resumeState";
 
 type PrimaryScreen = "home" | "booking" | "profile";
 type Overlay = "none" | "sheet" | "dispatch" | "otp";
@@ -129,14 +134,49 @@ function toQuoteRowUi(quote: TripRequestSnapshotQuote, previouslySeenIds: Readon
 }
 
 export function useBookingFlow() {
-  const [screen, setScreen] = useState<PrimaryScreen>("home");
+  // The Phone.Email fallback now redirects the whole tab away and back
+  // (lib/phone-email/resumeState.ts) rather than using a popup, so this
+  // hook's previous instance is gone by the time the user returns — this
+  // peeks sessionStorage once, synchronously, to seed the states below as
+  // if verification had just completed in-place. Deliberately non-
+  // destructive (see peekVerifiedPhoneEmailResume's docs): the actual
+  // sessionStorage cleanup happens in an effect further down, since that's
+  // idempotent and safe under React Strict Mode's dev-only double-invoke,
+  // unlike seeding several useState initializers from a single destructive
+  // read would be.
+  const [resumedPhoneEmailPayload] = useState<PhoneEmailResumePayload | null>(() =>
+    typeof window === "undefined" ? null : peekVerifiedPhoneEmailResume(),
+  );
+
+  const [screen, setScreen] = useState<PrimaryScreen>(() => (resumedPhoneEmailPayload ? "booking" : "home"));
   const [overlay, setOverlay] = useState<Overlay>("none");
   const [sheetStep, setSheetStep] = useState<BookingRequestStep>(0);
-  const [draft, setDraft] = useState<BookingRequestDraft>(createDraft);
+  const [draft, setDraft] = useState<BookingRequestDraft>(() =>
+    resumedPhoneEmailPayload
+      ? {
+          ...createDraft(),
+          days: resumedPhoneEmailPayload.days,
+          paxCount: resumedPhoneEmailPayload.paxCount,
+          vehicleType: resumedPhoneEmailPayload.vehicleType,
+        }
+      : createDraft(),
+  );
   const [dispatchRows, setDispatchRows] = useState<DispatchVendorRow[]>([]);
-  const [otp, setOtp] = useState<OtpState>(createOtpState);
-  const [isVerified, setIsVerified] = useState(false);
-  const [booking, setBooking] = useState<BookingSummaryUi | null>(null);
+  const [otp, setOtp] = useState<OtpState>(() => {
+    const base = createOtpState();
+    return resumedPhoneEmailPayload ? { ...base, step: "verified" } : base;
+  });
+  const [isVerified, setIsVerified] = useState(() => Boolean(resumedPhoneEmailPayload));
+  const [booking, setBooking] = useState<BookingSummaryUi | null>(() =>
+    resumedPhoneEmailPayload
+      ? {
+          bookingRef: buildRequestRef(resumedPhoneEmailPayload.tripRequestId),
+          summaryLabel: `${resumedPhoneEmailPayload.days} days · ${resumedPhoneEmailPayload.paxCount} travellers · ${resumedPhoneEmailPayload.vehicleType.toUpperCase()}`,
+          quotes: [],
+          isAwaitingQuotes: true,
+        }
+      : null,
+  );
   const [requestError, setRequestError] = useState<string | null>(null);
   // Lazy-initialized rather than set in an effect: sessionStorage isn't
   // available during SSR, so this resolves to "" on the server and the
@@ -145,7 +185,9 @@ export function useBookingFlow() {
   const [sessionId] = useState<string>(() =>
     typeof window === "undefined" ? "" : getOrCreateClientSessionId(),
   );
-  const [tripRequestId, setTripRequestId] = useState<string | null>(null);
+  const [tripRequestId, setTripRequestId] = useState<string | null>(
+    () => resumedPhoneEmailPayload?.tripRequestId ?? null,
+  );
 
   const dispatchTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const dispatchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -346,6 +388,17 @@ export function useBookingFlow() {
     }
   }, []);
 
+  // Finishes the resume seeded by resumedPhoneEmailPayload above: clears
+  // the one-time flag (idempotent, safe under Strict Mode's dev-only
+  // double-invoke — unlike the useState seeding, this is a plain external
+  // side effect, not a setState call) and starts the same quote poll
+  // completeVerification() would have started.
+  useEffect(() => {
+    if (!resumedPhoneEmailPayload) return;
+    clearVerifiedPhoneEmailResume();
+    void pollTripRequestSnapshot(resumedPhoneEmailPayload.tripRequestId);
+  }, [resumedPhoneEmailPayload, pollTripRequestSnapshot]);
+
   // Shared by both verification paths (Plan §8): OTP-code success and
   // Phone.Email fallback success both land here.
   const completeVerification = useCallback(() => {
@@ -468,43 +521,20 @@ export function useBookingFlow() {
     }
   }, [completeVerification, otp.code, otp.phone, sessionId, tripRequestId]);
 
-  const verifyPhoneEmail = useCallback(
-    async (providerPayload: PhoneEmailClientPayload) => {
-      if (!sessionId || !tripRequestId) {
-        setOtp((prev) => ({ ...prev, error: "Something went wrong with your request. Please start over." }));
-        return;
-      }
-
-      setOtp((prev) => ({ ...prev, isSubmitting: true, error: null }));
-
-      try {
-        const response = await fetch("/api/otp/phone-email/verify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            session_id: sessionId,
-            trip_request_id: tripRequestId,
-            provider_payload: providerPayload,
-          }),
-        });
-        const data = await response.json().catch(() => null);
-
-        if (!response.ok) {
-          setOtp((prev) => ({
-            ...prev,
-            isSubmitting: false,
-            error: (data as { error?: string } | null)?.error ?? "Couldn't verify with Phone.Email.",
-          }));
-          return;
-        }
-
-        completeVerification();
-      } catch {
-        setOtp((prev) => ({ ...prev, isSubmitting: false, error: "Network error. Try again." }));
-      }
-    },
-    [completeVerification, sessionId, tripRequestId],
-  );
+  // Passed to PhoneEmailAdapter as onBeforeRedirect: the tab is about to
+  // navigate away to Phone.Email and back (Plan: Phone.Email Full Redirect
+  // Flow), so this hook's whole in-memory state — including tripRequestId,
+  // which app/phone-email/callback/page.tsx needs to call the verify API —
+  // won't survive. This is the only state that needs to survive the trip.
+  const persistPhoneEmailResumeState = useCallback(() => {
+    if (typeof window === "undefined" || !tripRequestId) return;
+    writePendingPhoneEmailResume({
+      tripRequestId,
+      days: draft.days,
+      paxCount: draft.paxCount,
+      vehicleType: draft.vehicleType,
+    });
+  }, [draft.days, draft.paxCount, draft.vehicleType, tripRequestId]);
 
   const editPhone = useCallback(() => {
     setOtp((prev) => ({ ...prev, step: "phone", code: "", deliveryChannel: null, error: null }));
@@ -541,7 +571,7 @@ export function useBookingFlow() {
     setCode,
     sendOtp,
     verifyOtp,
-    verifyPhoneEmail,
+    persistPhoneEmailResumeState,
     editPhone,
   };
 }

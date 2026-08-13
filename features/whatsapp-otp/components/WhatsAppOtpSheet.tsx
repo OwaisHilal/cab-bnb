@@ -1,10 +1,7 @@
 import { Button } from "@/components/ui/Button";
 import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
 import type { OtpDeliveryChannel, OtpState } from "@/features/whatsapp-otp/types";
-import {
-  PhoneEmailAdapter,
-  type PhoneEmailClientPayload,
-} from "@/features/phone-email/components/PhoneEmailAdapter";
+import { PhoneEmailAdapter } from "@/features/phone-email/components/PhoneEmailAdapter";
 
 interface WhatsAppOtpSheetProps {
   otp: OtpState;
@@ -13,7 +10,7 @@ interface WhatsAppOtpSheetProps {
   onSendOtp: () => void;
   onVerifyOtp: () => void;
   onEditPhone: () => void;
-  onVerifyPhoneEmail: (payload: PhoneEmailClientPayload) => void;
+  onBeforePhoneEmailRedirect: () => void;
 }
 
 const CODE_ENTRY_COPY: Record<Exclude<OtpDeliveryChannel, "phone_email">, string> = {
@@ -34,7 +31,7 @@ export function WhatsAppOtpSheet({
   onSendOtp,
   onVerifyOtp,
   onEditPhone,
-  onVerifyPhoneEmail,
+  onBeforePhoneEmailRedirect,
 }: WhatsAppOtpSheetProps) {
   return (
     <>
@@ -134,7 +131,7 @@ export function WhatsAppOtpSheet({
             <p className="font-archivo text-[12.5px] font-medium leading-[1.55] text-kmr-muted-1">
               Verify securely with Phone.Email instead.
             </p>
-            <PhoneEmailAdapter onVerified={onVerifyPhoneEmail} />
+            <PhoneEmailAdapter onBeforeRedirect={onBeforePhoneEmailRedirect} />
             {otp.error && (
               <span className="text-center font-mono text-[10px] font-semibold text-kmr-orange">
                 {otp.error}

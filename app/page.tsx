@@ -71,7 +71,7 @@ export default function Home() {
           onSendOtp={flow.sendOtp}
           onVerifyOtp={flow.verifyOtp}
           onEditPhone={flow.editPhone}
-          onVerifyPhoneEmail={flow.verifyPhoneEmail}
+          onBeforePhoneEmailRedirect={flow.persistPhoneEmailResumeState}
         />
       )}
 
