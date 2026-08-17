@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils/cn";
 import { UPCOMING_DATES, VEHICLE_TYPES } from "@/features/booking-request/constants";
@@ -69,7 +70,11 @@ export function RequestSheet({
           >
             ‹
           </button>
-          <span className="font-mono text-[9.5px] font-semibold tracking-[1.5px] text-kmr-muted-2">
+          <span
+            key={step}
+            aria-live="polite"
+            className="animate-kmr-step-label-fade font-mono text-[9.5px] font-semibold tracking-[1.5px] text-kmr-muted-2"
+          >
             {STEP_LABELS[step]}
           </span>
           <button
@@ -85,61 +90,98 @@ export function RequestSheet({
 
         <StepProgress step={step} />
 
-        {step === 0 && <StepDays days={draft.days} onDaysChange={onDaysChange} onNext={() => onStepChange(1)} />}
-        {step === 1 && (
-          <StepTravellers
-            paxCount={draft.paxCount}
-            onPaxChange={onPaxChange}
-            onNext={() => onStepChange(2)}
-          />
-        )}
-        {step === 2 && (
-          <StepVehicle
-            selected={draft.vehicleType}
-            paxCount={draft.paxCount}
-            recommendation={recommendation}
-            onSelect={onVehicleChange}
-            onNext={() => onStepChange(3)}
-          />
-        )}
-        {step === 3 && (
-          <StepSummary
-            draft={draft}
-            recommendation={recommendation}
-            requestError={requestError}
-            isSubmitting={isSubmitting}
-            onSelectDate={onSelectDate}
-            onCustomDate={onCustomDate}
-            onEditDays={() => onStepChange(0)}
-            onEditPax={() => onStepChange(1)}
-            onEditVehicle={() => onStepChange(2)}
-            onSubmit={onSubmit}
-          />
-        )}
+        <StepContentFade step={step}>
+          {step === 0 && (
+            <StepDays days={draft.days} onDaysChange={onDaysChange} onNext={() => onStepChange(1)} />
+          )}
+          {step === 1 && (
+            <StepTravellers
+              paxCount={draft.paxCount}
+              onPaxChange={onPaxChange}
+              onNext={() => onStepChange(2)}
+            />
+          )}
+          {step === 2 && (
+            <StepVehicle
+              selected={draft.vehicleType}
+              paxCount={draft.paxCount}
+              recommendation={recommendation}
+              onSelect={onVehicleChange}
+              onNext={() => onStepChange(3)}
+            />
+          )}
+          {step === 3 && (
+            <StepSummary
+              draft={draft}
+              recommendation={recommendation}
+              requestError={requestError}
+              isSubmitting={isSubmitting}
+              onSelectDate={onSelectDate}
+              onCustomDate={onCustomDate}
+              onEditDays={() => onStepChange(0)}
+              onEditPax={() => onStepChange(1)}
+              onEditVehicle={() => onStepChange(2)}
+              onSubmit={onSubmit}
+            />
+          )}
+        </StepContentFade>
       </div>
     </>
   );
 }
 
-function StepProgress({ step }: { step: BookingRequestStep }) {
-  const nodes = [0, 1, 2, 3];
+function StepContentFade({
+  step,
+  children,
+}: {
+  step: BookingRequestStep;
+  children: ReactNode;
+}) {
   return (
-    <div className="flex items-center">
-      {nodes.map((node, index) => (
-        <div key={node} className="flex flex-1 items-center last:flex-none">
-          <span
-            className={cn(
-              "size-2 flex-none rounded-full",
-              node <= step ? "bg-kmr-blue" : "bg-black/10",
-            )}
-          />
-          {index < nodes.length - 1 && (
+    <div key={step} className="animate-kmr-step-fade min-h-[260px]">
+      {children}
+    </div>
+  );
+}
+
+function StepProgress({ step }: { step: BookingRequestStep }) {
+  const nodes: BookingRequestStep[] = [0, 1, 2, 3];
+  const fillPercent = (step / 3) * 100;
+
+  return (
+    <div
+      role="progressbar"
+      aria-valuenow={step + 1}
+      aria-valuemin={1}
+      aria-valuemax={4}
+      aria-label={`Step ${step + 1} of 4`}
+      className="relative py-1"
+    >
+      <div className="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 bg-black/10" aria-hidden="true" />
+      <div
+        className="kmr-progress-fill absolute left-0 top-1/2 h-0.5 -translate-y-1/2 bg-kmr-blue"
+        style={{ width: `${fillPercent}%` }}
+        aria-hidden="true"
+      />
+      <div className="relative z-10 flex items-center justify-between">
+        {nodes.map((node, index) => {
+          const isActive = node === step;
+          const isComplete = node < step;
+
+          return (
             <span
-              className={cn("h-0.5 flex-1", node < step ? "bg-kmr-blue" : "bg-black/10")}
+              key={node}
+              className={cn(
+                "kmr-step-dot size-2 rounded-full",
+                isComplete || isActive ? "bg-kmr-blue" : "bg-black/10",
+                isActive && "scale-110",
+              )}
+              style={{ transitionDelay: `${index * 25}ms` }}
+              aria-hidden="true"
             />
-          )}
-        </div>
-      ))}
+          );
+        })}
+      </div>
     </div>
   );
 }

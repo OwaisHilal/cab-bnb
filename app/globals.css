@@ -103,6 +103,24 @@ body {
   }
 }
 
+@keyframes kmr-step-fade {
+  from {
+    opacity: 0.75;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes kmr-step-label-fade {
+  from {
+    opacity: 0.7;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .animate-kmr-fade {
   animation: kmr-fade 0.3s ease both;
 }
@@ -127,9 +145,37 @@ body {
   animation: kmr-marquee 22s linear infinite;
 }
 
+.animate-kmr-step-fade {
+  animation: kmr-step-fade 0.32s ease-out both;
+}
+
+.animate-kmr-step-label-fade {
+  animation: kmr-step-label-fade 0.24s ease-out both;
+}
+
+.kmr-progress-fill {
+  transition: width 600ms ease-in-out;
+}
+
+.kmr-step-dot {
+  transition:
+    background-color 600ms ease-in-out,
+    transform 600ms ease-in-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-kmr-marquee {
     animation: none;
+  }
+
+  .animate-kmr-step-fade,
+  .animate-kmr-step-label-fade {
+    animation: none;
+  }
+
+  .kmr-progress-fill,
+  .kmr-step-dot {
+    transition: none;
   }
 }
 
