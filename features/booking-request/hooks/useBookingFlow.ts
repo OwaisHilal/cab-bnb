@@ -22,7 +22,7 @@ import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
 import type { OtpDeliveryChannel, OtpState } from "@/features/whatsapp-otp/types";
 import type { BookingSummaryUi, QuoteRowUi, QuoteSnapshotStatusUi } from "@/features/booking-status/types";
 import { getOrCreateClientSessionId } from "@/lib/utils/clientSession";
-import { toIndianE164 } from "@/lib/utils/phone";
+import { toIndianE164, isValidIndianMobile, sanitizeIndianPhoneInput } from "@/lib/utils/phone";
 import { getPhoneEmailProviderMode } from "@/features/phone-email/components/PhoneEmailAdapter";
 import {
   clearVerifiedPhoneEmailResume,
@@ -178,6 +178,7 @@ export function useBookingFlow() {
       : null,
   );
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   // Lazy-initialized rather than set in an effect: sessionStorage isn't
   // available during SSR, so this resolves to "" on the server and the
   // real session id on the client's first render — no rendered output
@@ -214,10 +215,14 @@ export function useBookingFlow() {
 
   const openSheet = useCallback(() => {
     setSheetStep(0);
+    setIsSubmittingRequest(false);
     setOverlay("sheet");
   }, []);
 
-  const closeSheet = useCallback(() => setOverlay("none"), []);
+  const closeSheet = useCallback(() => {
+    if (isSubmittingRequest) return;
+    setOverlay("none");
+  }, [isSubmittingRequest]);
 
   const goToStep = useCallback((step: BookingRequestStep) => setSheetStep(step), []);
 
@@ -289,11 +294,12 @@ export function useBookingFlow() {
 
   const submitRequest = useCallback(async () => {
     clearDispatchTimers();
-    setOverlay("none");
     setRequestError(null);
     setDispatchRows([]);
+    setIsSubmittingRequest(true);
 
     if (!sessionId) {
+      setIsSubmittingRequest(false);
       setRequestError("Still getting things ready — try again in a moment.");
       setOverlay("sheet");
       return;
@@ -320,6 +326,7 @@ export function useBookingFlow() {
 
       if (!response.ok || typeof data?.trip_request_id !== "string") {
         setTripRequestId(null);
+        setIsSubmittingRequest(false);
         setRequestError("Couldn't create your request. Please try again.");
         setOverlay("sheet");
         return;
@@ -330,21 +337,24 @@ export function useBookingFlow() {
       const matchedVendorCount = typeof data.matched_vendor_count === "number" ? data.matched_vendor_count : 0;
 
       if (matchedVendorCount <= 0) {
+        setIsSubmittingRequest(false);
         setRequestError("No verified operators are available for this route yet. Try different dates or group size.");
         setOverlay("sheet");
         return;
       }
 
+      setIsSubmittingRequest(false);
       runDispatch(matchedVendorCount);
     } catch {
       setTripRequestId(null);
+      setIsSubmittingRequest(false);
       setRequestError("Network error. Please try again.");
       setOverlay("sheet");
     }
   }, [clearDispatchTimers, draft, runDispatch, sessionId]);
 
   const setPhone = useCallback((phone: string) => {
-    setOtp((prev) => ({ ...prev, phone, error: null }));
+    setOtp((prev) => ({ ...prev, phone: sanitizeIndianPhoneInput(phone), error: null }));
   }, []);
 
   const setCode = useCallback((code: string) => {
@@ -438,9 +448,12 @@ export function useBookingFlow() {
   }, [draft.days, draft.paxCount, draft.vehicleType, pollTripRequestSnapshot, tripRequestId]);
 
   const sendOtp = useCallback(async () => {
-    const localDigits = otp.phone.replace(/\D/g, "");
-    if (localDigits.length < 10) {
-      setOtp((prev) => ({ ...prev, error: "Enter a valid 10-digit number" }));
+    const localDigits = sanitizeIndianPhoneInput(otp.phone);
+    if (!isValidIndianMobile(localDigits)) {
+      setOtp((prev) => ({
+        ...prev,
+        error: localDigits.length < 10 ? "Enter a valid 10-digit number" : "Enter a valid Indian mobile number",
+      }));
       return;
     }
     if (!sessionId) {
@@ -563,6 +576,7 @@ export function useBookingFlow() {
     booking,
     recommendation,
     requestError,
+    isSubmittingRequest,
     requestRef,
     navigateHome: () => setScreen("home"),
     navigateBooking: () => setScreen("booking"),

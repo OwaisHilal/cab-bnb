@@ -40,3 +40,24 @@ export const MAX_PAX_COUNT = 20;
 
 export const SEDAN_SEAT_CAPACITY =
   VEHICLE_TYPES.find((vehicle) => vehicle.code === "sedan")?.seatCapacity ?? 4;
+
+export const ORBIT_DESTINATIONS = [
+  "SRINAGAR",
+  "GULMARG",
+  "PAHALGAM",
+  "SONAMARG",
+  "DOODHPATHRI",
+  "YUSMARG",
+  "AHARBAL",
+  "GUREZ",
+] as const;
+
+export const ORBIT_CONFIG = {
+  revolutionMs: 20000,
+  introDelayMs: 400,
+  introFormMs: 1120,
+  introSettleMs: 1104,
+  maxVisibleLabels: 3,
+  throttleMs: 33,
+  maxDpr: 2,
+} as const;

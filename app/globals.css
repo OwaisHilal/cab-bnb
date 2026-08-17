@@ -94,6 +94,15 @@ body {
   }
 }
 
+@keyframes kmr-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
 .animate-kmr-fade {
   animation: kmr-fade 0.3s ease both;
 }
@@ -112,6 +121,16 @@ body {
 
 .animate-kmr-pop {
   animation: kmr-pop 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.animate-kmr-marquee {
+  animation: kmr-marquee 22s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-kmr-marquee {
+    animation: none;
+  }
 }
 
 .font-archivo {

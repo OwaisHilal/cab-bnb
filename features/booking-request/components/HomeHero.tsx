@@ -1,7 +1,31 @@
 import { TopBar } from "@/components/ui/TopBar";
+import { RouteOrbitCanvas } from "@/features/booking-request/components/RouteOrbitCanvas";
 import { TRIP_PRESETS } from "@/features/booking-request/constants";
 
 const VERIFIED_OPERATORS = ["VALE CABS", "himways", "GK TOURS", "SNOWLINE", "ZOJI GO"];
+
+function VerifiedOperatorsMarquee() {
+  const renderOperatorItems = (keyPrefix: string) =>
+    VERIFIED_OPERATORS.map((name) => (
+      <div key={`${keyPrefix}-${name}`} className="flex flex-none items-center gap-4">
+        <span className="whitespace-nowrap font-archivo text-xs font-bold tracking-wide text-kmr-muted-1">
+          {name}
+        </span>
+        <span className="size-1 flex-none rounded-full bg-kmr-orange" />
+      </div>
+    ));
+
+  return (
+    <div className="overflow-hidden" aria-label="Verified operators">
+      <div className="flex w-max animate-kmr-marquee">
+        <div className="flex flex-none items-center gap-4 pr-4">{renderOperatorItems("a")}</div>
+        <div className="flex flex-none items-center gap-4 pr-4" aria-hidden="true">
+          {renderOperatorItems("b")}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface HomeHeroProps {
   onOpenRequest: () => void;
@@ -10,7 +34,7 @@ interface HomeHeroProps {
 
 export function HomeHero({ onOpenRequest, onApplyPreset }: HomeHeroProps) {
   return (
-    <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-[30px] pb-6 pt-[30px]">
+    <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-[30px] pb-[90px] pt-[30px]">
       <TopBar />
 
       <h1 className="mt-2 font-archivo text-[40px] font-extrabold leading-[1.05] tracking-[-1.2px] animate-kmr-reveal">
@@ -23,22 +47,23 @@ export function HomeHero({ onOpenRequest, onApplyPreset }: HomeHeroProps) {
         sent straight to your WhatsApp.
       </p>
 
+      <div className="relative -mx-[30px] h-[100px] flex-none">
+        <RouteOrbitCanvas />
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 w-[60px] bg-gradient-to-r from-white from-[12%] to-transparent"
+          aria-hidden="true"
+        />
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 w-[60px] bg-gradient-to-l from-white from-[12%] to-transparent"
+          aria-hidden="true"
+        />
+      </div>
+
       <div className="flex flex-col gap-2">
         <span className="font-mono text-[9px] font-semibold tracking-[1.5px] text-kmr-muted-3">
           QUOTES FROM VERIFIED OPERATORS
         </span>
-        <div className="flex items-center gap-4 overflow-x-auto pb-0.5">
-          {VERIFIED_OPERATORS.map((name, index) => (
-            <div key={name} className="flex flex-none items-center gap-4">
-              <span className="whitespace-nowrap font-archivo text-xs font-bold tracking-wide text-kmr-muted-1">
-                {name}
-              </span>
-              {index < VERIFIED_OPERATORS.length - 1 && (
-                <span className="size-1 flex-none rounded-full bg-kmr-orange" />
-              )}
-            </div>
-          ))}
-        </div>
+        <VerifiedOperatorsMarquee />
       </div>
 
       <button

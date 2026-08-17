@@ -28,3 +28,4 @@ export interface OtpState {
 }
 
 export const OTP_CODE_LENGTH = 6;
+export const INDIAN_PHONE_DIGITS = 10;

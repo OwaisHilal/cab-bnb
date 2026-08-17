@@ -15,6 +15,7 @@ interface RequestSheetProps {
   draft: BookingRequestDraft;
   recommendation: string | null;
   requestError: string | null;
+  isSubmitting: boolean;
   onClose: () => void;
   onStepChange: (step: BookingRequestStep) => void;
   onDaysChange: (delta: number) => void;
@@ -30,6 +31,7 @@ export function RequestSheet({
   draft,
   recommendation,
   requestError,
+  isSubmitting,
   onClose,
   onStepChange,
   onDaysChange,
@@ -45,7 +47,9 @@ export function RequestSheet({
     <>
       <div
         className="absolute inset-0 animate-kmr-fade bg-black/45"
-        onClick={onClose}
+        onClick={() => {
+          if (!isSubmitting) onClose();
+        }}
         aria-hidden
       />
       <div className="absolute inset-x-0 bottom-0 flex max-h-[92%] flex-col gap-3.5 overflow-y-auto rounded-t-xl bg-white px-5 pb-6 pt-3 animate-kmr-sheet-up">
@@ -54,9 +58,14 @@ export function RequestSheet({
         <div className="flex items-center justify-between">
           <button
             type="button"
-            onClick={() => (canGoBack ? onStepChange((step - 1) as BookingRequestStep) : onClose())}
+            onClick={() => {
+              if (isSubmitting) return;
+              if (canGoBack) onStepChange((step - 1) as BookingRequestStep);
+              else onClose();
+            }}
+            disabled={isSubmitting}
             aria-label="Back"
-            className="flex size-8 items-center justify-center rounded-sm bg-kmr-surface font-archivo text-base font-semibold text-kmr-ink"
+            className="flex size-8 items-center justify-center rounded-sm bg-kmr-surface font-archivo text-base font-semibold text-kmr-ink disabled:opacity-50"
           >
             ‹
           </button>
@@ -66,8 +75,9 @@ export function RequestSheet({
           <button
             type="button"
             onClick={onClose}
+            disabled={isSubmitting}
             aria-label="Close"
-            className="flex size-8 items-center justify-center rounded-sm bg-kmr-surface font-archivo text-sm font-semibold text-kmr-ink"
+            className="flex size-8 items-center justify-center rounded-sm bg-kmr-surface font-archivo text-sm font-semibold text-kmr-ink disabled:opacity-50"
           >
             ×
           </button>
@@ -97,6 +107,7 @@ export function RequestSheet({
             draft={draft}
             recommendation={recommendation}
             requestError={requestError}
+            isSubmitting={isSubmitting}
             onSelectDate={onSelectDate}
             onCustomDate={onCustomDate}
             onEditDays={() => onStepChange(0)}
@@ -272,6 +283,7 @@ function StepSummary({
   draft,
   recommendation,
   requestError,
+  isSubmitting,
   onSelectDate,
   onCustomDate,
   onEditDays,
@@ -282,6 +294,7 @@ function StepSummary({
   draft: BookingRequestDraft;
   recommendation: string | null;
   requestError: string | null;
+  isSubmitting: boolean;
   onSelectDate: (dateId: string) => void;
   onCustomDate: (isoDate: string) => void;
   onEditDays: () => void;
@@ -381,10 +394,14 @@ function StepSummary({
         </span>
       )}
 
-      <Button onClick={onSubmit}>Get my quotes</Button>
-      <span className="text-center font-mono text-[9px] font-medium tracking-[1px] text-kmr-muted-3">
-        QUOTES ARE MATCHED INSTANTLY AGAINST VERIFIED OPERATORS
-      </span>
+      <Button
+        onClick={onSubmit}
+        loading={isSubmitting}
+        loadingLabel="Matching operators…"
+      >
+        Get my quotes
+      </Button>
+      
     </div>
   );
 }

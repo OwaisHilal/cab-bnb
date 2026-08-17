@@ -44,6 +44,7 @@ export default function Home() {
           draft={flow.draft}
           recommendation={flow.recommendation}
           requestError={flow.requestError}
+          isSubmitting={flow.isSubmittingRequest}
           onClose={flow.closeSheet}
           onStepChange={flow.goToStep}
           onDaysChange={flow.setDays}

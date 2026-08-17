@@ -8,6 +8,20 @@ type ButtonVariant = "primary" | "secondary" | "ghost";
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   children: ReactNode;
+  loading?: boolean;
+  loadingLabel?: string;
+}
+
+function Spinner({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "size-4 flex-none animate-spin rounded-full border-2 border-white/30 border-t-white",
+        className,
+      )}
+      aria-hidden="true"
+    />
+  );
 }
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
@@ -25,6 +39,9 @@ export function Button({
   variant = "primary",
   className,
   children,
+  loading = false,
+  loadingLabel,
+  disabled,
   ...rest
 }: ButtonProps) {
   return (
@@ -36,9 +53,18 @@ export function Button({
         VARIANT_CLASSES[variant],
         className,
       )}
+      disabled={disabled || loading}
+      aria-busy={loading}
       {...rest}
     >
-      {children}
+      {loading ? (
+        <span className="flex items-center justify-center gap-2">
+          <Spinner />
+          <span>{loadingLabel ?? "Loading…"}</span>
+        </span>
+      ) : (
+        children
+      )}
     </button>
   );
 }

@@ -1,7 +1,11 @@
+"use client";
+
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { Button } from "@/components/ui/Button";
-import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
+import { INDIAN_PHONE_DIGITS, OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
 import type { OtpDeliveryChannel, OtpState } from "@/features/whatsapp-otp/types";
 import { PhoneEmailAdapter } from "@/features/phone-email/components/PhoneEmailAdapter";
+import { formatIndianPhoneDisplay, isValidIndianMobile } from "@/lib/utils/phone";
 
 interface WhatsAppOtpSheetProps {
   otp: OtpState;
@@ -33,6 +37,36 @@ export function WhatsAppOtpSheet({
   onEditPhone,
   onBeforePhoneEmailRedirect,
 }: WhatsAppOtpSheetProps) {
+  const phoneInputRef = useRef<HTMLInputElement>(null);
+  const codeInputRef = useRef<HTMLInputElement>(null);
+  const phoneDigitCount = otp.phone.length;
+  const phoneIsComplete = phoneDigitCount === INDIAN_PHONE_DIGITS;
+  const phoneIsValid = isValidIndianMobile(otp.phone);
+  const codeIsComplete = otp.code.length === OTP_CODE_LENGTH;
+
+  useEffect(() => {
+    if (otp.step === "phone") {
+      phoneInputRef.current?.focus();
+    }
+    if (otp.step === "code") {
+      codeInputRef.current?.focus();
+    }
+  }, [otp.step]);
+
+  const handlePhoneKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" && phoneIsValid && !otp.isSubmitting) {
+      event.preventDefault();
+      onSendOtp();
+    }
+  };
+
+  const handleCodeKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter" && codeIsComplete && !otp.isSubmitting) {
+      event.preventDefault();
+      onVerifyOtp();
+    }
+  };
+
   return (
     <>
       <div className="absolute inset-0 animate-kmr-fade bg-black/45" aria-hidden />
@@ -61,27 +95,59 @@ export function WhatsAppOtpSheet({
               <ChecklistItem>CHAT &amp; BOOK WITHOUT REOPENING THE APP</ChecklistItem>
               <ChecklistItem>NO CALLS, NO SPAM — JUST YOUR QUOTES</ChecklistItem>
             </div>
-            <div className="flex gap-2">
-              <span className="flex flex-none items-center justify-center rounded-sm bg-kmr-surface px-3 font-mono text-sm font-semibold text-kmr-ink">
-                +91
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="whatsapp-phone" className="font-mono text-[9px] font-semibold tracking-[1.5px] text-kmr-muted-3">
+                YOUR WHATSAPP NUMBER
+              </label>
+              <div className="flex gap-2">
+                <span
+                  className="flex h-[52px] flex-none items-center justify-center rounded-sm bg-kmr-surface px-3 font-mono text-sm font-semibold text-kmr-ink"
+                  aria-hidden="true"
+                >
+                  +91
+                </span>
+                <input
+                  ref={phoneInputRef}
+                  id="whatsapp-phone"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel-national"
+                  placeholder="98765 43210"
+                  maxLength={INDIAN_PHONE_DIGITS + 1}
+                  value={formatIndianPhoneDisplay(otp.phone)}
+                  onChange={(event) => onPhoneChange(event.target.value)}
+                  onKeyDown={handlePhoneKeyDown}
+                  aria-invalid={phoneIsComplete && !phoneIsValid}
+                  aria-describedby="whatsapp-phone-hint"
+                  className="min-w-0 flex-1 rounded-sm bg-kmr-surface px-3.5 font-mono text-base font-semibold tracking-[1px] text-kmr-ink outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-kmr-blue/40"
+                  style={{ height: 52 }}
+                />
+              </div>
+              <span
+                id="whatsapp-phone-hint"
+                className="font-mono text-[9px] font-medium tracking-[0.5px] text-kmr-muted-3"
+              >
+                {phoneDigitCount === 0
+                  ? "10-digit Indian mobile number"
+                  : phoneIsComplete
+                    ? phoneIsValid
+                      ? "Looks good — tap below to get your code"
+                      : "Must start with 6, 7, 8, or 9"
+                    : `${phoneDigitCount}/${INDIAN_PHONE_DIGITS} digits`}
               </span>
-              <input
-                type="tel"
-                inputMode="numeric"
-                placeholder="98765 43210"
-                value={otp.phone}
-                onChange={(event) => onPhoneChange(event.target.value)}
-                className="min-w-0 flex-1 rounded-sm bg-kmr-surface px-3.5 font-mono text-base font-semibold tracking-[1px] text-kmr-ink outline-none"
-                style={{ height: 52 }}
-              />
             </div>
             {otp.error && (
               <span className="font-mono text-[10px] font-semibold text-kmr-orange">
                 {otp.error}
               </span>
             )}
-            <Button onClick={onSendOtp} disabled={otp.isSubmitting}>
-              {otp.isSubmitting ? "Sending…" : "Get updates on WhatsApp"}
+            <Button
+              onClick={onSendOtp}
+              loading={otp.isSubmitting}
+              loadingLabel="Sending…"
+              disabled={!phoneIsValid}
+            >
+              Get updates on WhatsApp
             </Button>
             <span className="text-center font-mono text-[9px] font-medium tracking-[1px] text-kmr-muted-3">
               ONE-TIME CODE TO VERIFY — THAT&apos;S IT
@@ -97,19 +163,23 @@ export function WhatsAppOtpSheet({
                 : CODE_ENTRY_COPY.whatsapp}
             </h2>
             <p className="font-archivo text-xs font-medium text-kmr-muted-2">
-              Sent to +91 {otp.phone} ·{" "}
+              Sent to +91 {formatIndianPhoneDisplay(otp.phone)} ·{" "}
               <button type="button" onClick={onEditPhone} className="text-kmr-blue underline">
                 change
               </button>
             </p>
             <input
+              ref={codeInputRef}
               type="tel"
               inputMode="numeric"
+              autoComplete="one-time-code"
               maxLength={OTP_CODE_LENGTH}
               placeholder={"·".repeat(OTP_CODE_LENGTH)}
               value={otp.code}
-              onChange={(event) => onCodeChange(event.target.value.replace(/\D/g, ""))}
-              className="box-border w-full rounded-sm bg-kmr-surface text-center font-mono text-[30px] font-extrabold tracking-[14px] text-kmr-blue outline-none"
+              onChange={(event) => onCodeChange(event.target.value.replace(/\D/g, "").slice(0, OTP_CODE_LENGTH))}
+              onKeyDown={handleCodeKeyDown}
+              aria-label="One-time verification code"
+              className="box-border w-full rounded-sm bg-kmr-surface text-center font-mono text-[30px] font-extrabold tracking-[14px] text-kmr-blue outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-kmr-blue/40"
               style={{ height: 64 }}
             />
             {otp.error && (
@@ -117,8 +187,13 @@ export function WhatsAppOtpSheet({
                 {otp.error}
               </span>
             )}
-            <Button onClick={onVerifyOtp} disabled={otp.isSubmitting}>
-              {otp.isSubmitting ? "Verifying…" : "Verify & see my quotes"}
+            <Button
+              onClick={onVerifyOtp}
+              loading={otp.isSubmitting}
+              loadingLabel="Verifying…"
+              disabled={!codeIsComplete}
+            >
+              Verify & see my quotes
             </Button>
           </div>
         )}
