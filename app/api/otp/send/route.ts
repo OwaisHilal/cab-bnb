@@ -8,19 +8,20 @@ import { generateOtpCode } from "@/lib/otp/generateOtpCode";
 import { hashOtpCode } from "@/lib/otp/hashOtpCode";
 import { sendWhatsAppOtp } from "@/lib/whatsapp/sendAuthTemplateOtp";
 import { sendOtpSms } from "@/lib/sms/sendOtpSms";
+import { phoneLast4 } from "@/lib/utils/phone";
 
 const E164_REGEX = /^\+[1-9]\d{7,14}$/;
 
 const otpSendSchema = z.object({
   session_id: z.string().min(1),
   phone_e164: z.string().regex(E164_REGEX, "phone_e164 must be in E.164 format, e.g. +919876543210"),
+  prefer: z.enum(["whatsapp"]).optional(),
 });
 
 /**
- * Checklist 2.3: rate-limit, generate + hash OTP, send via WhatsApp auth
- * template with SMS fallback. The otp_verifications row is only inserted
- * once a channel actually accepts the send — an OTP nobody received isn't
- * useful to store, and it keeps rate-limit counts meaningful.
+ * OTP send: MSG91 SMS SendOTP first; Phone.Email if SMS fails.
+ * WhatsApp template OTP only when prefer=whatsapp (explicit UI retry).
+ * Hash is stored only after a channel accepts the send.
  */
 export async function POST(request: NextRequest) {
   let body: unknown;
@@ -35,7 +36,8 @@ export async function POST(request: NextRequest) {
     return jsonValidationError(parsed.error);
   }
 
-  const { session_id, phone_e164 } = parsed.data;
+  const { session_id, phone_e164, prefer } = parsed.data;
+  console.info("[otp send] parsed", { last4: phoneLast4(phone_e164), prefer: prefer ?? "sms" });
 
   let supabase;
   try {
@@ -46,38 +48,60 @@ export async function POST(request: NextRequest) {
 
   try {
     await checkOtpRateLimit(supabase, phone_e164);
+    console.info("[otp send] rate-limit ok");
   } catch (error) {
     if (error instanceof RateLimitError) {
+      console.info("[otp send] rate-limit 429");
       return jsonError(429, error.message);
     }
     return jsonError(500, error instanceof Error ? error.message : "Rate limit check failed");
   }
 
   const code = generateOtpCode();
-
-  const whatsappResult = await sendWhatsAppOtp(phone_e164, code);
   let channel: "whatsapp" | "sms" | null = null;
 
-  if (whatsappResult.configured && whatsappResult.success) {
-    channel = "whatsapp";
+  if (prefer === "whatsapp") {
+    console.info("[otp send] branch", "whatsapp");
+    const whatsappResult = await sendWhatsAppOtp(phone_e164, code);
+    console.info("[otp send] MSG91 WhatsApp", {
+      configured: whatsappResult.configured,
+      success: whatsappResult.success,
+      error: whatsappResult.error,
+    });
+    if (whatsappResult.configured && whatsappResult.success) {
+      channel = "whatsapp";
+    }
   } else {
+    console.info("[otp send] branch", "sms");
     const smsResult = await sendOtpSms(phone_e164, code);
+    console.info("[otp send] MSG91 SMS", {
+      configured: smsResult.configured,
+      success: smsResult.success,
+      httpStatus: smsResult.httpStatus,
+      type: smsResult.msg91Type,
+      message: smsResult.msg91Message,
+      requestId: smsResult.requestId,
+      bodyKeys: smsResult.bodyKeys,
+      body: smsResult.sanitizedBody,
+    });
     if (smsResult.configured && smsResult.success) {
       channel = "sms";
     }
   }
 
   if (!channel) {
-    // WhatsApp and SMS are both unavailable — surface a controlled fallback
-    // signal (Plan §2) instead of a dead-end error, so the UI can offer
-    // Phone.Email verification instead of the OTP code-entry step. No
-    // otp_verifications row is written here since no code was delivered.
-    return jsonOk({
+    const message =
+      prefer === "whatsapp"
+        ? "WhatsApp verification is unavailable. Verify securely with Phone.Email instead."
+        : "SMS verification is unavailable. Verify securely with Phone.Email instead.";
+    const payload = {
       sent: false,
       channel: null,
       fallback: "phone_email" as const,
-      message: "WhatsApp verification is unavailable. Verify securely with Phone.Email instead.",
-    });
+      message,
+    };
+    console.info("[otp send] response", payload);
+    return jsonOk(payload);
   }
 
   const otpCodeHash = await hashOtpCode(code);
@@ -92,8 +116,12 @@ export async function POST(request: NextRequest) {
   });
 
   if (insertError) {
+    console.info("[otp send] hash insert fail", insertError.message);
     return jsonError(500, `Failed to store OTP: ${insertError.message}`);
   }
 
-  return jsonOk({ sent: true, channel });
+  console.info("[otp send] hash insert ok");
+  const payload = { sent: true, channel };
+  console.info("[otp send] response", payload);
+  return jsonOk(payload);
 }

@@ -22,7 +22,7 @@ import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
 import type { OtpDeliveryChannel, OtpState } from "@/features/whatsapp-otp/types";
 import type { BookingSummaryUi, QuoteRowUi, QuoteSnapshotStatusUi } from "@/features/booking-status/types";
 import { getOrCreateClientSessionId } from "@/lib/utils/clientSession";
-import { toIndianE164, isValidIndianMobile, sanitizeIndianPhoneInput } from "@/lib/utils/phone";
+import { toIndianE164, isValidIndianMobile, sanitizeIndianPhoneInput, phoneLast4 } from "@/lib/utils/phone";
 import { getPhoneEmailProviderMode } from "@/features/phone-email/components/PhoneEmailAdapter";
 import {
   clearVerifiedPhoneEmailResume,
@@ -447,7 +447,7 @@ export function useBookingFlow() {
     }, 900);
   }, [draft.days, draft.paxCount, draft.vehicleType, pollTripRequestSnapshot, tripRequestId]);
 
-  const sendOtp = useCallback(async () => {
+  const sendOtp = useCallback(async (prefer?: "whatsapp") => {
     const localDigits = sanitizeIndianPhoneInput(otp.phone);
     if (!isValidIndianMobile(localDigits)) {
       setOtp((prev) => ({
@@ -461,17 +461,29 @@ export function useBookingFlow() {
       return;
     }
 
+    console.info("[otp client] send start", { prefer: prefer ?? "sms", last4: phoneLast4(localDigits) });
     setOtp((prev) => ({ ...prev, isSubmitting: true, error: null }));
 
     try {
       const response = await fetch("/api/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, phone_e164: toIndianE164(localDigits) }),
+        body: JSON.stringify({
+          session_id: sessionId,
+          phone_e164: toIndianE164(localDigits),
+          ...(prefer ? { prefer } : {}),
+        }),
       });
       const data = await response.json().catch(() => null);
+      console.info("[otp client] send http", response.status);
+      console.info("[otp client] send body", {
+        sent: data?.sent,
+        channel: data?.channel,
+        fallback: data?.fallback,
+      });
 
       if (!response.ok) {
+        console.info("[otp client] step", "error");
         setOtp((prev) => ({
           ...prev,
           isSubmitting: false,
@@ -481,6 +493,7 @@ export function useBookingFlow() {
       }
 
       if (data?.fallback === "phone_email") {
+        console.info("[otp client] step", "phone_email");
         setOtp((prev) => ({
           ...prev,
           isSubmitting: false,
@@ -494,12 +507,15 @@ export function useBookingFlow() {
 
       const channel = data?.channel as OtpDeliveryChannel | undefined;
       if (data?.sent && (channel === "whatsapp" || channel === "sms")) {
+        console.info("[otp client] step", "code");
         setOtp((prev) => ({ ...prev, isSubmitting: false, step: "code", deliveryChannel: channel, error: null }));
         return;
       }
 
+      console.info("[otp client] step", "error");
       setOtp((prev) => ({ ...prev, isSubmitting: false, error: "Couldn't send OTP. Try again." }));
     } catch {
+      console.info("[otp client] step", "error");
       setOtp((prev) => ({ ...prev, isSubmitting: false, error: "Network error. Try again." }));
     }
   }, [otp.phone, sessionId]);
@@ -514,6 +530,10 @@ export function useBookingFlow() {
       return;
     }
 
+    console.info("[otp client] verify start", {
+      last4: phoneLast4(otp.phone),
+      codeLength: otp.code.length,
+    });
     setOtp((prev) => ({ ...prev, isSubmitting: true, error: null }));
 
     try {
@@ -528,18 +548,23 @@ export function useBookingFlow() {
         }),
       });
       const data = await response.json().catch(() => null);
+      console.info("[otp client] verify http", response.status);
 
       if (!response.ok) {
+        const errorMessage = (data as { error?: string } | null)?.error ?? "Incorrect OTP";
+        console.info("[otp client] verify fail", errorMessage);
         setOtp((prev) => ({
           ...prev,
           isSubmitting: false,
-          error: (data as { error?: string } | null)?.error ?? "Incorrect OTP",
+          error: errorMessage,
         }));
         return;
       }
 
+      console.info("[otp client] verify ok");
       completeVerification();
     } catch {
+      console.info("[otp client] verify fail", "network");
       setOtp((prev) => ({ ...prev, isSubmitting: false, error: "Network error. Try again." }));
     }
   }, [completeVerification, otp.code, otp.phone, sessionId, tripRequestId]);

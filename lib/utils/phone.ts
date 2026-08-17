@@ -25,3 +25,9 @@ export function isValidIndianMobile(digits: string): boolean {
 export function toIndianE164(localDigits: string): string {
   return `+91${sanitizeIndianPhoneInput(localDigits)}`;
 }
+
+/** Last 4 digits for troubleshooting logs — never log the full number. */
+export function phoneLast4(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.slice(-4) || "????";
+}

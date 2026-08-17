@@ -43,8 +43,12 @@ Phase 4  → MSG91 webhook adapter → existing ParsedAction
 Phase 5  → E2E evidence + remove unused Graph send env from docs/example
 ```
 
-**Audit gate:** Do not start phase N+1 until **msg91-whatsapp-audit** scores
-that phase’s closable dimensions as closed, with evidence.
+**Audit gate:** Do not start phase N+1 until **msg91-whatsapp-audit** is
+re-run and the report has **no A** and **no unexpected G/P** on phase N
+deliverables. Expected-later **G** rows (later phase owners) are allowed.
+
+The audit must number findings **G1, G2…** (gaps), **A1, A2…** (anomalies),
+**P1, P2…** (partials) — a six-line yes/no table is not a passing gate.
 
 ## Hard rules (regression-proof)
 
@@ -81,8 +85,10 @@ Edge secrets: `supabase secrets set` — Deno does not read `.env.local`.
 Before claiming the phase done:
 
 1. Run that phase’s **Gate** in [phases.md](phases.md)
-2. Run **msg91-whatsapp-audit** (handler freeze must stay ✅)
+2. Run **msg91-whatsapp-audit** scoped to this phase — require **G** / **A** / **P** tables with numbered IDs
 3. Use **verification-before-completion** — evidence before claims
+4. If the audit lists any **A** or unexpected **G**/**P** on this phase’s rows, the
+   phase is **not** closed — fix or disclose, do not start N+1
 
 ## When user says "implement next phase"
 

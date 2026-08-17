@@ -8,13 +8,13 @@ Reference for Meta WhatsApp template submission and MSG91 SMS/WhatsApp setup. De
 
 | Channel | Provider (current) | Provider (planned fallback) |
 |---------|-------------------|----------------------------|
-| WhatsApp OTP | Meta Cloud API (`type: "template"`) | — |
-| WhatsApp quotes, negotiation, lifecycle | Meta Cloud API (`interactive`, `text`, `image`) — **not** pre-approved templates yet | — |
-| SMS OTP | **Not configured** (stub) | MSG91 (deferred) |
+| WhatsApp OTP | MSG91 auth template (explicit retry from OTP sheet) | After SMS fails |
+| WhatsApp quotes, negotiation, lifecycle | Meta Cloud API (`interactive`, `text`, `image`) | MSG91 (Phase 3) |
+| SMS OTP | MSG91 SendOTP (`MSG91_OTP_TEMPLATE_ID`) | Phone.Email if SendOTP fails |
 
-**Important:** Only **OTP** uses a Meta-approved `type: "template"` send today. The other eight message types send free-form messages via the WhatsApp Cloud API. Outside the 24-hour customer service window, Meta may reject those sends unless you either (a) submit and wire approved utility templates for each type, or (b) use a BSP like MSG91 that manages template registration for you.
+**Important:** Customer OTP is MSG91 **SMS SendOTP** first, then Phone.Email, then optional WhatsApp auth-template retry. Quotes/lifecycle still use the WhatsApp Cloud API until Phase 3.
 
-**MSG91 status:** `lib/sms/sendOtpSms.ts` is a stub — no MSG91 integration exists yet. `SMS_PROVIDER_API_KEY` is reserved in `.env.example`. When wiring MSG91, start with the OTP SMS template below.
+**MSG91 status:** OTP send order is SMS SendOTP → Phone.Email → WhatsApp retry (`prefer=whatsapp`). Quotes/lifecycle still Meta Graph until Phase 3. Edge `sendSmsFallback` stays stub (quotes, not OTP). Approval tracker below stays `—` until you report Green from the MSG91 dashboard.
 
 ---
 
@@ -22,12 +22,18 @@ Reference for Meta WhatsApp template submission and MSG91 SMS/WhatsApp setup. De
 
 | Variable | Used by | Purpose |
 |----------|---------|---------|
-| `WHATSAPP_ACCESS_TOKEN` | Next.js + Edge Functions | Meta Graph API bearer token |
-| `WHATSAPP_PHONE_NUMBER_ID` | Next.js + Edge Functions | Meta phone number ID for sends |
-| `WHATSAPP_OTP_TEMPLATE_NAME` | `lib/whatsapp/sendAuthTemplateOtp.ts` | Approved auth template name (default: `otp_verification`) |
-| `WHATSAPP_VERIFY_TOKEN` | `app/api/whatsapp/webhook/route.ts` | Meta webhook GET challenge |
-| `WHATSAPP_APP_SECRET` | Webhook signature verification | HMAC for inbound payloads |
-| `SMS_PROVIDER_API_KEY` | `lib/sms/sendOtpSms.ts` (stub) | MSG91 auth key when implemented |
+| `WHATSAPP_ACCESS_TOKEN` | Edge Functions (until Phase 3) | Meta Graph API bearer token |
+| `WHATSAPP_PHONE_NUMBER_ID` | Edge Functions (until Phase 3) | Meta phone number ID for sends |
+| `WHATSAPP_OTP_TEMPLATE_NAME` | Unused after Phase 2 (kept until Phase 5) | Former Graph OTP template name |
+| `WHATSAPP_VERIFY_TOKEN` | `app/api/whatsapp/webhook/route.ts` | Meta webhook GET challenge (until Phase 4) |
+| `WHATSAPP_APP_SECRET` | Webhook signature verification | HMAC for inbound payloads (until Phase 4) |
+| `MSG91_AUTH_KEY` | `lib/msg91/` + Deno `msg91WhatsApp.ts` | MSG91 `authkey` header |
+| `MSG91_WHATSAPP_INTEGRATED_NUMBER` | Same | MSG91 WhatsApp sender number |
+| `MSG91_OTP_TEMPLATE_NAME` | `lib/whatsapp/sendAuthTemplateOtp.ts` | Auth template name (default `otp_verification`) |
+| `MSG91_OTP_TEMPLATE_NAMESPACE` | Same | Auth template namespace (omitted if blank) |
+| `MSG91_OTP_TEMPLATE_LANGUAGE` | Same | Auth template language (default `en_US`) |
+| `MSG91_OTP_TEMPLATE_ID` | `lib/sms/sendOtpSms.ts` | MSG91 **SMS** SendOTP template id (OTP section) |
+| `SMS_PROVIDER_API_KEY` | unused | Placeholder — OTP SMS uses `MSG91_AUTH_KEY` + `MSG91_OTP_TEMPLATE_ID` |
 | `CONFIRMATION_CARD_IMAGE_URL` | `sendConfirmationCard` handler | Generic confirmation card image |
 | `CONFIRMATION_CARD_IMAGE_URL_<CODE>` | Same | Per-vehicle override (e.g. `_SEDAN`, `_SUV`, `_TEMPO`) |
 | `MIDTRIP_WELLNESS_MIN_DAYS` | Lifecycle scheduler | Min trip days before mid-trip message (default `3`) |
@@ -42,7 +48,7 @@ Reference for Meta WhatsApp template submission and MSG91 SMS/WhatsApp setup. De
 
 **Token lock amount:** Button label hardcodes **₹99** (`Pay ₹99 to Lock`). Plan §14 documents `TOKEN_LOCK_AMOUNT` (default 99) as a config flag, but it is **not** env-driven in code yet — template copy should say ₹99 unless/until that flag is wired.
 
-**Graph API version:** `v20.0` (hardcoded in `lib/whatsapp/sendAuthTemplateOtp.ts` and `supabase/functions/_shared/whatsapp.ts`).
+**Graph API version:** `v20.0` (hardcoded in `supabase/functions/_shared/whatsapp.ts` until Phase 3). OTP send no longer uses Graph.
 
 ---
 
@@ -55,11 +61,11 @@ Reference for Meta WhatsApp template submission and MSG91 SMS/WhatsApp setup. De
 | **Handler** | `lib/whatsapp/sendAuthTemplateOtp.ts` → `app/api/otp/send/route.ts` |
 | **Recipient** | Customer (tourist) |
 | **Meta category** | **AUTHENTICATION** |
-| **Send type (current)** | `type: "template"` |
+| **Send type (current)** | MSG91 bulk template (`body_1` + `button_1`) |
 | **Template name (code default)** | `otp_verification` |
-| **Env override** | `WHATSAPP_OTP_TEMPLATE_NAME` |
-| **Language** | `en_US` |
-| **Parameters** | Body: 1 text param = 6-digit OTP code |
+| **Env override** | `MSG91_OTP_TEMPLATE_NAME` / `MSG91_OTP_TEMPLATE_NAMESPACE` / `MSG91_OTP_TEMPLATE_LANGUAGE` |
+| **Language** | `en_US` (fallback if `MSG91_OTP_TEMPLATE_LANGUAGE` unset) |
+| **Parameters** | `body_1` text + `button_1` copy-code (`subtype: "url"`) = 6-digit OTP |
 
 **Suggested Meta / MSG91 template body:**
 
@@ -69,25 +75,7 @@ Your Kashmir BnB Cabs verification code is {{1}}. Do not share this code with an
 
 Or use Meta's built-in **Authentication → One-time passcode** template flow (copy-code button) — the code comments note you may need extra `components` (e.g. button param) depending on how the template is approved.
 
-**API payload shape (current code):**
-
-```json
-{
-  "messaging_product": "whatsapp",
-  "to": "919876543210",
-  "type": "template",
-  "template": {
-    "name": "otp_verification",
-    "language": { "code": "en_US" },
-    "components": [
-      {
-        "type": "body",
-        "parameters": [{ "type": "text", "text": "123456" }]
-      }
-    ]
-  }
-}
-```
+**API payload shape (current code):** MSG91 bulk template via `lib/msg91/` — `body_1` + `button_1` (copy-code). See [`msg91-whatsapp-integration.md`](./msg91-whatsapp-integration.md) §3.1–§3.2.
 
 **SMS fallback (MSG91):** Same OTP, 6 digits, ~300s expiry. Suggested SMS text:
 
@@ -463,10 +451,10 @@ Use this when registering templates on MSG91 (SMS OTP first, then WhatsApp utili
 
 ### SMS (OTP) — priority 1
 
-- [ ] Create MSG91 account / get `SMS_PROVIDER_API_KEY`
-- [ ] Register DLT template (India): OTP message with variable `{{otp}}`
-- [ ] Implement `Msg91SmsProvider` in `lib/sms/sendOtpSms.ts`
-- [ ] Test fallback path: disable WhatsApp creds → OTP should arrive via SMS
+- [x] MSG91 SendOTP in `lib/sms/sendOtpSms.ts` (`MSG91_AUTH_KEY` + `MSG91_OTP_TEMPLATE_ID`)
+- [ ] Register DLT / OTP template in MSG91 OTP section; set `MSG91_OTP_TEMPLATE_ID`
+- [ ] Restart `next dev` and confirm default `/api/otp/send` returns `{ sent: true, channel: "sms" }`
+- [ ] Confirm empty/missing template id shows Phone.Email, not a silent WhatsApp-first send
 
 ### WhatsApp via MSG91 (if not using direct Meta API)
 
@@ -495,7 +483,7 @@ Update as templates are submitted and approved.
 
 | # | Message type | Suggested name | Meta category | Meta status | MSG91 status | Wired in code |
 |---|--------------|----------------|---------------|-------------|--------------|---------------|
-| 1 | OTP verification | `otp_verification` | AUTHENTICATION | — | — | Yes (`sendAuthTemplateOtp.ts`) |
+| 1 | OTP verification | `otp_verification` | AUTHENTICATION | — | — | MSG91 (`sendAuthTemplateOtp.ts`) — status not user-reported Green |
 | 2 | Consolidated quote | `quote_consolidated_v1` | UTILITY | — | — | No (interactive) |
 | 3 | Negotiation offer | `negotiation_offer_v1` | UTILITY | — | — | No (interactive) |
 | 3b | Negotiation final | `negotiation_final_v1` | UTILITY | — | — | No (interactive) |
@@ -512,9 +500,11 @@ Update as templates are submitted and approved.
 
 | Area | Path |
 |------|------|
-| OTP WhatsApp template send | `lib/whatsapp/sendAuthTemplateOtp.ts` |
+| MSG91 WhatsApp client (Next) | `lib/msg91/` |
+| MSG91 WhatsApp client (Deno) | `supabase/functions/_shared/msg91WhatsApp.ts` |
+| OTP WhatsApp template send (retry) | `lib/whatsapp/sendAuthTemplateOtp.ts` |
 | OTP API route | `app/api/otp/send/route.ts` |
-| SMS stub (MSG91 placeholder) | `lib/sms/sendOtpSms.ts` |
+| SMS SendOTP | `lib/sms/sendOtpSms.ts` |
 | Edge WhatsApp helpers | `supabase/functions/_shared/whatsapp.ts` |
 | Send quotes | `supabase/functions/_shared/handlers/sendQuotes.ts` |
 | Negotiation | `supabase/functions/_shared/handlers/computeNegotiation.ts` |

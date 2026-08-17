@@ -22,7 +22,14 @@ Audit is a **gate after every phase**, not a seventh phase.
 
 **Gate:** `.env.example` lists MSG91 keys; send files still Meta Graph; handler freeze intact.
 
-**Audit dimensions closable:** none of Client/Webhook/Live. Credentials scaffold only (keys present, values may be blank). Templates = user-reported tracker only.
+**Audit after Phase 0 must list (not hide) numbered G/A/P:**
+
+- **P:** `MSG91_*` keys present, values blank; template tracker `—`; dual Graph+MSG91 env keys (until Phase 5)
+- **G** (not blockers): Client, webhook adapter, live journey (owners 1–5)
+- **G** (user, still open): dashboard account, Green templates, filled secrets
+- **A:** none expected; any freeze break is a blocker
+
+**Audit dimensions closable to ✅:** handler freeze only. Credentials stay **P** until non-empty values (Phase 1). Templates stay **P**/**G** until user reports Green.
 
 ---
 

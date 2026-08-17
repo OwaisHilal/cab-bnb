@@ -11,7 +11,7 @@ interface WhatsAppOtpSheetProps {
   otp: OtpState;
   onPhoneChange: (phone: string) => void;
   onCodeChange: (code: string) => void;
-  onSendOtp: () => void;
+  onSendOtp: (prefer?: "whatsapp") => void;
   onVerifyOtp: () => void;
   onEditPhone: () => void;
   onBeforePhoneEmailRedirect: () => void;
@@ -23,10 +23,9 @@ const CODE_ENTRY_COPY: Record<Exclude<OtpDeliveryChannel, "phone_email">, string
 };
 
 /**
- * Plan §5: quotes are matched instantly server-side; this sheet only gates
- * WhatsApp delivery behind phone verification, per the "no WhatsApp send
- * before OTP verify" invariant. Copy intentionally avoids implying vendors are
- * live-pricing the request in real time.
+ * Plan §5: quotes are matched instantly server-side; this sheet gates quote
+ * delivery behind phone verification. SMS SendOTP is the primary code
+ * channel; quotes still land on WhatsApp after verify.
  */
 export function WhatsAppOtpSheet({
   otp,
@@ -56,6 +55,7 @@ export function WhatsAppOtpSheet({
   const handlePhoneKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter" && phoneIsValid && !otp.isSubmitting) {
       event.preventDefault();
+      console.info("[otp ui] send sms click");
       onSendOtp();
     }
   };
@@ -65,6 +65,21 @@ export function WhatsAppOtpSheet({
       event.preventDefault();
       onVerifyOtp();
     }
+  };
+
+  const handleSendSmsClick = () => {
+    console.info("[otp ui] send sms click");
+    onSendOtp();
+  };
+
+  const handleResendCodeClick = () => {
+    console.info("[otp ui] resend click");
+    onSendOtp();
+  };
+
+  const handleTryWhatsAppOtpClick = () => {
+    console.info("[otp ui] try whatsapp click");
+    onSendOtp("whatsapp");
   };
 
   return (
@@ -80,7 +95,7 @@ export function WhatsAppOtpSheet({
                 <WhatsAppIcon />
               </span>
               <span className="font-mono text-[9px] font-semibold tracking-[1.5px] text-kmr-green-dark">
-                WHATSAPP UPDATES
+                VERIFY TO SEE QUOTES
               </span>
             </div>
             <h2 className="font-archivo text-[23px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink">
@@ -96,8 +111,8 @@ export function WhatsAppOtpSheet({
               <ChecklistItem>NO CALLS, NO SPAM — JUST YOUR QUOTES</ChecklistItem>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="whatsapp-phone" className="font-mono text-[9px] font-semibold tracking-[1.5px] text-kmr-muted-3">
-                YOUR WHATSAPP NUMBER
+              <label htmlFor="otp-mobile" className="font-mono text-[9px] font-semibold tracking-[1.5px] text-kmr-muted-3">
+                YOUR MOBILE NUMBER
               </label>
               <div className="flex gap-2">
                 <span
@@ -108,7 +123,7 @@ export function WhatsAppOtpSheet({
                 </span>
                 <input
                   ref={phoneInputRef}
-                  id="whatsapp-phone"
+                  id="otp-mobile"
                   type="tel"
                   inputMode="numeric"
                   autoComplete="tel-national"
@@ -118,13 +133,13 @@ export function WhatsAppOtpSheet({
                   onChange={(event) => onPhoneChange(event.target.value)}
                   onKeyDown={handlePhoneKeyDown}
                   aria-invalid={phoneIsComplete && !phoneIsValid}
-                  aria-describedby="whatsapp-phone-hint"
+                  aria-describedby="otp-mobile-hint"
                   className="min-w-0 flex-1 rounded-sm bg-kmr-surface px-3.5 font-mono text-base font-semibold tracking-[1px] text-kmr-ink outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-kmr-blue/40"
                   style={{ height: 52 }}
                 />
               </div>
               <span
-                id="whatsapp-phone-hint"
+                id="otp-mobile-hint"
                 className="font-mono text-[9px] font-medium tracking-[0.5px] text-kmr-muted-3"
               >
                 {phoneDigitCount === 0
@@ -142,15 +157,15 @@ export function WhatsAppOtpSheet({
               </span>
             )}
             <Button
-              onClick={onSendOtp}
+              onClick={handleSendSmsClick}
               loading={otp.isSubmitting}
               loadingLabel="Sending…"
               disabled={!phoneIsValid}
             >
-              Get updates on WhatsApp
+              Send SMS code
             </Button>
             <span className="text-center font-mono text-[9px] font-medium tracking-[1px] text-kmr-muted-3">
-              ONE-TIME CODE TO VERIFY — THAT&apos;S IT
+              ONE-TIME CODE TO VERIFY — QUOTES FOLLOW ON WHATSAPP
             </span>
           </div>
         )}
@@ -160,7 +175,7 @@ export function WhatsAppOtpSheet({
             <h2 className="font-archivo text-[23px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink">
               {otp.deliveryChannel && otp.deliveryChannel !== "phone_email"
                 ? CODE_ENTRY_COPY[otp.deliveryChannel]
-                : CODE_ENTRY_COPY.whatsapp}
+                : CODE_ENTRY_COPY.sms}
             </h2>
             <p className="font-archivo text-xs font-medium text-kmr-muted-2">
               Sent to +91 {formatIndianPhoneDisplay(otp.phone)} ·{" "}
@@ -195,13 +210,21 @@ export function WhatsAppOtpSheet({
             >
               Verify & see my quotes
             </Button>
+            <button
+              type="button"
+              onClick={handleResendCodeClick}
+              disabled={otp.isSubmitting}
+              className="text-center font-mono text-[9px] font-medium tracking-[1px] text-kmr-blue underline disabled:opacity-50"
+            >
+              Resend code
+            </button>
           </div>
         )}
 
         {otp.step === "phone_email" && (
           <div className="flex flex-col gap-3.5">
             <h2 className="font-archivo text-[23px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink">
-              WhatsApp verification is unavailable.
+              SMS verification is unavailable.
             </h2>
             <p className="font-archivo text-[12.5px] font-medium leading-[1.55] text-kmr-muted-1">
               Verify securely with Phone.Email instead.
@@ -214,10 +237,11 @@ export function WhatsAppOtpSheet({
             )}
             <button
               type="button"
-              onClick={onEditPhone}
-              className="text-center font-mono text-[9px] font-medium tracking-[1px] text-kmr-blue underline"
+              onClick={handleTryWhatsAppOtpClick}
+              disabled={otp.isSubmitting}
+              className="text-center font-mono text-[9px] font-medium tracking-[1px] text-kmr-blue underline disabled:opacity-50"
             >
-              TRY WHATSAPP AGAIN
+              Try WhatsApp OTP
             </button>
           </div>
         )}

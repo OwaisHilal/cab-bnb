@@ -71,12 +71,14 @@ Scoped examples:
 
 ### Phase 3: Status per checklist item
 
-| Status | Symbol | Meaning |
-|--------|--------|---------|
-| Implemented | ✅ | Matches both docs; cite `file:line` or migration |
-| Partial | ⚠️ | Exists but incomplete or diverges |
-| Gap | ❌ | Not found |
-| Anomaly | 🔴 | Contradicts Plan invariants or Checklist design |
+| Status | Symbol | ID prefix | Meaning |
+|--------|--------|-----------|---------|
+| Implemented | ✅ | — | Matches both docs; cite `file:line` or migration |
+| Partial | ⚠️ | **P** (`P1`, `P2`, …) | Exists but incomplete or diverges |
+| Gap | ❌ | **G** (`G1`, `G2`, …) | Not found |
+| Anomaly | 🔴 | **A** (`A1`, `A2`, …) | Contradicts Plan invariants or Checklist design |
+
+Number IDs from 1 in each category. Refer to findings as `G1`, `A2`, `P3` in the verdict and in **kashmirbnb-build**.
 
 Never mark ✅ without reading the actual file or migration.
 
@@ -119,12 +121,12 @@ Script output is hints only — confirm by reading source files.
 
 ## Summary
 
-| Status | Count |
-|--------|-------|
-| ✅ Implemented | N |
-| ⚠️ Partial | N |
-| ❌ Gap | N |
-| 🔴 Anomaly | N |
+| Status | ID prefix | Count |
+|--------|-----------|-------|
+| ✅ Implemented | — | N |
+| ⚠️ Partial | P | N |
+| ❌ Gap | G | N |
+| 🔴 Anomaly | A | N |
 
 ## Executive summary
 
@@ -133,14 +135,17 @@ Script output is hints only — confirm by reading source files.
 ## Critical gaps
 
 | ID | Item | Plan/Checklist ref | Evidence |
+| G1 | | | |
 
 ## Anomalies
 
 | ID | Expected | Actual | Location |
+| A1 | | | |
 
 ## Partial implementations
 
-| Item | Done | Missing |
+| ID | Item | Done | Missing |
+| P1 | | | |
 
 ## Phase readiness (Checklist)
 

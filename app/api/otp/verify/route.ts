@@ -5,6 +5,7 @@ import { jsonError, jsonOk, jsonValidationError } from "@/lib/api/errors";
 import { OTP_CODE_LENGTH, OTP_MAX_ATTEMPTS } from "@/lib/otp/config";
 import { verifyOtpCode } from "@/lib/otp/hashOtpCode";
 import { completePhoneVerification } from "@/lib/otp/completePhoneVerification";
+import { phoneLast4 } from "@/lib/utils/phone";
 
 const otpVerifySchema = z.object({
   session_id: z.string().min(1),
@@ -36,6 +37,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { session_id, phone_e164, otp_code, trip_request_id } = parsed.data;
+  console.info("[otp verify] start", { last4: phoneLast4(phone_e164) });
 
   let supabase;
   try {
@@ -56,12 +58,15 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (otpFetchError) {
+    console.info("[otp verify] fetch fail");
     return jsonError(500, `Failed to fetch OTP: ${otpFetchError.message}`);
   }
   if (!otpRow) {
+    console.info("[otp verify] no pending otp");
     return jsonError(404, "No pending OTP found for this phone number and session. Request a new one.");
   }
   if (otpRow.attempts >= OTP_MAX_ATTEMPTS) {
+    console.info("[otp verify] too many attempts");
     return jsonError(429, "Too many incorrect attempts. Request a new OTP.");
   }
 
@@ -77,6 +82,7 @@ export async function POST(request: NextRequest) {
       return jsonError(500, `Failed to record OTP attempt: ${attemptsUpdateError.message}`);
     }
 
+    console.info("[otp verify] incorrect");
     return jsonError(400, "Incorrect OTP");
   }
 
@@ -92,6 +98,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (!completionResult.ok) {
+    console.info("[otp verify] completion failed", completionResult.status);
     return jsonError(completionResult.status, completionResult.message);
   }
 
@@ -104,5 +111,6 @@ export async function POST(request: NextRequest) {
     return jsonError(500, `Failed to mark OTP verified: ${otpVerifiedUpdateError.message}`);
   }
 
+  console.info("[otp verify] ok");
   return jsonOk({ verified: true, trip_request_id });
 }

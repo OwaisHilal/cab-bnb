@@ -2,15 +2,16 @@
 
 Plan and reference for replacing **direct Meta Graph API** WhatsApp sends with **MSG91 as the sole WhatsApp provider**. This doc covers architecture, APIs, webhooks, templates, env vars, and implementation passes.
 
-**Scope:** WhatsApp via MSG91 only. **Not in scope:** MSG91 SMS, email, or keeping Meta direct sends alongside MSG91.
+**Scope:** WhatsApp via MSG91 for quote/lifecycle (Phases 2–3). Customer OTP uses MSG91 **SMS SendOTP** first, Phone.Email second, WhatsApp template OTP only as an explicit retry. Not in scope: MSG91 SMS for quotes/lifecycle; email.
 
 **Companion doc:** Template copy, variables, and button payloads for all 9 message types live in [`whatsapp-templates.md`](./whatsapp-templates.md).
 
-**Status (codebase):** No MSG91 integration exists yet. WhatsApp today calls `graph.facebook.com` from:
+**Status (codebase):** OTP send is SMS SendOTP first; WhatsApp template OTP is an explicit retry. Edge sends still Meta Graph.
 
-- `lib/whatsapp/sendAuthTemplateOtp.ts` (Next.js — OTP)
-- `supabase/functions/_shared/whatsapp.ts` (Edge — buttons, text, image)
-- `app/api/whatsapp/webhook/route.ts` (Meta webhook format)
+- Live OTP SMS: `lib/sms/sendOtpSms.ts` → `POST /api/v5/otp` (`MSG91_AUTH_KEY` + `MSG91_OTP_TEMPLATE_ID`)
+- WhatsApp OTP retry: `lib/whatsapp/sendAuthTemplateOtp.ts` → MSG91 bulk template (`prefer=whatsapp`)
+- Live Edge send: `supabase/functions/_shared/whatsapp.ts` → `graph.facebook.com` (Phase 3)
+- Webhook: `app/api/whatsapp/webhook/route.ts` (Meta format; MSG91 adapter is Phase 4)
 
 ---
 
@@ -19,7 +20,7 @@ Plan and reference for replacing **direct Meta Graph API** WhatsApp sends with *
 | Question | Answer |
 |----------|--------|
 | Use MSG91 for WhatsApp? | Yes — primary BSP, replace Meta direct API calls |
-| Use MSG91 for SMS? | No — `lib/sms/sendOtpSms.ts` stays stub; Phone.Email remains OTP fallback |
+| Use MSG91 for SMS? | **OTP only** — SendOTP in `lib/sms/sendOtpSms.ts`. Edge quote SMS stays stub; Phone.Email remains last OTP fallback |
 | Still need Meta? | Indirectly — MSG91 connects your WABA; templates are approved by Meta behind MSG91 |
 | Register templates where? | MSG91 dashboard (or MSG91 template APIs); see §4 |
 | Reuse Meta webhook code? | No — MSG91 **Webhook (New)** uses a different JSON shape (§6) |
@@ -75,11 +76,11 @@ Official hub: [docs.msg91.com/whatsapp](https://docs.msg91.com/whatsapp)
 
 From [WhatsApp OTP help](https://msg91.com/help/whatsapp/whatsapp-otp):
 
-```http
-POST https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/
-Content-Type: application/json
-authkey: <MSG91_AUTH_KEY>
-```
+The Phase 1 client posts to the official bulk URL from [template-bulk](https://docs.msg91.com/whatsapp/template-bulk) / [CRQID help](https://msg91.com/help/whatsapp/how-to-pass-crqid-in-whatsapp-):
+
+`POST https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/`
+
+The OTP help article lists `https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/` as an alias. Headers: `authkey`, `content-type: application/json`.
 
 **Body (conceptual):**
 
@@ -235,11 +236,27 @@ MSG91_NEGOTIATION_OFFER_TEMPLATE_NAME
 
 ---
 
+## 5b. Phase 0 onboarding (user / dashboard)
+
+Agent does not log into MSG91. You complete these before Phase 2/3 can send:
+
+- [ ] MSG91 account + KYC
+- [ ] Integrate WhatsApp Business number on MSG91
+- [ ] Create templates from [`whatsapp-templates.md`](./whatsapp-templates.md) (Authentication OTP + Utility for the other 8)
+- [ ] After Green approval, copy `name`, `namespace`, language into `MSG91_OTP_*` (and later utility env vars)
+- [ ] Point MSG91 **Webhook (New)** at `POST https://<your-production-host>/api/whatsapp/webhook`
+
+Until Phase 4, that webhook URL still expects Meta HMAC + `entry[].changes[]` payloads — do not switch MSG91 inbound live until the adapter ships.
+
+---
+
 ## 6. Webhooks — MSG91 Webhook (New)
 
 Guide: [Receive WhatsApp delivery reports via Webhook (New)](https://msg91.com/help/webhook-new/how-to-receive-whatsapp-delivery-reports-via-webhook-new)
 
-**Setup:** Dashboard → WhatsApp → **Webhook (New)** → Create → callback URL = `https://<your-domain>/api/whatsapp/webhook`
+**Callback URL (Phase 0 document; adapter is Phase 4):** `POST /api/whatsapp/webhook` on the Next.js app (`https://<your-domain>/api/whatsapp/webhook`).
+
+**Setup:** Dashboard → WhatsApp → **Webhook (New)** → Create → that callback URL
 
 **Subscribe to:**
 
@@ -303,7 +320,9 @@ New module (e.g. `lib/whatsapp/webhook/parseMsg91Webhook.ts`) should:
 
 | Area | File | Change |
 |------|------|--------|
-| OTP send | `lib/whatsapp/sendAuthTemplateOtp.ts` | MSG91 template API + `body_1`/`button_1` |
+| OTP SMS send | `lib/sms/sendOtpSms.ts` | MSG91 SendOTP (`/api/v5/otp`) |
+| OTP WhatsApp retry | `lib/whatsapp/sendAuthTemplateOtp.ts` | MSG91 template API + `body_1`/`button_1` (`prefer=whatsapp`) |
+| OTP send route | `app/api/otp/send/route.ts` | SMS first; Phone.Email on failure; WhatsApp only if `prefer=whatsapp` |
 | Edge sends | `supabase/functions/_shared/whatsapp.ts` | MSG91 template / interactive / session APIs |
 | Webhook route | `app/api/whatsapp/webhook/route.ts` | MSG91 adapter; optional separate POST handler |
 | Webhook parse | `lib/whatsapp/webhook/parseWebhookPayload.ts` | Replace or branch for MSG91 |
@@ -324,25 +343,26 @@ New module (e.g. `lib/whatsapp/webhook/parseMsg91Webhook.ts`) should:
 
 ### Pass 0 — Onboarding (blocking, mostly non-code)
 
+- [x] `.env.example` MSG91 keys (empty) — agent Phase 0
 - [ ] MSG91 account + KYC
 - [ ] Integrate WhatsApp number on MSG91 ([onboarding video](https://www.youtube.com/watch?v=SXbcJ3ClruA))
 - [ ] Meta Business verification if required for auth templates
 - [ ] Create all templates in dashboard (copy from [`whatsapp-templates.md`](./whatsapp-templates.md))
 - [ ] Wait for Green approval status
-- [ ] Configure Webhook (New) → production `/api/whatsapp/webhook`
+- [ ] Configure Webhook (New) → production `/api/whatsapp/webhook` (adapter is Phase 4)
 - [ ] Record template `name`, `namespace`, language from Get Templates / dashboard cURL
 
 ### Pass 1 — MSG91 client + config
 
-- [ ] `MSG91_AUTH_KEY`, `MSG91_WHATSAPP_INTEGRATED_NUMBER` in env + Supabase secrets
-- [ ] Shared send helper returning `{ configured, success, waMessageId?, error? }`
-- [ ] Map MSG91 response `uuid` / `requestId` → `waMessageId` for logging
+- [x] Shared send helper returning `{ configured, success, waMessageId?, error? }` — `lib/msg91/` + Deno twin (not wired to OTP/Edge yet)
+- [x] Map MSG91 response `uuid` / `requestId` / `request_id` → `waMessageId`
+- [ ] `MSG91_AUTH_KEY`, `MSG91_WHATSAPP_INTEGRATED_NUMBER` filled in env + Supabase secrets (user)
 
 ### Pass 2 — OTP via MSG91
 
-- [ ] Replace `sendAuthTemplateOtp.ts` with MSG91 bulk template send
-- [ ] `body_1` + `button_1` for authentication template
-- [ ] Test: `POST /api/otp/send` → `channel: "whatsapp"`
+- [x] Replace `sendAuthTemplateOtp.ts` with MSG91 bulk template send
+- [x] `body_1` + `button_1` for authentication template
+- [ ] Test: `POST /api/otp/send` → `channel: "whatsapp"` (needs filled `MSG91_*` + Green auth template)
 
 ### Pass 3 — Edge outbound (bulk of messages)
 
@@ -428,4 +448,4 @@ New module (e.g. `lib/whatsapp/webhook/parseMsg91Webhook.ts`) should:
 
 ---
 
-*Last updated: August 2026 — reflects codebase before MSG91 implementation.*
+*Last updated: August 2026 — OTP send is SMS SendOTP first, then Phone.Email, then WhatsApp retry. Edge sends still Meta Graph.*
