@@ -1,12 +1,10 @@
 ---
 name: whatsapp-feature-audit
 description: >-
-  Audits the entire WhatsApp messaging feature for Kashmir BnB Cabs end-to-end
-  — code completeness, live credential configuration, Meta template approval
-  status, SMS fallback, and test-gate evidence — to determine true
-  production-readiness, not just spec compliance. Use when the user asks to
-  audit, check progress, check readiness, or ask "is WhatsApp done/live/ready"
-  for WhatsApp messaging, templates, OTP, webhook, or lifecycle notifications.
+  Audits Kashmir BnB Cabs WhatsApp product completeness against Plan §6–§7
+  (9 handlers, job queue, OTP hash, inbound actions). Use when the user asks
+  whether WhatsApp product flows are implemented. For MSG91 vs Meta Graph
+  transport, credentials, and webhook adapter readiness, use msg91-whatsapp-audit.
 disable-model-invocation: true
 ---
 
@@ -23,8 +21,12 @@ outbound template except a live-session reply needs Meta pre-approval, with
 authentication templates (OTP) in a separate approval category from
 utility/marketing templates.
 
-This skill is scoped to the WhatsApp feature only. For a full-project audit
-against every Checklist phase, use **kashmirbnb-spec-audit** instead.
+This skill is scoped to WhatsApp **product completeness** (Plan §6–§7
+handlers, job queue, OTP hash). WhatsApp **transport** (MSG91 vs Meta
+Graph) is **msg91-whatsapp-audit** — do not score MSG91 migration here.
+
+For a full-project audit against every Checklist phase, use
+**kashmirbnb-spec-audit** instead.
 
 ## What's already done — code layer (do not re-litigate every run)
 
@@ -105,12 +107,16 @@ are very different claims.
   code path calling them exists — check the actual config/approval state.
 - Re-run the full `kashmirbnb-spec-audit` scope from here; link to it instead
   if the user wants non-WhatsApp phases covered.
-- Draft or submit Meta templates yourself here — hand off to
-  **whatsapp-template-submission**.
+- Draft or submit templates yourself here — hand off to
+  **whatsapp-template-submission** (MSG91 dashboard).
+- Score MSG91 Graph-replacement readiness here — use
+  **msg91-whatsapp-audit**.
 
 ## Related skills
 
+- **msg91-whatsapp-audit** — MSG91 transport migration readiness
+- **msg91-whatsapp-build** — implement the next MSG91 WhatsApp phase
 - **kashmirbnb-spec-audit** — full-project spec audit
 - **kashmirbnb-build** — implement the next Checklist phase
-- **whatsapp-template-submission** — draft/track Meta template approval
+- **whatsapp-template-submission** — draft/track template approval (MSG91 dashboard)
 - **verification-before-completion** — required before claiming any gap closed

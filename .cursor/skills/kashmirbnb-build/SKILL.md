@@ -49,7 +49,7 @@ Phase 5  → test gates before marking complete
 ### Architecture
 
 - **Service role** only in server routes, Edge Functions, cron — never in browser
-- **Job queue** for all WhatsApp/SMS/email sends — no sync Meta API in webhook or OTP verify response
+- **Job queue** for all WhatsApp/SMS/email sends — no sync WhatsApp send in webhook or OTP verify response
 - **Webhook** returns 200 immediately after enqueueing job
 - **Quote match** on trip-request POST — no WhatsApp, no vendor contact
 - **OTP verify** enqueues `send_quotes` job — does not send inline
@@ -70,7 +70,9 @@ Migration names should follow Checklist: `0001_core_actors`, `0002_rate_bands`, 
 
 Required in `.env.local` and hosting:
 
-`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `SMS_PROVIDER_API_KEY`, `EMAIL_PROVIDER_API_KEY`, `CRON_SECRET`
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MSG91_AUTH_KEY`, `MSG91_WHATSAPP_INTEGRATED_NUMBER`, `MSG91_OTP_TEMPLATE_NAME`, `MSG91_OTP_TEMPLATE_NAMESPACE`, `MSG91_OTP_TEMPLATE_LANGUAGE`, `SMS_PROVIDER_API_KEY`, `EMAIL_PROVIDER_API_KEY`, `CRON_SECRET`
+
+WhatsApp transport is MSG91 (not direct Meta Graph). See **msg91-whatsapp-build**. Legacy `WHATSAPP_ACCESS_TOKEN` / `PHONE_NUMBER_ID` / `VERIFY_TOKEN` / `APP_SECRET` are retired by MSG91 Phase 5.
 
 Add `.env.example` with keys only (no secrets).
 
@@ -78,7 +80,7 @@ Add `.env.example` with keys only (no secrets).
 
 - Never return `min_quote`, `negotiation_step_min`, `negotiation_step_max` to client
 - OTP: hash at rest, rate limit send (3/10min), expiry 5min, max attempts 5
-- Verify `X-Hub-Signature-256` on every webhook POST
+- Verify inbound WhatsApp webhooks (MSG91 Webhook (New) once **msg91-whatsapp-build** Phase 4 is done)
 - `wa_message_id` unique for idempotency
 
 ### Per-phase completion
@@ -123,4 +125,6 @@ See [phases.md](phases.md) for route and function checklist per step.
 ## Related skills
 
 - **kashmirbnb-spec-audit** — gap check before/after build
+- **msg91-whatsapp-build** — MSG91 WhatsApp transport phases 0–5
+- **msg91-whatsapp-audit** — MSG91 transport readiness gate
 - **verification-before-completion** — required before claiming done
