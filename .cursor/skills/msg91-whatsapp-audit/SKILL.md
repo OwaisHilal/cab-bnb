@@ -61,12 +61,13 @@ These are **done product code**. If they break, that is 🔴 freeze anomaly, not
 
 | Area | File |
 |------|------|
-| OTP route + Phone.Email fallback | `app/api/otp/send/route.ts` |
+| OTP route + Phone.Email fallback | `app/api/otp/send/route.ts` — SMS-first; `prefer=whatsapp` retry |
 | Button/text/image primitives | `supabase/functions/_shared/whatsapp.ts` |
 | 8 Edge handlers | `supabase/functions/_shared/handlers/*.ts` |
 | Inbound action grammar | `lib/whatsapp/webhook/parseInboundAction.ts` |
 | Job queue | `supabase/functions/job-queue-worker/index.ts` |
-| SMS OTP stub | `lib/sms/sendOtpSms.ts` — **must stay stub** |
+| SMS OTP SendOTP | `lib/sms/sendOtpSms.ts` — **must stay live** (do not revert to stub) |
+| Quote SMS stub | `sendSmsFallback` in `whatsapp.ts` — **must stay stub** |
 
 ## Audit workflow
 
@@ -106,7 +107,7 @@ Flag **A** (`A1`, `A2`, …) with evidence:
 1. Handler copy or button `id`/`title` changed vs `whatsapp-templates.md`
 2. `parseInboundAction` grammar changed (`BOOK_*` / `DRIVER:` / `RATE_*`)
 3. WhatsApp send inside webhook or OTP verify (must stay job_queue)
-4. MSG91 SMS wired in `sendOtpSms.ts` (out of scope)
+4. OTP SMS **reverted to stub**, quote `sendSmsFallback` implemented, default send no longer SMS-first, or WhatsApp auto-tried in the same `/api/otp/send` request as SMS
 5. Invented template Green / wired template the user did not confirm
 6. Next MSG91 client without Deno twin (or the reverse) after Phase 1 claimed
 7. OTP still `graph.facebook.com` after Phase 2 claimed complete
@@ -126,8 +127,8 @@ Do not average. "MSG91 WhatsApp is done" needs all six ✅ — not six ⚠️.
 | 2. Credentials | 0–1 | `MSG91_AUTH_KEY` + `INTEGRATED_NUMBER` **non-empty** in target env; Edge `supabase secrets`; OTP template vars when Phase 2+ | Keys in `.env.example` / `.env.local` but empty | Keys missing from `.env.example` after Phase 0 | Secrets committed; Edge still Graph-only after Phase 3 |
 | 3. Templates | 0 | User **reported** Green for types in play; names recorded | Inventory in docs, tracker `—` | No inventory / no suggested names | Status marked approved without user report |
 | 4. Webhook | 4 | MSG91 Webhook (New) parse; WAMID dedupe; `read` → viewed; not Meta HMAC as live path | URL documented, adapter not built | No adapter after Phase 4 claimed | MSG91 payload on Meta parser in production |
-| 5. Handler freeze | every | Copy/payloads/job types/SMS stub unchanged | n/a — freeze is binary | n/a | Any freeze break |
-| 6. Live evidence | 5 | Integration §10 on a **consumer** number; Phone.Email still on WhatsApp fail | Partial journey (e.g. OTP only) | No run | Claimed live with blank creds |
+| 5. Handler freeze | every | Copy/payloads/job types + SMS-first OTP + quote `sendSmsFallback` stub | n/a — freeze is binary | n/a | Any freeze break |
+| 6. Live evidence | 5 | Integration §10 on a **consumer** number; Phone.Email still on **chosen-channel** fail | Partial journey (e.g. SMS OTP only; WhatsApp OTP only) | No run | Claimed live with blank creds |
 
 Out-of-window messages (vendor notify, pre-pickup, mid-trip, review) stay **P** until Green utility templates — session APIs are not production-ready.
 
@@ -204,14 +205,14 @@ Do not start N+1 if claimed N has any **A** or unexpected **G**/**P** on N's del
 
 After Phase 0 scaffold, a **correct** report includes at least:
 
-- **P1** Credentials: five `MSG91_*` keys present, values blank
+- **P1** Credentials: MSG91 WhatsApp + `MSG91_OTP_TEMPLATE_ID` keys present, values blank
 - **P2** Templates: nine types documented, MSG91 status `—` (no user Green)
 - **P3** Dual `WHATSAPP_*` + `MSG91_*` in `.env.example` (expected until Phase 5, not an **A**)
 - **G1** Client: still `graph.facebook.com` — phase owner 1–3, **not** a Phase 0 blocker
 - **G2** Webhook adapter: not built — phase owner 4, **not** a Phase 0 blocker
 - **G3** Live evidence: none — phase owner 5
 - **G4** User dashboard: account / Green templates / filled secrets — Phase 0 user work
-- ✅ Handler freeze
+- ✅ Handler freeze (quote `sendSmsFallback` stub). Live OTP SendOTP is **not** an A
 - **A:** none expected; any freeze break is **A1** and a blocker
 
 A **wrong** Phase 0 report: six yes/no lines and "Phase 0 complete" with no **G** / **A** / **P** tables.
@@ -221,7 +222,8 @@ A **wrong** Phase 0 report: six yes/no lines and "Phase 0 complete" with no **G*
 - Collapse **P** into ✅ because files exist
 - Collapse expected-later **G** into "everything failed"
 - Invent MSG91 template approval
-- Require MSG91 SMS
+- Treat live MSG91 OTP SendOTP as an anomaly (it is product freeze)
+- Revert `sendOtpSms.ts` to a stub from this skill
 - Fix issues unless the user asks after the audit (then cite **G1** / **A1** / **P1**)
 - Implement the next build phase from this skill
 

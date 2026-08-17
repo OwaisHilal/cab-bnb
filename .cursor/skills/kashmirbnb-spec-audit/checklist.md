@@ -82,7 +82,7 @@
 ### 2.3 POST `app/api/otp/send/route.ts`
 - [ ] Rate limit 3/10min per phone
 - [ ] 6-digit OTP, hashed, 5min expiry
-- [ ] WhatsApp auth template + SMS fallback
+- [ ] SMS SendOTP first, then Phone.Email on SMS fail; WhatsApp auth template only on `prefer=whatsapp`
 
 ### 2.4 POST `app/api/otp/verify/route.ts`
 - [ ] Verify hash, cap attempts
@@ -118,7 +118,7 @@
 ## Phase 3 — Edge Functions (Checklist)
 
 - [ ] `match-vendor-rate-bands` — Plan §3.2, §3.3
-- [ ] `send-quotes` — consolidated message, fallback SMS/email
+- [ ] `send-quotes` — consolidated message; quote SMS/email fallback stays stub
 - [ ] `compute-negotiation` — Plan §3.4, SELECT FOR UPDATE
 - [ ] `finalize-booking` — lock types, sibling snapshots → lost
 - [ ] `notify-vendor-booking` — post-commit only (Plan §6.3)
@@ -146,7 +146,7 @@
 - [ ] `supabase db reset` clean on fresh project
 - [ ] Fixture match: 4pax/1day, 2pax/1day, 7pax/1day
 - [ ] 7-pax sedan recommendation test
-- [ ] OTP e2e + SMS fallback on WA failure
+- [ ] OTP e2e: default SMS SendOTP; WhatsApp retry (`prefer=whatsapp`); Phone.Email when the chosen channel fails
 - [ ] Webhook rejects tampered signature
 - [ ] Double-tap negotiate no duplicate rounds
 - [ ] Malformed DRIVER: → parse_failed + ops alert

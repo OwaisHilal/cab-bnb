@@ -16,7 +16,7 @@ Audit is a **gate after every phase**, not a seventh phase.
 | MSG91 account + integrated WhatsApp number | User/dashboard; agent does not log in |
 | Template drafts from `docs/whatsapp-templates.md` | User submits in MSG91 dashboard (Authentication + Utility) |
 | Record names/namespaces/language | Only what the user reports — never invent Green |
-| `.env.example` keys (empty values) | `MSG91_AUTH_KEY`, `MSG91_WHATSAPP_INTEGRATED_NUMBER`, `MSG91_OTP_TEMPLATE_NAME`, `MSG91_OTP_TEMPLATE_NAMESPACE`, `MSG91_OTP_TEMPLATE_LANGUAGE` |
+| `.env.example` keys (empty values) | `MSG91_AUTH_KEY`, `MSG91_WHATSAPP_INTEGRATED_NUMBER`, `MSG91_OTP_TEMPLATE_NAME`, `MSG91_OTP_TEMPLATE_NAMESPACE`, `MSG91_OTP_TEMPLATE_LANGUAGE`, `MSG91_OTP_TEMPLATE_ID` (SMS SendOTP template id, not the WhatsApp name) |
 | Keep existing `WHATSAPP_*` keys | Do not delete Graph send env until Phase 5 |
 | Webhook URL documented | `POST /api/whatsapp/webhook` for MSG91 Webhook (New) — adapter lands in Phase 4 |
 
@@ -56,16 +56,19 @@ Fetch live payload shape from https://docs.msg91.com/whatsapp before writing JSO
 
 ## Phase 2 — OTP send
 
+Customer OTP is **SMS-first**. One `/api/otp/send` call is not a three-channel waterfall.
+
 | Deliverable | Path |
 |-------------|------|
 | Replace Meta template send | `lib/whatsapp/sendAuthTemplateOtp.ts` → MSG91 bulk template API |
 | Auth components | `body_1` + `button_1` (copy-code) per MSG91 OTP docs |
-| Env | `MSG91_OTP_TEMPLATE_NAME` / `NAMESPACE` / `LANGUAGE` (fallback documented) |
-| OTP route unchanged | `app/api/otp/send/route.ts` still WhatsApp then SMS stub then Phone.Email |
+| Env | `MSG91_OTP_TEMPLATE_NAME` / `NAMESPACE` / `LANGUAGE` (WhatsApp; fallback documented). SMS uses `MSG91_OTP_TEMPLATE_ID` |
+| OTP route | `app/api/otp/send/route.ts`: default (no `prefer`) → MSG91 SendOTP; `prefer=whatsapp` → MSG91 auth template; channel fail → `{ sent: false, fallback: "phone_email" }` |
+| Quote SMS | Edge `sendSmsFallback` **stays stub** |
 
-**Gate:** `sendWhatsAppOtp` no longer calls `graph.facebook.com`. Route still returns `{ sent, channel }` or `{ sent: false, fallback: "phone_email" }`. SMS stub unchanged.
+**Gate:** `sendWhatsAppOtp` no longer calls `graph.facebook.com`. Default send can return `{ sent: true, channel: "sms" }`. `prefer=whatsapp` can return `{ sent: true, channel: "whatsapp" }`. Either path may return `{ sent: false, fallback: "phone_email" }`. Do **not** revert `sendOtpSms.ts` to a stub.
 
-**Audit dimensions closable:** Client (OTP send path). Credentials if env filled. Handler freeze ✅.
+**Audit dimensions closable:** Client (OTP WhatsApp send path). Credentials if env filled. Handler freeze ✅ (quote SMS stub + SMS-first OTP product).
 
 ---
 
@@ -114,12 +117,12 @@ Do **not** change `parseInboundAction.ts` grammar. Do **not** process WhatsApp s
 | Deliverable | Notes |
 |-------------|--------|
 | Live journey | Integration doc §10 on a consumer WhatsApp number |
-| Phone.Email | Still offered when WhatsApp send fails |
+| Phone.Email | Still offered when the **chosen** OTP channel fails (SMS default or WhatsApp retry) |
 | Docs | Update `docs/whatsapp-templates.md` provider column; `docs/msg91-whatsapp-integration.md` status |
 | Env cleanup | Remove unused Graph **send** vars from `.env.example` **only after** no remaining `graph.facebook.com` send caller |
 | Secrets | Confirm Edge secrets set; do not commit `.env.local` |
 
-**Gate:** Evidence for: OTP received; quotes + 3 buttons; negotiate; book/token; vendor `DRIVER:`; confirmation card; lifecycle button recorded; quote `read` → `viewed`; duplicate webhook ignored; Phone.Email fallback still reachable.
+**Gate:** Evidence for: SMS OTP received (default send); WhatsApp OTP received (`prefer=whatsapp`) on a consumer number; quotes + 3 buttons; negotiate; book/token; vendor `DRIVER:`; confirmation card; lifecycle button recorded; quote `read` → `viewed`; duplicate webhook ignored; Phone.Email fallback still reachable when the chosen OTP channel fails.
 
 **Audit dimensions closable:** Live evidence. All six if templates were user-reported Green for out-of-window types; otherwise state that production gap explicitly.
 
@@ -127,7 +130,8 @@ Do **not** change `parseInboundAction.ts` grammar. Do **not** process WhatsApp s
 
 ## Out of scope (all phases)
 
-- MSG91 SMS / implementing `SmsProvider`
+- MSG91 SMS **for quotes/lifecycle** (`sendSmsFallback` stays stub). Customer OTP SMS SendOTP **is** in scope
+- Reverting `lib/sms/sendOtpSms.ts` to a stub
 - Changing handler copy or button payloads
 - Skipping the audit gate
 - Claiming Phase 5 without §10 evidence

@@ -37,7 +37,7 @@ Do not reorder or skip without user approval:
 ```
 Phase 0  → onboarding + .env.example MSG91 keys (no send-path swap)
 Phase 1  → MSG91 client (Next + Deno), same result contract
-Phase 2  → OTP send via MSG91 auth template
+Phase 2  → OTP: SMS SendOTP default + MSG91 WhatsApp auth-template retry
 Phase 3  → Edge outbound internals of whatsapp.ts only
 Phase 4  → MSG91 webhook adapter → existing ParsedAction
 Phase 5  → E2E evidence + remove unused Graph send env from docs/example
@@ -61,8 +61,12 @@ The audit must number findings **G1, G2…** (gaps), **A1, A2…** (anomalies),
   (`BOOK_FULL::`, `BOOK_TOKEN::`, `NEGOTIATE::`, `CHECKIN_*::`, `RATE_N::`,
   `DRIVER:`)
 - Do **not** send WhatsApp inline in the webhook or OTP verify (job queue)
-- Do **not** implement MSG91 SMS — `lib/sms/sendOtpSms.ts` stays stub;
-  Phone.Email remains last OTP fallback
+- **Do** keep customer OTP SMS on MSG91 SendOTP (`lib/sms/sendOtpSms.ts`,
+  `MSG91_AUTH_KEY` + `MSG91_OTP_TEMPLATE_ID`). Default `POST /api/otp/send`
+  is SMS-first. WhatsApp OTP is an explicit `prefer=whatsapp` retry, not
+  the default send. Phone.Email is the fallback when the **chosen** OTP
+  channel fails. Do **not** revert `sendOtpSms.ts` to a stub. Do **not**
+  wire SMS for quotes/lifecycle — Edge `sendSmsFallback` stays stub
 - Deno cannot import Next `server-only` — duplicate client:
   `lib/msg91/` (Next) and `supabase/functions/_shared/msg91WhatsApp.ts` (Deno)
 - Keep `sendWhatsApp*` / `sendWhatsAppOtp` return types identical

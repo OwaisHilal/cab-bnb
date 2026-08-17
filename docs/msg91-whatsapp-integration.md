@@ -362,7 +362,7 @@ New module (e.g. `lib/whatsapp/webhook/parseMsg91Webhook.ts`) should:
 
 - [x] Replace `sendAuthTemplateOtp.ts` with MSG91 bulk template send
 - [x] `body_1` + `button_1` for authentication template
-- [ ] Test: `POST /api/otp/send` → `channel: "whatsapp"` (needs filled `MSG91_*` + Green auth template)
+- [ ] Test: default `POST /api/otp/send` → `channel: "sms"`; `prefer=whatsapp` → `channel: "whatsapp"` (needs filled `MSG91_*` + Green auth template + consumer number)
 
 ### Pass 3 — Edge outbound (bulk of messages)
 

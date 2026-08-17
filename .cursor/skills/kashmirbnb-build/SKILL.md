@@ -70,9 +70,9 @@ Migration names should follow Checklist: `0001_core_actors`, `0002_rate_bands`, 
 
 Required in `.env.local` and hosting:
 
-`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MSG91_AUTH_KEY`, `MSG91_WHATSAPP_INTEGRATED_NUMBER`, `MSG91_OTP_TEMPLATE_NAME`, `MSG91_OTP_TEMPLATE_NAMESPACE`, `MSG91_OTP_TEMPLATE_LANGUAGE`, `SMS_PROVIDER_API_KEY`, `EMAIL_PROVIDER_API_KEY`, `CRON_SECRET`
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `MSG91_AUTH_KEY`, `MSG91_WHATSAPP_INTEGRATED_NUMBER`, `MSG91_OTP_TEMPLATE_NAME`, `MSG91_OTP_TEMPLATE_NAMESPACE`, `MSG91_OTP_TEMPLATE_LANGUAGE`, `MSG91_OTP_TEMPLATE_ID`, `SMS_PROVIDER_API_KEY`, `EMAIL_PROVIDER_API_KEY`, `CRON_SECRET`
 
-WhatsApp transport is MSG91 (not direct Meta Graph). See **msg91-whatsapp-build**. Legacy `WHATSAPP_ACCESS_TOKEN` / `PHONE_NUMBER_ID` / `VERIFY_TOKEN` / `APP_SECRET` are retired by MSG91 Phase 5.
+WhatsApp transport is MSG91 (not direct Meta Graph). See **msg91-whatsapp-build**. Customer OTP is MSG91 **SMS SendOTP** first (`MSG91_OTP_TEMPLATE_ID`); WhatsApp auth-template OTP is `prefer=whatsapp`; Phone.Email when the chosen channel fails. `SMS_PROVIDER_API_KEY` is unused. Legacy `WHATSAPP_ACCESS_TOKEN` / `PHONE_NUMBER_ID` / `VERIFY_TOKEN` / `APP_SECRET` are retired by MSG91 Phase 5.
 
 Add `.env.example` with keys only (no secrets).
 

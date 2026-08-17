@@ -45,23 +45,11 @@ For a full-project audit against every Checklist phase, use
 | Lifecycle events (pre-pickup, day1, midtrip, review) | `supabase/functions/_shared/handlers/dispatchLifecycleEvents.ts` | Done |
 | Job queue dispatch | `supabase/functions/job-queue-worker/index.ts`, `app/api/cron/dispatch-jobs/route.ts` | Done |
 
-## What's NOT done — the real gaps
+## What's NOT done — re-grep every run (do not copy as current truth)
 
-1. **Live credentials.** `.env.local`: `WHATSAPP_ACCESS_TOKEN`,
-   `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`
-   are blank. Every `sendWhatsApp*` call returns `{ configured: false }`; the
-   webhook GET/POST both fail without `WHATSAPP_VERIFY_TOKEN`/
-   `WHATSAPP_APP_SECRET`. Nothing has sent or received a real message yet.
-2. **Meta template approval.** Only OTP has a template code path, and even
-   that's unverified against a real approved template's `components` shape
-   (see the comment in `sendAuthTemplateOtp.ts`). The other 8 message types
-   are sent as free-form interactive/text/image session messages — these
-   will fail once sent outside a live 24h customer-service window (vendor
-   notification, pre-pickup, midtrip, review are routinely outside that
-   window). Use **whatsapp-template-submission** to work this gap.
-3. **SMS fallback.** `lib/sms/sendOtpSms.ts` is a stub returning
-   `configured: false` always; `SMS_PROVIDER_API_KEY` is blank. No provider
-   (MSG91/Twilio) chosen or wired.
+1. **Live Graph credentials for quotes.** Until MSG91 Phase 3, Edge `sendWhatsApp*` still needs `WHATSAPP_*`. Blank Graph keys mean quotes/lifecycle cannot send. OTP WhatsApp uses `MSG91_*`, not Graph.
+2. **Utility template Green.** Auth OTP may be wired; the other 8 types are still session interactive/text/image until user-reported Green + Phase 3. Use **whatsapp-template-submission**.
+3. **Quote SMS/email.** Edge `sendSmsFallback` stays stub. Customer OTP SMS is MSG91 SendOTP (`MSG91_AUTH_KEY` + `MSG91_OTP_TEMPLATE_ID`) — that is **done product**, not this gap. `SMS_PROVIDER_API_KEY` is unused.
 4. **No test-gate evidence.** Checklist Phase 5 items relevant to WhatsApp
    (tampered signature rejected, real WA number happy path, double-tap
    negotiate produces no duplicate round, malformed `DRIVER:` → parse_failed
@@ -71,7 +59,7 @@ For a full-project audit against every Checklist phase, use
 
 ```
 Audit progress:
-- [ ] Read .env.local — which WHATSAPP_*/SMS_PROVIDER_API_KEY vars are set vs blank?
+- [ ] Read .env.local — MSG91_* for OTP; WHATSAPP_* still needed for Edge quotes until Phase 3
 - [ ] Grep lib/whatsapp/, supabase/functions/_shared/whatsapp.ts, lib/sms/ for TODO/stub/"not configured" markers
 - [ ] Re-read each of the 9 handlers — do body/button text and button-count-<=3 still match Plan §6?
 - [ ] Confirm webhook still verifies X-Hub-Signature-256 and dedupes on wa_message_id
@@ -91,10 +79,10 @@ first:
 | Dimension | ✅ criteria | Current baseline (last audit) |
 |---|---|---|
 | Code | All 9 handlers + webhook + job queue implemented per Plan §6–§7 | ✅ Done |
-| Credentials | `WHATSAPP_ACCESS_TOKEN`/`PHONE_NUMBER_ID`/`VERIFY_TOKEN`/`APP_SECRET` set in the target environment | ❌ Blank in `.env.local` |
-| Template approval | All utility templates + auth template approved in Meta Business Manager, template names wired via env | ❌ Only OTP attempted, unverified shape |
-| SMS fallback | Real provider implementing `SmsProvider` in `lib/sms/`, `SMS_PROVIDER_API_KEY` set | ❌ Stub only |
-| Live test evidence | Phase 5 WhatsApp gates run and passing on a real test number | ❌ None found |
+| Credentials | Graph `WHATSAPP_*` set if scoring Edge quote send; OTP uses `MSG91_AUTH_KEY` + template vars | Re-grep `.env.local` |
+| Template approval | User-reported Green for types in play | Never invent |
+| OTP SMS | MSG91 SendOTP live (`MSG91_OTP_TEMPLATE_ID`); quote `sendSmsFallback` still stub | Do not score OTP SMS as a stub gap |
+| Live test evidence | Phase 5 WhatsApp gates on a real test number | None unless verified this run |
 
 Report format: one line per dimension with status symbol + one-sentence
 evidence, then an overall verdict — do not average into a single percentage
@@ -103,8 +91,9 @@ are very different claims.
 
 ## Do not
 
-- Mark credentials, template approval, or SMS fallback "done" because the
+- Mark credentials, template approval, or quote SMS "done" because the
   code path calling them exists — check the actual config/approval state.
+- Score live OTP SendOTP as missing SMS fallback.
 - Re-run the full `kashmirbnb-spec-audit` scope from here; link to it instead
   if the user wants non-WhatsApp phases covered.
 - Draft or submit templates yourself here — hand off to

@@ -12,9 +12,9 @@ Reference for Meta WhatsApp template submission and MSG91 SMS/WhatsApp setup. De
 | WhatsApp quotes, negotiation, lifecycle | Meta Cloud API (`interactive`, `text`, `image`) | MSG91 (Phase 3) |
 | SMS OTP | MSG91 SendOTP (`MSG91_OTP_TEMPLATE_ID`) | Phone.Email if SendOTP fails |
 
-**Important:** Customer OTP is MSG91 **SMS SendOTP** first, then Phone.Email, then optional WhatsApp auth-template retry. Quotes/lifecycle still use the WhatsApp Cloud API until Phase 3.
+**Important:** Customer OTP is MSG91 **SMS SendOTP** first. If SMS fails, the API returns Phone.Email (`fallback: "phone_email"`). WhatsApp auth-template OTP is an optional **separate** request (`prefer=whatsapp` / “Try WhatsApp OTP”), not a third automatic send in the same call. Quotes/lifecycle still use the WhatsApp Cloud API until Phase 3.
 
-**MSG91 status:** OTP send order is SMS SendOTP → Phone.Email → WhatsApp retry (`prefer=whatsapp`). Quotes/lifecycle still Meta Graph until Phase 3. Edge `sendSmsFallback` stays stub (quotes, not OTP). Approval tracker below stays `—` until you report Green from the MSG91 dashboard.
+**MSG91 status:** Default send is SMS SendOTP. Phone.Email UI if SMS fails. WhatsApp retry is `prefer=whatsapp`. Quotes/lifecycle still Meta Graph until Phase 3. Edge `sendSmsFallback` stays stub (quotes, not OTP). Approval tracker below stays `—` until you report Green from the MSG91 dashboard.
 
 ---
 
@@ -77,15 +77,15 @@ Or use Meta's built-in **Authentication → One-time passcode** template flow (c
 
 **API payload shape (current code):** MSG91 bulk template via `lib/msg91/` — `body_1` + `button_1` (copy-code). See [`msg91-whatsapp-integration.md`](./msg91-whatsapp-integration.md) §3.1–§3.2.
 
-**SMS fallback (MSG91):** Same OTP, 6 digits, ~300s expiry. Suggested SMS text:
+**SMS (MSG91 SendOTP):** Same OTP, 6 digits, ~300s expiry. This is the **default** `/api/otp/send` channel (no `prefer`). Suggested SMS text:
 
 ```
 Your Kashmir BnB Cabs OTP is {{otp}}. Valid for 5 minutes. Do not share.
 ```
 
-**Flow:** WhatsApp first → SMS if WhatsApp fails → Phone.Email if both fail (`fallback: "phone_email"`). Phone.Email is a separate web verification path (`features/phone-email/`) — not a WhatsApp/SMS template.
+**Flow:** Default send is SMS SendOTP. If SMS fails or is unconfigured, the route returns `{ sent: false, fallback: "phone_email" }` and the sheet shows Phone.Email. WhatsApp is **not** tried in that same request. The user may tap **Try WhatsApp OTP**, which POSTs `prefer: "whatsapp"` (MSG91 auth template). If WhatsApp also fails, Phone.Email is offered again. Phone.Email is a separate web verification path (`features/phone-email/`) — not a WhatsApp/SMS template.
 
-**Trigger:** `POST /api/otp/send` (customer enters phone in OTP sheet).
+**Trigger:** `POST /api/otp/send` (customer enters phone in OTP sheet). Default = SMS. `prefer=whatsapp` = WhatsApp retry.
 
 ---
 
