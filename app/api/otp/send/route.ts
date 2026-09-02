@@ -4,6 +4,7 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk, jsonValidationError } from "@/lib/api/errors";
 import { OTP_EXPIRY_SECONDS } from "@/lib/otp/config";
 import { checkOtpRateLimit, RateLimitError } from "@/lib/otp/checkOtpRateLimit";
+import { DEMO_OTP_CODE, isDemoMode } from "@/lib/otp/demoMode";
 import { generateOtpCode } from "@/lib/otp/generateOtpCode";
 import { hashOtpCode } from "@/lib/otp/hashOtpCode";
 import { sendWhatsAppOtp } from "@/lib/whatsapp/sendAuthTemplateOtp";
@@ -22,6 +23,7 @@ const otpSendSchema = z.object({
  * OTP send: MSG91 SMS SendOTP first; Phone.Email if SMS fails.
  * WhatsApp template OTP only when prefer=whatsapp (explicit UI retry).
  * Hash is stored only after a channel accepts the send.
+ * When DEMO_MODE=true, skips external delivery and stores fixed code 123456.
  */
 export async function POST(request: NextRequest) {
   let body: unknown;
@@ -46,21 +48,27 @@ export async function POST(request: NextRequest) {
     return jsonError(500, error instanceof Error ? error.message : "Supabase is not configured");
   }
 
-  try {
-    await checkOtpRateLimit(supabase, phone_e164);
-    console.info("[otp send] rate-limit ok");
-  } catch (error) {
-    if (error instanceof RateLimitError) {
-      console.info("[otp send] rate-limit 429");
-      return jsonError(429, error.message);
+  if (!isDemoMode()) {
+    try {
+      await checkOtpRateLimit(supabase, phone_e164);
+      console.info("[otp send] rate-limit ok");
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        console.info("[otp send] rate-limit 429");
+        return jsonError(429, error.message);
+      }
+      return jsonError(500, error instanceof Error ? error.message : "Rate limit check failed");
     }
-    return jsonError(500, error instanceof Error ? error.message : "Rate limit check failed");
+  } else {
+    console.info("[otp send] demo mode — skipping MSG91/WhatsApp and rate limit");
   }
 
-  const code = generateOtpCode();
+  const code = isDemoMode() ? DEMO_OTP_CODE : generateOtpCode();
   let channel: "whatsapp" | "sms" | null = null;
 
-  if (prefer === "whatsapp") {
+  if (isDemoMode()) {
+    channel = "sms";
+  } else if (prefer === "whatsapp") {
     console.info("[otp send] branch", "whatsapp");
     const whatsappResult = await sendWhatsAppOtp(phone_e164, code);
     console.info("[otp send] MSG91 WhatsApp", {
@@ -121,7 +129,9 @@ export async function POST(request: NextRequest) {
   }
 
   console.info("[otp send] hash insert ok");
-  const payload = { sent: true, channel };
+  const payload = isDemoMode()
+    ? { sent: true, channel, demo: true as const, demo_otp_code: DEMO_OTP_CODE }
+    : { sent: true, channel };
   console.info("[otp send] response", payload);
   return jsonOk(payload);
 }

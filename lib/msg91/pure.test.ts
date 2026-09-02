@@ -5,11 +5,16 @@ import {
   DEFAULT_MSG91_OTP_TEMPLATE_LANGUAGE,
   DEFAULT_MSG91_OTP_TEMPLATE_NAME,
   MSG91_WHATSAPP_BULK_URL,
+  MSG91_WHATSAPP_OUTBOUND_URL,
   buildMsg91AuthOtpComponents,
   buildMsg91BulkTemplateBody,
+  buildMsg91InteractiveButtonBody,
+  buildMsg91InteractiveListBody,
+  buildMsg91TextOutboundUrl,
   mapMsg91ResponseToWaMessageId,
   resolveMsg91OtpTemplateConfig,
   resolveMsg91SendCredentials,
+  sendMsg91InteractiveButtonWithConfig,
   sendMsg91TemplateWithConfig,
   stripE164Plus,
 } from "./pure";
@@ -225,6 +230,106 @@ describe("buildMsg91AuthOtpComponents", () => {
     assert.deepEqual(buildMsg91AuthOtpComponents("123456"), {
       body_1: { type: "text", value: "123456" },
       button_1: { subtype: "url", type: "text", value: "123456" },
+    });
+  });
+});
+
+describe("buildMsg91InteractiveButtonBody", () => {
+  it("maps interactive buttons to MSG91 session payload", () => {
+    const body = buildMsg91InteractiveButtonBody(
+      {
+        toE164: "+919876543210",
+        bodyText: "Pay to lock",
+        buttons: [{ id: "BOOK_TOKEN::uuid-1", title: "Pay ₹99 to Lock" }],
+      },
+      "+919111111111",
+    );
+
+    assert.equal(body.recipient_number, "919876543210");
+    assert.equal(body.integrated_number, "919111111111");
+    assert.equal(body.content_type, "interactive");
+    const interactive = body.interactive as Record<string, unknown>;
+    const action = interactive.action as { buttons: Array<{ reply: { id: string; title: string } }> };
+    assert.equal(action.buttons[0]?.reply.id, "BOOK_TOKEN::uuid-1");
+    assert.equal(action.buttons[0]?.reply.title, "Pay ₹99 to Lock");
+    assert.equal(MSG91_WHATSAPP_OUTBOUND_URL.includes("bulk"), false);
+  });
+});
+
+describe("buildMsg91InteractiveListBody", () => {
+  it("maps interactive list to MSG91 session payload", () => {
+    const body = buildMsg91InteractiveListBody(
+      {
+        toE164: "+919876543210",
+        bodyText: "Pick an operator",
+        buttonText: "Choose operator",
+        headerText: "Kashmir Cab Quotes",
+        sections: [
+          {
+            title: "Pay ₹99 to lock",
+            rows: [
+              {
+                id: "BOOK_TOKEN::uuid-1",
+                title: "Nova Cabs",
+                description: "₹10,800/day · Sedan",
+              },
+            ],
+          },
+        ],
+      },
+      "+919111111111",
+    );
+
+    assert.equal(body.recipient_number, "919876543210");
+    assert.equal(body.integrated_number, "919111111111");
+    assert.equal(body.content_type, "interactive");
+    const interactive = body.interactive as Record<string, unknown>;
+    assert.equal((interactive.header as { text: string }).text, "Kashmir Cab Quotes");
+    const action = interactive.action as {
+      button: string;
+      sections: Array<{ rows: Array<{ id: string }> }>;
+    };
+    assert.equal(action.button, "Choose operator");
+    assert.equal(action.sections[0]?.rows[0]?.id, "BOOK_TOKEN::uuid-1");
+  });
+});
+
+describe("buildMsg91TextOutboundUrl", () => {
+  it("builds the documented text session query string", () => {
+    const url = buildMsg91TextOutboundUrl(
+      { toE164: "+919876543210", bodyText: "Hello driver" },
+      "+919111111111",
+    );
+    assert.match(url, /^https:\/\/control\.msg91\.com\/api\/v5\/whatsapp\/whatsapp-outbound-message\/?\?/);
+    assert.match(url, /integrated_number=919111111111/);
+    assert.match(url, /recipient_number=919876543210/);
+    assert.match(url, /content_type=text/);
+    assert.match(url, /text=Hello\+driver/);
+  });
+});
+
+describe("sendMsg91InteractiveButtonWithConfig", () => {
+  it("posts to the session outbound endpoint", async () => {
+    const result = await sendMsg91InteractiveButtonWithConfig(
+      {
+        toE164: "+919876543210",
+        bodyText: "Quote ready",
+        buttons: [{ id: "BOOK_TOKEN::uuid-1", title: "Pay ₹99 to Lock" }],
+      },
+      { authKey: "key", integratedNumber: "919111111111" },
+      async (url, init) => {
+        assert.equal(url, MSG91_WHATSAPP_OUTBOUND_URL);
+        assert.equal(String(url).includes("graph.facebook.com"), false);
+        const headers = init?.headers as Record<string, string>;
+        assert.equal(headers.authkey, "key");
+        return new Response(JSON.stringify({ uuid: "wamid.BUTTON" }), { status: 200 });
+      },
+    );
+
+    assert.deepEqual(result, {
+      configured: true,
+      success: true,
+      waMessageId: "wamid.BUTTON",
     });
   });
 });

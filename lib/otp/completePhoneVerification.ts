@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { runDemoPostVerification } from "@/lib/demo/runDemoPostVerification";
 
 /**
  * Both the OTP-code path (app/api/otp/verify/route.ts) and the Phone.Email
@@ -100,6 +101,8 @@ export async function completePhoneVerification(
     if (jobEnqueueError) {
       return { ok: false, status: 500, message: `Failed to enqueue send_quotes job: ${jobEnqueueError.message}` };
     }
+
+    await runDemoPostVerification(supabase, tripRequestId);
   }
 
   return { ok: true, touristId: tourist.id as string };

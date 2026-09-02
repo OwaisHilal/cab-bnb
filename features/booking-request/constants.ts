@@ -52,6 +52,9 @@ export const ORBIT_DESTINATIONS = [
   "GUREZ",
 ] as const;
 
+/** Demo fixture vendors — keep in sync with supabase/seed.sql business_name values. */
+export const DEMO_VENDOR_NAMES = ["Nova Cabs", "Ola Cabs", "Aala Cabs", "Uber"] as const;
+
 export const ORBIT_CONFIG = {
   revolutionMs: 20000,
   introDelayMs: 400,

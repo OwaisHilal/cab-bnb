@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MAX_PAX_COUNT,
   MAX_TRIP_DAYS,
@@ -10,6 +10,7 @@ import {
   UPCOMING_DATES,
   VEHICLE_TYPE_IDS_BY_CODE,
   VEHICLE_TYPES,
+  DEMO_VENDOR_NAMES,
 } from "@/features/booking-request/constants";
 import type {
   BookingRequestDraft,
@@ -21,10 +22,12 @@ import type { DispatchVendorRow } from "@/features/quote-dispatch/types";
 import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
 import type { OtpDeliveryChannel, OtpState } from "@/features/whatsapp-otp/types";
 import type { BookingSummaryUi, QuoteRowUi, QuoteSnapshotStatusUi } from "@/features/booking-status/types";
-import { getOrCreateClientSessionId } from "@/lib/utils/clientSession";
+import { pickDefaultSelectedQuoteId } from "@/features/booking-status/quoteActions";
+import { getOrCreateClientSessionId, resetClientSessionId } from "@/lib/utils/clientSession";
 import { toIndianE164, isValidIndianMobile, sanitizeIndianPhoneInput, phoneLast4 } from "@/lib/utils/phone";
 import { getPhoneEmailProviderMode } from "@/features/phone-email/components/PhoneEmailAdapter";
 import {
+  clearPhoneEmailResumeState,
   clearVerifiedPhoneEmailResume,
   peekVerifiedPhoneEmailResume,
   writePendingPhoneEmailResume,
@@ -32,7 +35,7 @@ import {
 import type { PhoneEmailResumePayload } from "@/lib/phone-email/resumeState";
 
 type PrimaryScreen = "home" | "booking" | "profile";
-type Overlay = "none" | "sheet" | "dispatch" | "otp";
+type Overlay = "none" | "sheet" | "dispatch" | "otp" | "mock_chat";
 
 // Retries for ~90s: covers one app/api/cron/dispatch-jobs cycle (every 1
 // min, per vercel.json) plus buffer for send-quotes to actually deliver,
@@ -93,7 +96,7 @@ function createDraft(): BookingRequestDraft {
 function createDispatchRows(vendorCount: number): DispatchVendorRow[] {
   return Array.from({ length: vendorCount }, (_, index) => ({
     id: `vendor-${index}`,
-    name: `Verified operator ${index + 1}`,
+    name: DEMO_VENDOR_NAMES[index] ?? `Verified operator ${index + 1}`,
     status: "pending" as const,
   }));
 }
@@ -104,6 +107,7 @@ function createOtpState(): OtpState {
     phone: "",
     code: "",
     deliveryChannel: null,
+    demoOtpCode: null,
     phoneEmailMode: getPhoneEmailProviderMode(),
     isSubmitting: false,
     error: null,
@@ -173,6 +177,7 @@ export function useBookingFlow() {
           bookingRef: buildRequestRef(resumedPhoneEmailPayload.tripRequestId),
           summaryLabel: `${resumedPhoneEmailPayload.days} days · ${resumedPhoneEmailPayload.paxCount} travellers · ${resumedPhoneEmailPayload.vehicleType.toUpperCase()}`,
           quotes: [],
+          selectedQuoteId: null,
           isAwaitingQuotes: true,
         }
       : null,
@@ -183,12 +188,14 @@ export function useBookingFlow() {
   // available during SSR, so this resolves to "" on the server and the
   // real session id on the client's first render — no rendered output
   // depends on this value, so there's nothing for hydration to mismatch on.
-  const [sessionId] = useState<string>(() =>
+  const [sessionId, setSessionId] = useState<string>(() =>
     typeof window === "undefined" ? "" : getOrCreateClientSessionId(),
   );
   const [tripRequestId, setTripRequestId] = useState<string | null>(
     () => resumedPhoneEmailPayload?.tripRequestId ?? null,
   );
+  const [dispatchDelayMs, setDispatchDelayMs] = useState(QUOTE_REVEAL_DELAY_MS);
+  const [isDemoFlow, setIsDemoFlow] = useState(false);
 
   const dispatchTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const dispatchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -212,6 +219,29 @@ export function useBookingFlow() {
       activePollTripRequestId.current = null;
     };
   }, [clearDispatchTimers]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDemoStatus = async () => {
+      try {
+        const response = await fetch("/api/demo/status");
+        if (!response.ok || cancelled) return;
+        const data = (await response.json()) as { dispatch_delay_ms?: number };
+        if (typeof data.dispatch_delay_ms === "number" && data.dispatch_delay_ms > 0) {
+          setDispatchDelayMs(data.dispatch_delay_ms);
+        }
+        setIsDemoFlow(true);
+      } catch {
+        // Demo timing stays at production default when demo mode is off.
+      }
+    };
+
+    void loadDemoStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const openSheet = useCallback(() => {
     setSheetStep(0);
@@ -266,7 +296,7 @@ export function useBookingFlow() {
       setDispatchRows(createDispatchRows(vendorCount));
       setOverlay("dispatch");
 
-      const rowIntervalMs = Math.max(300, Math.floor(QUOTE_REVEAL_DELAY_MS / (vendorCount + 1)));
+      const rowIntervalMs = Math.max(300, Math.floor(dispatchDelayMs / (vendorCount + 1)));
       let index = 0;
 
       dispatchTimer.current = setInterval(() => {
@@ -287,9 +317,9 @@ export function useBookingFlow() {
         clearDispatchTimers();
         setOverlay(isVerified ? "none" : "otp");
         if (isVerified) setScreen("booking");
-      }, QUOTE_REVEAL_DELAY_MS);
+      }, dispatchDelayMs);
     },
-    [clearDispatchTimers, isVerified],
+    [clearDispatchTimers, dispatchDelayMs, isVerified],
   );
 
   const submitRequest = useCallback(async () => {
@@ -391,7 +421,16 @@ export function useBookingFlow() {
           const rows = data.quotes.map((quote) => toQuoteRowUi(quote, seenQuoteIdsRef.current));
           seenQuoteIdsRef.current = new Set(data.quotes.map((quote) => quote.id));
           if (activePollTripRequestId.current === requestId) {
-            setBooking((prev) => (prev ? { ...prev, quotes: rows, isAwaitingQuotes: false } : prev));
+            setBooking((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    quotes: rows,
+                    isAwaitingQuotes: false,
+                    selectedQuoteId: prev.selectedQuoteId ?? pickDefaultSelectedQuoteId(rows),
+                  }
+                : prev,
+            );
           }
           return;
         }
@@ -436,6 +475,7 @@ export function useBookingFlow() {
       bookingRef: buildRequestRef(tripRequestId),
       summaryLabel: `${draft.days} days · ${draft.paxCount} travellers · ${draft.vehicleType.toUpperCase()}`,
       quotes: [],
+      selectedQuoteId: null,
       isAwaitingQuotes: true,
     });
     setIsVerified(true);
@@ -506,9 +546,17 @@ export function useBookingFlow() {
       }
 
       const channel = data?.channel as OtpDeliveryChannel | undefined;
+      const demoOtpCode = typeof data?.demo_otp_code === "string" ? data.demo_otp_code : null;
       if (data?.sent && (channel === "whatsapp" || channel === "sms")) {
         console.info("[otp client] step", "code");
-        setOtp((prev) => ({ ...prev, isSubmitting: false, step: "code", deliveryChannel: channel, error: null }));
+        setOtp((prev) => ({
+          ...prev,
+          isSubmitting: false,
+          step: "code",
+          deliveryChannel: channel,
+          demoOtpCode,
+          error: null,
+        }));
         return;
       }
 
@@ -588,6 +636,53 @@ export function useBookingFlow() {
     setOtp((prev) => ({ ...prev, step: "phone", code: "", deliveryChannel: null, error: null }));
   }, []);
 
+  const navigateProfile = useCallback(() => setScreen("profile"), []);
+
+  const selectQuote = useCallback((quoteId: string) => {
+    setBooking((prev) => {
+      if (!prev) return prev
+      if (!prev.quotes.some((quote) => quote.id === quoteId)) return prev
+      return { ...prev, selectedQuoteId: quoteId }
+    })
+  }, []);
+
+  const selectedQuote = useMemo(() => {
+    if (!booking?.selectedQuoteId) return null
+    return booking.quotes.find((quote) => quote.id === booking.selectedQuoteId) ?? null
+  }, [booking])
+
+  const openMockChat = useCallback(() => {
+    if (!tripRequestId) return;
+    setOverlay("mock_chat");
+  }, [tripRequestId]);
+
+  const closeMockChat = useCallback(() => {
+    setOverlay("none");
+  }, []);
+
+  const clearBooking = useCallback(() => {
+    activePollTripRequestId.current = null;
+    seenQuoteIdsRef.current = new Set();
+    clearDispatchTimers();
+    clearPhoneEmailResumeState();
+
+    if (typeof window !== "undefined") {
+      setSessionId(resetClientSessionId());
+    }
+
+    setTripRequestId(null);
+    setBooking(null);
+    setIsVerified(false);
+    setOtp(createOtpState());
+    setDraft(createDraft());
+    setDispatchRows([]);
+    setRequestError(null);
+    setIsSubmittingRequest(false);
+    setSheetStep(0);
+    setOverlay("none");
+    setScreen("home");
+  }, [clearDispatchTimers]);
+
   const recommendation = buildRecommendation(draft.days, draft.paxCount, draft.vehicleType);
   const requestRef = buildRequestRef(tripRequestId);
 
@@ -599,13 +694,16 @@ export function useBookingFlow() {
     dispatchRows,
     otp,
     booking,
+    selectedQuote,
+    isDemoFlow,
     recommendation,
     requestError,
     isSubmittingRequest,
     requestRef,
+    tripRequestId,
     navigateHome: () => setScreen("home"),
     navigateBooking: () => setScreen("booking"),
-    navigateProfile: () => setScreen("profile"),
+    navigateProfile,
     openSheet,
     closeSheet,
     goToStep,
@@ -622,6 +720,10 @@ export function useBookingFlow() {
     verifyOtp,
     persistPhoneEmailResumeState,
     editPhone,
+    selectQuote,
+    openMockChat,
+    closeMockChat,
+    clearBooking,
   };
 }
 

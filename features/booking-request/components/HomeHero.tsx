@@ -2,7 +2,7 @@ import { TopBar } from "@/components/ui/TopBar";
 import { RouteOrbitCanvas } from "@/features/booking-request/components/RouteOrbitCanvas";
 import { TRIP_PRESETS } from "@/features/booking-request/constants";
 
-const VERIFIED_OPERATORS = ["VALE CABS", "himways", "GK TOURS", "SNOWLINE", "ZOJI GO"];
+const VERIFIED_OPERATORS = ["NOVA CABS", "OLA CABS", "AALA CABS", "UBER"];
 
 function VerifiedOperatorsMarquee() {
   const renderOperatorItems = (keyPrefix: string) =>

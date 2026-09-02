@@ -4,9 +4,10 @@ import type { ProfileSummary } from "@/features/profile/types";
 interface ProfileScreenProps {
   profile: ProfileSummary;
   onOpenBooking: () => void;
+  onClearBooking?: () => void;
 }
 
-export function ProfileScreen({ profile, onOpenBooking }: ProfileScreenProps) {
+export function ProfileScreen({ profile, onOpenBooking, onClearBooking }: ProfileScreenProps) {
   return (
     <div className="flex-1 overflow-y-auto p-[30px] pb-[90px] pt-[30px] animate-kmr-fade">
       <TopBar />
@@ -50,10 +51,12 @@ export function ProfileScreen({ profile, onOpenBooking }: ProfileScreenProps) {
         </div>
         <button
           type="button"
+          onClick={onClearBooking}
           className="flex bg-transparent p-3.5 text-left"
+          aria-label="Clear booking and sign out"
         >
           <span className="font-archivo text-[13px] font-bold text-kmr-orange">
-            Sign out
+            {profile.hasActiveBooking ? "Clear booking & sign out" : "Sign out"}
           </span>
         </button>
       </div>

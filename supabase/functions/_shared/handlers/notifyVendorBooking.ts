@@ -2,6 +2,8 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { sendWhatsAppTextMessage } from "../whatsapp.ts";
 import { logOutboundWhatsAppMessage } from "../messageLog.ts";
 import { firstOrSelf } from "../relations.ts";
+import { ensureMessageTemplates } from "../messageTemplateStore.ts";
+import { buildVendorNotificationMessage } from "../templateMessages.ts";
 
 interface BookingRow {
   id: string;
@@ -16,32 +18,6 @@ interface BookingRow {
   trip_requests: { pickup_location: string | null; drop_location: string | null } | { pickup_location: string | null; drop_location: string | null }[] | null;
 }
 
-function formatPickupDate(pickupAt: string): string {
-  return new Date(pickupAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-}
-
-function buildVendorNotificationMessage(booking: BookingRow): string {
-  const vehicleLabel = firstOrSelf(booking.vehicle_types)?.label ?? "Vehicle";
-  const tripRequest = firstOrSelf(booking.trip_requests);
-  const pickupLocation = tripRequest?.pickup_location ?? "Pickup";
-  const dropLocation = tripRequest?.drop_location ?? "Drop";
-  const dayLabel = booking.trip_days > 1 ? "days" : "day";
-
-  return [
-    "New booking confirmed \ud83c\udf89",
-    `Route: ${pickupLocation} \u2192 ${dropLocation}`,
-    `Date: ${formatPickupDate(booking.pickup_at)}, ${booking.trip_days} ${dayLabel}`,
-    `Pax: ${booking.pax_count} | Vehicle: ${vehicleLabel}`,
-    `Price: \u20b9${booking.final_quote}/day`,
-    "",
-    "Reply in this format to assign driver:",
-    "DRIVER: <name> | <phone> | <vehicle_number> | <vehicle_model>",
-    "",
-    "Example:",
-    "DRIVER: Bilal Ahmed | 9876543210 | JK01AB1234 | Swift Dzire",
-  ].join("\n");
-}
-
 /**
  * Checklist 3.5 / Plan §6.3: notifies the winning vendor over WhatsApp
  * asking for driver+vehicle details, strictly post-booking-commit (Plan
@@ -54,6 +30,8 @@ export async function handleNotifyVendorBooking(
   payload: { booking_id: string },
 ): Promise<void> {
   const { booking_id } = payload;
+
+  await ensureMessageTemplates(supabase);
 
   const { data: booking, error: bookingError } = await supabase
     .from("bookings")
@@ -76,7 +54,17 @@ export async function handleNotifyVendorBooking(
   const vendor = firstOrSelf(row.vendors);
   if (!vendor?.whatsapp_number) throw new Error(`booking ${booking_id} has no vendor WhatsApp number`);
 
-  const bodyText = buildVendorNotificationMessage(row);
+  const tripRequest = firstOrSelf(row.trip_requests);
+  const bodyText = buildVendorNotificationMessage({
+    pickupLocation: tripRequest?.pickup_location ?? "Pickup",
+    dropLocation: tripRequest?.drop_location ?? "Drop",
+    pickupAt: row.pickup_at,
+    tripDays: row.trip_days,
+    paxCount: row.pax_count,
+    vehicleLabel: firstOrSelf(row.vehicle_types)?.label ?? "Vehicle",
+    finalQuotePerDay: row.final_quote ?? 0,
+  });
+
   const sendResult = await sendWhatsAppTextMessage(vendor.whatsapp_number, bodyText);
 
   if (!sendResult.success) {

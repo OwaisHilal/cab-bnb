@@ -42,3 +42,46 @@ export interface Msg91OtpTemplateConfig {
   languageCode: string;
   namespace?: string;
 }
+
+export interface Msg91WhatsAppButton {
+  id: string;
+  title: string;
+}
+
+export interface Msg91WhatsAppListRow {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+export interface Msg91WhatsAppListSection {
+  title: string;
+  rows: Msg91WhatsAppListRow[];
+}
+
+export interface SendMsg91InteractiveInput {
+  toE164: string;
+  bodyText: string;
+  buttons: Msg91WhatsAppButton[];
+  footerText?: string;
+}
+
+export interface SendMsg91InteractiveListInput {
+  toE164: string;
+  bodyText: string;
+  buttonText: string;
+  sections: Msg91WhatsAppListSection[];
+  headerText?: string;
+  footerText?: string;
+}
+
+export interface SendMsg91TextInput {
+  toE164: string;
+  bodyText: string;
+}
+
+export interface SendMsg91ImageInput {
+  toE164: string;
+  imageUrl: string;
+  caption: string;
+}

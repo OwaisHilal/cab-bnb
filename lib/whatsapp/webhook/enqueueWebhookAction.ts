@@ -67,6 +67,14 @@ export async function enqueueWebhookAction(
       });
       return;
 
+    case "complete_payment":
+      if (!action.bookingId) return;
+      await enqueueJob(supabase, "complete_balance_payment", {
+        booking_id: action.bookingId,
+        wa_message_id: waMessageId,
+      });
+      return;
+
     case "driver_details":
       await enqueueJob(supabase, "parse_driver_details", {
         raw_message_text: message.textBody,

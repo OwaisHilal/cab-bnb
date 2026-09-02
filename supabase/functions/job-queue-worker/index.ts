@@ -6,6 +6,8 @@ import { handleComputeNegotiation } from "../_shared/handlers/computeNegotiation
 import { handleFinalizeBooking } from "../_shared/handlers/finalizeBooking.ts";
 import { handleNotifyVendorBooking } from "../_shared/handlers/notifyVendorBooking.ts";
 import { handleParseDriverDetails } from "../_shared/handlers/parseDriverDetails.ts";
+import { handleSendBalancePayment } from "../_shared/handlers/sendBalancePayment.ts";
+import { handleCompleteBalancePayment } from "../_shared/handlers/completeBalancePayment.ts";
 import { handleSendConfirmationCard } from "../_shared/handlers/sendConfirmationCard.ts";
 import { handleDispatchLifecycleEvents } from "../_shared/handlers/dispatchLifecycleEvents.ts";
 import { handleExpireStaleQuotes } from "../_shared/handlers/expireStaleQuotes.ts";
@@ -65,6 +67,13 @@ const HANDLERS: Record<string, (supabase: SupabaseClient, payload: Record<string
     ),
   send_confirmation_card: (supabase, payload) =>
     handleSendConfirmationCard(supabase, payload as unknown as { booking_id: string }),
+  send_balance_payment: (supabase, payload) =>
+    handleSendBalancePayment(supabase, payload as unknown as { booking_id: string }),
+  complete_balance_payment: (supabase, payload) =>
+    handleCompleteBalancePayment(
+      supabase,
+      payload as unknown as { booking_id: string; wa_message_id?: string },
+    ),
   dispatch_lifecycle_events: (supabase) => handleDispatchLifecycleEvents(supabase).then(() => undefined),
   expire_stale_quotes: (supabase) => handleExpireStaleQuotes(supabase).then(() => undefined),
   record_lifecycle_response: (supabase, payload) =>

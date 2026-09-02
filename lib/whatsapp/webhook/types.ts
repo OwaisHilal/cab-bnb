@@ -14,6 +14,7 @@ export type ParsedActionType =
   | "book_full"
   | "book_token"
   | "negotiate"
+  | "complete_payment"
   | "checkin_ok"
   | "checkin_help"
   | "rate"

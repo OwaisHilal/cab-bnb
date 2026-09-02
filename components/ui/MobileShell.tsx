@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { DemoModeBanner } from "@/features/demo/components/DemoModeBanner";
 
 interface MobileShellProps {
   children: ReactNode;
@@ -13,6 +14,7 @@ export function MobileShell({ children }: MobileShellProps) {
   return (
     <div className="flex min-h-dvh w-full justify-center bg-kmr-backdrop">
       <div className="relative flex h-dvh w-full max-w-[430px] flex-col overflow-hidden bg-white shadow-[0_0_40px_rgba(16,17,24,0.12)]">
+        <DemoModeBanner />
         {children}
       </div>
     </div>

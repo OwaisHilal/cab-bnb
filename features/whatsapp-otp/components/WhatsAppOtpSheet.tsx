@@ -197,6 +197,11 @@ export function WhatsAppOtpSheet({
               className="box-border w-full rounded-sm bg-kmr-surface text-center font-mono text-[30px] font-extrabold tracking-[14px] text-kmr-blue outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-kmr-blue/40"
               style={{ height: 64 }}
             />
+            {otp.demoOtpCode && (
+              <span className="text-center font-mono text-[9px] font-medium tracking-[1px] text-kmr-muted-3">
+                Demo mode — use code {otp.demoOtpCode}
+              </span>
+            )}
             {otp.error && (
               <span className="text-center font-mono text-[10px] font-semibold text-kmr-orange">
                 {otp.error}

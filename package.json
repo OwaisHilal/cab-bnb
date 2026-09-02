@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:reset": "supabase db reset",
+    "db:seed": "node scripts/apply-seed.mjs",
+    "db:templates": "node scripts/apply-whatsapp-templates-migration.mjs",
+    "msg91:templates": "node scripts/msg91-whatsapp-templates.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

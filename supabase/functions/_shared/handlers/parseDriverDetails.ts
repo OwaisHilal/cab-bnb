@@ -140,5 +140,20 @@ export async function handleParseDriverDetails(
 
   if (updateError) throw new Error(`Failed to update booking to driver_attached: ${updateError.message}`);
 
+  const { data: bookingMeta, error: bookingMetaError } = await supabase
+    .from("bookings")
+    .select("lock_type")
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  if (bookingMetaError) throw new Error(`Failed to read booking lock_type: ${bookingMetaError.message}`);
+
+  const lockType = (bookingMeta as { lock_type: string | null } | null)?.lock_type;
+
+  if (lockType === "token_99") {
+    await enqueueJob(supabase, "send_balance_payment", { booking_id: bookingId });
+    return;
+  }
+
   await enqueueJob(supabase, "send_confirmation_card", { booking_id: bookingId });
 }

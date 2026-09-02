@@ -20,6 +20,7 @@ export interface BookingSummaryUi {
   bookingRef: string;
   summaryLabel: string;
   quotes: QuoteRowUi[];
+  selectedQuoteId: string | null;
   /**
    * True while polling GET /api/trip-requests/[id] for the first batch of
    * quote_snapshots (Checklist 2.2 fallback path) and no rows have arrived

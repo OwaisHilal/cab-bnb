@@ -7,6 +7,8 @@ export interface OutboundMessageLogFields {
   tripRequestId?: string;
   quoteSnapshotId?: string;
   bodySnapshot: string;
+  buttonPayload?: string;
+  templateName?: string;
   waMessageId?: string;
   waStatus: "accepted" | "sent" | "delivered" | "read" | "failed" | "replied";
 }
@@ -32,6 +34,8 @@ export async function logOutboundWhatsAppMessage(
     quote_snapshot_id: fields.quoteSnapshotId ?? null,
     direction: "outbound",
     body_snapshot: fields.bodySnapshot,
+    button_payload: fields.buttonPayload ?? null,
+    template_name: fields.templateName ?? null,
     wa_message_id: fields.waMessageId ?? null,
     wa_status: fields.waStatus,
   });

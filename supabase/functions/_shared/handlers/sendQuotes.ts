@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { sendSmsFallback, sendWhatsAppButtonMessage } from "../whatsapp.ts";
+import { sendSmsFallback, sendWhatsAppListMessage } from "../whatsapp.ts";
+import { ensureMessageTemplates } from "../messageTemplateStore.ts";
+import { buildQuoteMultiListMessage } from "../templateMessages.ts";
 
 interface QuoteSnapshotRow {
   id: string;
@@ -19,17 +21,17 @@ function firstOrSelf<T>(value: T | T[] | null): T | null {
  * Checklist 3.2 / Plan §5 step 6, §6.1: consolidated WhatsApp quote message
  * for every `pending_send` quote_snapshot on a trip_request.
  *
- * Documented assumption: Plan §6.1's example shows one fixed set of 3
- * buttons ("Book Best Price" / "Negotiate" / "Pay ₹99 to Lock") regardless
- * of vendor count in the body — not a button per vendor (WhatsApp caps
- * quick-reply buttons at 3 total anyway). Buttons target the single
- * best-price (`is_best_price`) quote_snapshot, matching that example.
+ * Customer taps Pay ₹99 to Lock on the best-price quote_snapshot (WhatsApp
+ * caps quick-reply buttons at 3 — we send one token button only; negotiate
+ * and full-book were removed from the customer flow).
  */
 export async function handleSendQuotes(
   supabase: SupabaseClient,
   payload: { trip_request_id: string },
 ): Promise<void> {
   const { trip_request_id } = payload;
+
+  await ensureMessageTemplates(supabase);
 
   const { data: tripRequest, error: tripRequestError } = await supabase
     .from("trip_requests")
@@ -58,28 +60,22 @@ export async function handleSendQuotes(
   const rows = snapshots as unknown as QuoteSnapshotRow[];
   const bestPrice = rows.find((row) => row.is_best_price) ?? rows[0];
 
-  const bodyLines = rows.map((row) => {
-    const vendorName = firstOrSelf(row.vendors)?.business_name ?? "Vendor";
-    const vehicleLabel = firstOrSelf(row.vehicle_types)?.label ?? "Vehicle";
-    const prefix = row.is_best_price ? "\u2b50 Best Price \u2014 " : "";
-    return `${prefix}${vendorName}: \u20b9${row.current_quote}/day (${vehicleLabel})`;
+  const quoteRows = rows.map((row) => ({
+    quoteSnapshotId: row.id,
+    vendorName: firstOrSelf(row.vendors)?.business_name ?? "Vendor",
+    pricePerDay: row.current_quote,
+    vehicleLabel: firstOrSelf(row.vehicle_types)?.label ?? "Vehicle",
+  }));
+
+  const listMessage = buildQuoteMultiListMessage({ quoteRows });
+  const bodyText = listMessage.bodyText;
+  const listPayload = listMessage.list;
+  const buttonPayloadLog = JSON.stringify({
+    templateKey: quoteRows.length > 1 ? "quote_multi_v1" : "quote_single_v1",
+    list: listPayload,
   });
 
-  const bodyText = [
-    "Your Kashmir Cab Quotes Are In \ud83d\ude96",
-    "",
-    ...bodyLines,
-    "",
-    "Prices shown are opening quotes. You can negotiate.",
-  ].join("\n");
-
-  const buttons = [
-    { id: `BOOK_FULL::${bestPrice.id}`, title: "Book Best Price" },
-    { id: `NEGOTIATE::${bestPrice.id}`, title: "Negotiate" },
-    { id: `BOOK_TOKEN::${bestPrice.id}`, title: "Pay \u20b999 to Lock" },
-  ];
-
-  let sendResult = await sendWhatsAppButtonMessage(touristPhone, bodyText, buttons);
+  let sendResult = await sendWhatsAppListMessage(touristPhone, bodyText, listPayload);
   let sentChannel: "whatsapp" | "sms" = "whatsapp";
 
   if (!sendResult.success) {
@@ -105,8 +101,10 @@ export async function handleSendQuotes(
     quote_snapshot_id: bestPrice.id,
     direction: "outbound",
     body_snapshot: bodyText,
+    button_payload: buttonPayloadLog,
     wa_message_id: sendResult.waMessageId ?? null,
     wa_status: sentChannel === "whatsapp" ? "sent" : "accepted",
+    template_name: quoteRows.length > 1 ? "quote_multi_v1" : "quote_single_v1",
   });
 
   if (logError) throw new Error(`Failed to log outbound WhatsApp message: ${logError.message}`);

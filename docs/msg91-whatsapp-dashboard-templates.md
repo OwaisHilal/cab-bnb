@@ -1,73 +1,103 @@
-# MSG91 WhatsApp dashboard templates
+# MSG91 WhatsApp dashboard templates — Kashmir BnB Cabs
 
-Create at **MSG91 → WhatsApp → Templates → Create Template**. Language **`en_US`**. Submit and wait for **Green**. Then copy **name + namespace** from the template’s **code** view.
+**Create at:** MSG91 → WhatsApp → Templates → Create Template  
+**Language:** `en_US`  
+**After Green approval:** copy **name + namespace** from the template **Code** view into `.env.local`
 
-Do not start or end a body with a variable. Button labels max 20 characters. Payloads like `BOOK_FULL::<id>` are not typed into the dashboard — titles only.
+**Print full specs:** `npm run msg91:templates`  
+**Print env block:** `npm run msg91:templates -- --env`  
+**List remote templates:** `npm run msg91:templates -- --list` (needs `MSG91_AUTH_KEY` + integrated number)
+
+Machine-readable catalog: [`templates/msg91/whatsapp-templates.json`](../templates/msg91/whatsapp-templates.json)
 
 ---
 
-## 1. `otp_verification` — Authentication
+## Two send types (important)
 
-Do **not** make this Utility. Use **Authentication / OTP + Copy code**.
+| Type | When | Dashboard template? | How code sends |
+|------|------|---------------------|----------------|
+| **Bulk template** | OTP, vendor notify, reminders | **Yes — create in dashboard** | `POST …/whatsapp-outbound-message/bulk/` |
+| **Session interactive** | Quote Pay ₹99, balance payment, check-in | **No** — dynamic button IDs | `POST …/whatsapp-outbound-message/` interactive API |
 
-Name must be `otp_verification` unless `MSG91_OTP_TEMPLATE_NAME` is changed later.
+Button payloads like `BOOK_TOKEN::{quote_snapshot_id}` are **not** typed into the dashboard — only button **titles** appear in Utility templates. Because our IDs are dynamic per booking, quotes and payments use the **session interactive API** (already wired in code).
 
-If the dashboard asks for sample body:
+**Demo mode** simulates messages in-app — it does not call MSG91. Templates below are for **production**.
 
+---
+
+## P0 — Create first
+
+### 1. `otp_verification` — Authentication
+
+**Category:** Authentication · **OTP + Copy code** (not Utility)
+
+**Body:**
 ```
 Your Kashmir BnB Cabs verification code is {{1}}. Do not share this code with anyone.
 ```
 
-Button: **Copy code**. After Green, set `MSG91_OTP_TEMPLATE_NAMESPACE` and `MSG91_OTP_TEMPLATE_LANGUAGE=en_US`.
+**Button:** Copy code  
+**Sample {{1}}:** `123456`
+
+**Env after Green:**
+```env
+MSG91_OTP_TEMPLATE_NAME=otp_verification
+MSG91_OTP_TEMPLATE_NAMESPACE=<from MSG91 code view>
+MSG91_OTP_TEMPLATE_LANGUAGE=en_US
+```
+
+**Wired in:** `lib/whatsapp/sendAuthTemplateOtp.ts`
 
 ---
 
-## 2. `quote_consolidated_v1` — Utility
+### 2. Quote + Pay ₹99 — session interactive (no dashboard template)
 
-Body:
+**Do not create** `quote_consolidated_v1` with 3 buttons — negotiate was removed.
 
+**Body (example):**
 ```
-Your Kashmir Cab Quotes Are In 🚖
+Your Kashmir Cab Quote 🚖
 
-{{1}}
-
-Prices shown are opening quotes. You can negotiate.
+Aala Cabs: ₹17500/day (Amaze)
 ```
 
-`{{1}}` = all vendor lines, e.g. `⭐ Best Price — Vendor A: ₹2500/day (Sedan)` then more lines.
+**Button (1):**
 
-Buttons: `Book Best Price` · `Negotiate` · `Pay ₹99 to Lock`
+| Title | Payload (in code only) |
+|-------|--------------------------|
+| Pay ₹99 to Lock | `BOOK_TOKEN::{quote_snapshot_id}` |
+
+**Wired in:** `lib/whatsapp/buildQuoteDelivery.ts` → MSG91 interactive send
 
 ---
 
-## 3. `negotiation_offer_v1` — Utility
+### 3. Driver assigned + balance — session interactive (no dashboard template)
 
-Body:
-
+**Body (example):**
 ```
-Here's our next offer: ₹{{1}}/day.
+Your driver has been assigned 🚗
+Operator: Aala Cabs
+Balance due: ₹17,501 (after ₹99 token).
+Complete payment here to unlock your driver's contact number.
 ```
 
-Buttons: `Book This Price` · `Negotiate Again` · `Pay ₹99 to Lock`
+**Button:**
+
+| Title | Payload |
+|-------|---------|
+| Pay ₹17,501 Now | `COMPLETE_PAYMENT::{booking_id}` |
+
+**Note:** Driver photo + car image in mock chat is **demo UI only** — not an MSG91 template.
+
+**Wired in:** `lib/demo/postTokenBookingFlow.ts` (demo + production path)
 
 ---
 
-## 4. `negotiation_final_v1` — Utility
+## P1 — Vendor ops
 
-Body:
+### 4. `vendor_booking_notify_v1` — Utility (no buttons)
 
-```
-This is our best possible price: ₹{{1}}/day. Final offer.
-```
-
-Buttons: `Book Now` · `Pay ₹99 to Lock`
-
----
-
-## 5. `vendor_booking_notify_v1` — Utility (no buttons)
-
-Body:
-
+**Body:**
 ```
 New booking confirmed 🎉
 Route: {{1}} → {{2}}
@@ -93,12 +123,21 @@ DRIVER: Bilal Ahmed | 9876543210 | JK01AB1234 | Swift Dzire
 | {{7}} | Sedan |
 | {{8}} | 2420 |
 
+**Env (optional, when wired):**
+```env
+MSG91_VENDOR_NOTIFY_TEMPLATE_NAME=vendor_booking_notify_v1
+MSG91_VENDOR_NOTIFY_TEMPLATE_NAMESPACE=
+```
+
 ---
 
-## 6. `customer_confirmation_v1` — Utility
+## P2 — Lifecycle & confirmation
 
-Optional **IMAGE** header. Body:
+### 5. `customer_confirmation_v1` — Utility
 
+Optional **IMAGE** header (public HTTPS URL).
+
+**Body:**
 ```
 Your Cab Is Confirmed ✅
 Driver: {{1}}
@@ -107,61 +146,78 @@ Pickup: {{4}} — {{5}}
 Vendor: {{6}}
 ```
 
-| Var | Sample |
-|-----|--------|
-| {{1}} | Bilal Ahmed |
-| {{2}} | Swift Dzire |
-| {{3}} | JK01AB1234 |
-| {{4}} | 14 Aug, 09:00 |
-| {{5}} | Srinagar |
-| {{6}} | Vendor A |
+### 6. `pre_pickup_reminder_v1` — Utility (no buttons)
 
----
-
-## 7. `pre_pickup_reminder_v1` — Utility (no buttons)
-
-Body:
-
+**Body:**
 ```
 Reminder: your Kashmir cab pickup is tomorrow 🚗
 {{1}}
 Need help? Reply to this message and our support team will assist.
 ```
 
-`{{1}}` is either `Driver: Bilal Ahmed, Vehicle: Swift Dzire (JK01AB1234)` or `Driver details are being finalized.`
+`{{1}}` = `Driver: Imran Dar, Vehicle: Amaze (JK01AA9012)` or `Driver details are being finalized.`
+
+### 7. `driver_contact_v1` — Utility (no buttons)
+
+**Body:**
+```
+Payment received ✅
+Your driver: {{1}}
+Call / WhatsApp: {{2}}
+Vehicle: {{3}} ({{4}})
+Operator: {{5}}
+Driver will reach out before pickup. Safe travels!
+```
 
 ---
 
-## 8. `day1_checkin_v1` — Utility
+## P3 — Session interactive (lifecycle buttons)
 
-Body:
+Create **no dashboard template** — code sends via interactive API when session is open.
 
-```
-How was your pickup this morning?
-```
+| Message | Body | Buttons |
+|---------|------|---------|
+| Day-1 check-in | How was your pickup this morning? | All Good · Report Issue |
+| Mid-trip wellness | Everything going smoothly on your trip so far? | Yes, all good · Need Help |
+| Post-trip review | How was your trip? Tap a rating below. | Excellent · Okay · Poor |
 
-Buttons: `All Good` · `Report Issue`
-
----
-
-## 9. `midtrip_wellness_v1` — Utility
-
-Body:
-
-```
-Everything going smoothly on your trip so far?
-```
-
-Buttons: `Yes, all good` · `Need Help`
+Payloads: `CHECKIN_OK::{lifecycle_event_id}`, `CHECKIN_HELP::…`, `RATE_5::{booking_id}`, etc.
 
 ---
 
-## 10. `post_trip_review_v1` — Utility
+## Deprecated — do not create
 
-Body:
+- `quote_consolidated_v1` (Book / Negotiate / Pay ₹99 — old 3-button flow)
+- `negotiation_offer_v1`
+- `negotiation_final_v1`
 
+Negotiate was removed from the customer flow.
+
+---
+
+## Required env (production)
+
+```env
+MSG91_AUTH_KEY=
+MSG91_WHATSAPP_INTEGRATED_NUMBER=
+MSG91_OTP_TEMPLATE_NAME=otp_verification
+MSG91_OTP_TEMPLATE_NAMESPACE=
+MSG91_OTP_TEMPLATE_LANGUAGE=en_US
+MSG91_OTP_TEMPLATE_ID=          # SMS SendOTP (separate from WhatsApp template)
 ```
-How was your trip? Tap a rating below.
-```
 
-Buttons: `Excellent` · `Okay` · `Poor`
+Set Edge secrets too: `supabase secrets set --env-file .env.local`
+
+---
+
+## Approval checklist
+
+| Template | Category | Status | Namespace in .env |
+|----------|----------|--------|-------------------|
+| otp_verification | Authentication | ☐ Green | ☐ |
+| vendor_booking_notify_v1 | Utility | ☐ Green | ☐ |
+| customer_confirmation_v1 | Utility | ☐ Green | ☐ |
+| pre_pickup_reminder_v1 | Utility | ☐ Green | ☐ |
+| driver_contact_v1 | Utility | ☐ Green | ☐ |
+| Quote Pay ₹99 | Session interactive | N/A (code) | — |
+| Balance payment | Session interactive | N/A (code) | — |

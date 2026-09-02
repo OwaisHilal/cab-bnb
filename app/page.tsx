@@ -9,6 +9,8 @@ import { DispatchScreen } from "@/features/quote-dispatch/components/DispatchScr
 import { WhatsAppOtpSheet } from "@/features/whatsapp-otp/components/WhatsAppOtpSheet";
 import { BookingStatusScreen } from "@/features/booking-status/components/BookingStatusScreen";
 import { ProfileScreen } from "@/features/profile/components/ProfileScreen";
+import { DemoAdminLink } from "@/features/admin-debug/components/DemoAdminLink";
+import { MockWhatsAppChat } from "@/features/demo/components/MockWhatsAppChat";
 
 export default function Home() {
   const flow = useBookingFlow();
@@ -22,7 +24,12 @@ export default function Home() {
 
       {flow.screen === "booking" &&
         (flow.booking ? (
-          <BookingStatusScreen booking={flow.booking} />
+          <BookingStatusScreen
+            booking={flow.booking}
+            isDemoFlow={flow.isDemoFlow}
+            onSelectQuote={flow.selectQuote}
+            onOpenMockChat={flow.openMockChat}
+          />
         ) : (
           <EmptyBookingState onStart={flow.openSheet} />
         ))}
@@ -35,6 +42,7 @@ export default function Home() {
             activeBookingLabel: flow.booking?.summaryLabel ?? null,
           }}
           onOpenBooking={flow.navigateBooking}
+          onClearBooking={flow.clearBooking}
         />
       )}
 
@@ -76,6 +84,15 @@ export default function Home() {
         />
       )}
 
+      {flow.overlay === "mock_chat" && flow.tripRequestId && (
+        <MockWhatsAppChat
+          tripRequestId={flow.tripRequestId}
+          phoneDisplay={flow.otp.phone ? `+91 ${flow.otp.phone}` : "Traveller"}
+          selectedQuote={flow.selectedQuote}
+          onClose={flow.closeMockChat}
+        />
+      )}
+
       {showBottomNav && (
         <BottomNav
           active={flow.screen}
@@ -87,6 +104,8 @@ export default function Home() {
           }}
         />
       )}
+
+      <DemoAdminLink />
     </MobileShell>
   );
 }

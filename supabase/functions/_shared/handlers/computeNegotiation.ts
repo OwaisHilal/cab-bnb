@@ -52,16 +52,7 @@ export async function handleComputeNegotiation(
     ? `This is our best possible price: \u20b9${data.next_quote}/day. Final offer.`
     : `Here's our next offer: \u20b9${data.next_quote}/day.`;
 
-  const buttons = data.is_final
-    ? [
-        { id: `BOOK_FULL::${quote_snapshot_id}`, title: "Book Now" },
-        { id: `BOOK_TOKEN::${quote_snapshot_id}`, title: "Pay \u20b999 to Lock" },
-      ]
-    : [
-        { id: `BOOK_FULL::${quote_snapshot_id}`, title: "Book This Price" },
-        { id: `NEGOTIATE::${quote_snapshot_id}`, title: "Negotiate Again" },
-        { id: `BOOK_TOKEN::${quote_snapshot_id}`, title: "Pay \u20b999 to Lock" },
-      ];
+  const buttons = [{ id: `BOOK_TOKEN::${quote_snapshot_id}`, title: "Pay \u20b999 to Lock" }];
 
   const sendResult = await sendWhatsAppButtonMessage(touristPhone, bodyText, buttons);
   if (!sendResult.success) {
@@ -73,6 +64,7 @@ export async function handleComputeNegotiation(
     quote_snapshot_id,
     direction: "outbound",
     body_snapshot: bodyText,
+    button_payload: JSON.stringify(buttons),
     wa_message_id: sendResult.waMessageId ?? null,
     wa_status: "sent",
   });

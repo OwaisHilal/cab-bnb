@@ -22,6 +22,8 @@ export interface OtpState {
   phone: string;
   code: string;
   deliveryChannel: OtpDeliveryChannel | null;
+  /** Set when POST /api/otp/send runs in DEMO_MODE — shown in the OTP sheet. */
+  demoOtpCode: string | null;
   phoneEmailMode: PhoneEmailProviderMode;
   isSubmitting: boolean;
   error: string | null;

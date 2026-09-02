@@ -1,9 +1,10 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { scheduleLifecycleEvents } from "../lifecycleSchedule.ts";
 import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "../whatsapp.ts";
 import { logOutboundWhatsAppMessage } from "../messageLog.ts";
 import { firstOrSelf } from "../relations.ts";
-
-const MIDTRIP_WELLNESS_MIN_DAYS_DEFAULT = 3;
+import { ensureMessageTemplates } from "../messageTemplateStore.ts";
+import { buildConfirmationMessage as renderConfirmationMessage } from "../templateMessages.ts";
 
 interface BookingRow {
   id: string;
@@ -30,74 +31,6 @@ function formatPickupDateTime(pickupAt: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function buildConfirmationMessage(booking: BookingRow, driver: DriverDetailRow): string {
-  const vendorName = firstOrSelf(booking.vendors)?.business_name ?? "your vendor";
-  const pickupLocation = firstOrSelf(booking.trip_requests)?.pickup_location ?? "your pickup point";
-
-  return [
-    "Your Cab Is Confirmed \u2705",
-    `Driver: ${driver.parsed_driver_name ?? "TBD"}`,
-    `Vehicle: ${driver.parsed_vehicle_model ?? "TBD"} (${driver.parsed_vehicle_number ?? "TBD"})`,
-    `Pickup: ${formatPickupDateTime(booking.pickup_at)} \u2014 ${pickupLocation}`,
-    `Vendor: ${vendorName}`,
-  ].join("\n");
-}
-
-/**
- * Schedules the Plan §6.5 lifecycle touchpoints for a booking. Guarded by
- * an existence check so a retried `send_confirmation_card` job (e.g. the
- * confirmation send succeeds but the process crashes before the booking
- * status update) doesn't double-schedule reminders.
- */
-async function scheduleLifecycleEvents(
-  supabase: SupabaseClient,
-  bookingId: string,
-  pickupAt: string,
-  tripDays: number,
-): Promise<void> {
-  const { count, error: countError } = await supabase
-    .from("booking_lifecycle_events")
-    .select("id", { count: "exact", head: true })
-    .eq("booking_id", bookingId);
-
-  if (countError) throw new Error(`Failed to check existing lifecycle events: ${countError.message}`);
-  if ((count ?? 0) > 0) return;
-
-  const pickupMs = new Date(pickupAt).getTime();
-  const hour = 60 * 60 * 1000;
-  const day = 24 * hour;
-  const midtripMinDays = Number(Deno.env.get("MIDTRIP_WELLNESS_MIN_DAYS")) || MIDTRIP_WELLNESS_MIN_DAYS_DEFAULT;
-
-  const events: Array<{ booking_id: string; event_type: string; scheduled_at: string }> = [
-    {
-      booking_id: bookingId,
-      event_type: "pre_pickup_reminder",
-      scheduled_at: new Date(pickupMs - 12 * hour).toISOString(),
-    },
-    {
-      booking_id: bookingId,
-      event_type: "day1_checkin",
-      scheduled_at: new Date(pickupMs + 2 * hour).toISOString(),
-    },
-    {
-      booking_id: bookingId,
-      event_type: "post_trip_review",
-      scheduled_at: new Date(pickupMs + tripDays * day + day).toISOString(),
-    },
-  ];
-
-  if (tripDays >= midtripMinDays) {
-    events.push({
-      booking_id: bookingId,
-      event_type: "midtrip_wellness",
-      scheduled_at: new Date(pickupMs + 1.5 * day).toISOString(),
-    });
-  }
-
-  const { error: insertError } = await supabase.from("booking_lifecycle_events").insert(events);
-  if (insertError) throw new Error(`Failed to schedule lifecycle events: ${insertError.message}`);
 }
 
 /**
@@ -132,6 +65,8 @@ export async function handleSendConfirmationCard(
 ): Promise<void> {
   const { booking_id } = payload;
 
+  await ensureMessageTemplates(supabase);
+
   const { data: booking, error: bookingError } = await supabase
     .from("bookings")
     .select(
@@ -162,7 +97,17 @@ export async function handleSendConfirmationCard(
   if (driverDetailError) throw new Error(`Failed to fetch driver details: ${driverDetailError.message}`);
   if (!driverDetail) throw new Error(`booking ${booking_id} has no parsed driver details yet`);
 
-  const bodyText = buildConfirmationMessage(row, driverDetail as DriverDetailRow);
+  const driver = driverDetail as DriverDetailRow;
+  const vendorName = firstOrSelf(row.vendors)?.business_name ?? "your vendor";
+  const pickupLocation = firstOrSelf(row.trip_requests)?.pickup_location ?? "your pickup point";
+  const bodyText = renderConfirmationMessage({
+    driverName: driver.parsed_driver_name ?? "TBD",
+    vehicleModel: driver.parsed_vehicle_model ?? "TBD",
+    vehicleNumber: driver.parsed_vehicle_number ?? "TBD",
+    pickupTime: formatPickupDateTime(row.pickup_at),
+    pickupLocation,
+    vendorName,
+  });
   const vehicleCode = firstOrSelf(row.vehicle_types)?.code ?? null;
   const imageUrl = resolveConfirmationCardImageUrl(vehicleCode);
 

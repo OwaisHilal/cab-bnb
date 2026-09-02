@@ -84,3 +84,13 @@ export function peekVerifiedPhoneEmailResume(): PhoneEmailResumePayload | null {
 export function clearVerifiedPhoneEmailResume(): void {
   sessionStorage.removeItem(VERIFIED_KEY);
 }
+
+export function clearPendingPhoneEmailResume(): void {
+  sessionStorage.removeItem(PENDING_KEY);
+}
+
+/** Clears Phone.Email handoff keys when the user starts a fresh booking. */
+export function clearPhoneEmailResumeState(): void {
+  clearVerifiedPhoneEmailResume();
+  clearPendingPhoneEmailResume();
+}

@@ -44,6 +44,8 @@ function parseButtonPayload(payload: string): ParsedAction {
       return entityId ? { type: "book_token", quoteSnapshotId: entityId } : { type: "unknown" };
     case "NEGOTIATE":
       return entityId ? { type: "negotiate", quoteSnapshotId: entityId } : { type: "unknown" };
+    case "COMPLETE_PAYMENT":
+      return entityId ? { type: "complete_payment", bookingId: entityId } : { type: "unknown" };
     case "CHECKIN_OK":
       return entityId ? { type: "checkin_ok", lifecycleEventId: entityId } : { type: "unknown" };
     case "CHECKIN_HELP":

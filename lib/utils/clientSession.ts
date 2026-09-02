@@ -16,3 +16,14 @@ export function getOrCreateClientSessionId(): string {
   sessionStorage.setItem(SESSION_STORAGE_KEY, created);
   return created;
 }
+
+/** Drops the tab session id — next getOrCreateClientSessionId() mints a new one. */
+export function clearClientSessionId(): void {
+  sessionStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+/** Clears any stored session id and returns a freshly minted one. */
+export function resetClientSessionId(): string {
+  clearClientSessionId();
+  return getOrCreateClientSessionId();
+}

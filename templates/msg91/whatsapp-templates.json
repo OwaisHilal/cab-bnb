@@ -1,0 +1,253 @@
+{
+  "meta": {
+    "language": "en_US",
+    "provider": "MSG91",
+    "dashboardPath": "MSG91 → WhatsApp → Templates → Create Template",
+    "docs": "https://docs.msg91.com/whatsapp"
+  },
+  "dashboardTemplates": [
+    {
+      "name": "otp_verification",
+      "category": "AUTHENTICATION",
+      "priority": "P0",
+      "sendMethod": "bulk_template",
+      "wiredInCode": "lib/whatsapp/sendAuthTemplateOtp.ts",
+      "env": {
+        "MSG91_OTP_TEMPLATE_NAME": "otp_verification",
+        "MSG91_OTP_TEMPLATE_NAMESPACE": "<copy from MSG91 code view after Green>",
+        "MSG91_OTP_TEMPLATE_LANGUAGE": "en_US"
+      },
+      "body": "Your Kashmir BnB Cabs verification code is {{1}}. Do not share this code with anyone.",
+      "buttons": [{ "type": "OTP_COPY_CODE", "label": "Copy code" }],
+      "sampleVariables": { "1": "123456" },
+      "notes": "Create as Authentication / OTP + Copy code — not Utility."
+    },
+    {
+      "name": "quote_single_v1",
+      "category": "UTILITY",
+      "priority": "P0",
+      "sendMethod": "bulk_template_or_session_interactive",
+      "wiredInCode": "lib/whatsapp/templateCatalog.ts → buildQuoteSingleMessage",
+      "env": {
+        "MSG91_QUOTE_SINGLE_TEMPLATE_NAME": "quote_single_v1",
+        "MSG91_QUOTE_SINGLE_TEMPLATE_NAMESPACE": "<after Green>"
+      },
+      "body": "Your Kashmir Cab Quote 🚖\n\n{{1}}: ₹{{2}}/day ({{3}})",
+      "buttons": [{ "type": "QUICK_REPLY", "label": "Pay ₹99 to Lock" }],
+      "sampleVariables": {
+        "1": "Aala Cabs",
+        "2": "17500",
+        "3": "Amaze"
+      },
+      "notes": "Until Green: send via session interactive API with dynamic BOOK_TOKEN::{quote_snapshot_id} button payload. After Green: bulk template + interactive fallback."
+    },
+    {
+      "name": "driver_balance_v1",
+      "category": "UTILITY",
+      "priority": "P0",
+      "sendMethod": "bulk_template_or_session_interactive",
+      "wiredInCode": "lib/whatsapp/templateCatalog.ts → buildDriverBalanceMessage",
+      "env": {
+        "MSG91_DRIVER_BALANCE_TEMPLATE_NAME": "driver_balance_v1",
+        "MSG91_DRIVER_BALANCE_TEMPLATE_NAMESPACE": "<after Green>"
+      },
+      "body": "Your driver has been assigned 🚗\nOperator: {{1}}\nBalance due: ₹{{2}} (after ₹99 token).\nComplete payment here to unlock your driver's contact number.",
+      "buttons": [{ "type": "QUICK_REPLY", "label": "Pay balance Now" }],
+      "sampleVariables": {
+        "1": "Aala Cabs",
+        "2": "17501"
+      },
+      "notes": "Button title is dynamic (Pay ₹X Now) — use session interactive until template approved. Driver/car image is demo UI only."
+    },
+    {
+      "name": "vendor_booking_notify_v1",
+      "category": "UTILITY",
+      "priority": "P1",
+      "sendMethod": "bulk_template_or_session_text",
+      "wiredInCode": "supabase/functions/_shared/handlers/notifyVendorBooking.ts",
+      "env": {
+        "MSG91_VENDOR_NOTIFY_TEMPLATE_NAME": "vendor_booking_notify_v1",
+        "MSG91_VENDOR_NOTIFY_TEMPLATE_NAMESPACE": "<after Green>"
+      },
+      "body": "New booking confirmed 🎉\nRoute: {{1}} → {{2}}\nDate: {{3}}, {{4}} {{5}}\nPax: {{6}} | Vehicle: {{7}}\nPrice: ₹{{8}}/day\n\nReply in this format to assign driver:\nDRIVER: <name> | <phone> | <vehicle_number> | <vehicle_model>\n\nExample:\nDRIVER: Bilal Ahmed | 9876543210 | JK01AB1234 | Swift Dzire",
+      "buttons": [],
+      "sampleVariables": {
+        "1": "Srinagar",
+        "2": "Pahalgam",
+        "3": "14 Aug",
+        "4": "3",
+        "5": "days",
+        "6": "4",
+        "7": "Sedan",
+        "8": "2420"
+      }
+    },
+    {
+      "name": "customer_confirmation_v1",
+      "category": "UTILITY",
+      "priority": "P2",
+      "sendMethod": "bulk_template_or_session_image",
+      "wiredInCode": "supabase/functions/_shared/handlers/sendConfirmationCard.ts",
+      "env": {
+        "MSG91_CONFIRMATION_TEMPLATE_NAME": "customer_confirmation_v1",
+        "MSG91_CONFIRMATION_TEMPLATE_NAMESPACE": "<after Green>"
+      },
+      "header": { "type": "IMAGE", "sampleUrl": "<public HTTPS confirmation card URL>" },
+      "body": "Your Cab Is Confirmed ✅\nDriver: {{1}}\nVehicle: {{2}} ({{3}})\nPickup: {{4}} — {{5}}\nVendor: {{6}}",
+      "buttons": [],
+      "sampleVariables": {
+        "1": "Imran Dar",
+        "2": "Amaze",
+        "3": "JK01AA9012",
+        "4": "14 Aug, 09:00",
+        "5": "Srinagar",
+        "6": "Aala Cabs"
+      }
+    },
+    {
+      "name": "pre_pickup_reminder_v1",
+      "category": "UTILITY",
+      "priority": "P2",
+      "sendMethod": "bulk_template_or_session_text",
+      "wiredInCode": "supabase/functions/_shared/handlers/dispatchLifecycleEvents.ts",
+      "env": {
+        "MSG91_PRE_PICKUP_TEMPLATE_NAME": "pre_pickup_reminder_v1",
+        "MSG91_PRE_PICKUP_TEMPLATE_NAMESPACE": "<after Green>"
+      },
+      "body": "Reminder: your Kashmir cab pickup is tomorrow 🚗\n{{1}}\nNeed help? Reply to this message and our support team will assist.",
+      "buttons": [],
+      "sampleVariables": {
+        "1": "Driver: Imran Dar, Vehicle: Amaze (JK01AA9012)"
+      }
+    },
+    {
+      "name": "driver_assignment_v1",
+      "category": "UTILITY",
+      "priority": "P1",
+      "sendMethod": "bulk_template_or_session_text",
+      "wiredInCode": "supabase/functions/_shared/handlers/completeBalancePayment.ts",
+      "env": {
+        "MSG91_DRIVER_ASSIGNMENT_TEMPLATE_NAME": "driver_assignment_v1",
+        "MSG91_DRIVER_ASSIGNMENT_TEMPLATE_NAMESPACE": "<after Green>"
+      },
+      "body": "New ride assigned, {{1}} 🚗\nRoute: {{2}} → {{3}}\nDate: {{4}}, {{5}} {{6}}\nGuest: {{7}} ({{8}})\nYour vehicle: {{9}} ({{10}})\nPlease contact the guest before pickup. Safe drive!",
+      "buttons": [],
+      "sampleVariables": {
+        "1": "Imran Dar",
+        "2": "Srinagar",
+        "3": "Pahalgam",
+        "4": "14 Aug",
+        "5": "3",
+        "6": "days",
+        "7": "Guest",
+        "8": "+919876543210",
+        "9": "Amaze",
+        "10": "JK01AA9012"
+      }
+    },
+    {
+      "name": "driver_contact_v1",
+      "category": "UTILITY",
+      "priority": "P2",
+      "sendMethod": "bulk_template_or_session_text",
+      "wiredInCode": "lib/demo/postTokenBookingFlow.ts (demo + future production send)",
+      "env": {
+        "MSG91_DRIVER_CONTACT_TEMPLATE_NAME": "driver_contact_v1",
+        "MSG91_DRIVER_CONTACT_TEMPLATE_NAMESPACE": "<after Green>"
+      },
+      "body": "Payment received ✅\nYour driver: {{1}}\nCall / WhatsApp: {{2}}\nVehicle: {{3}} ({{4}})\nOperator: {{5}}\nDriver will reach out before pickup. Safe travels!",
+      "buttons": [],
+      "sampleVariables": {
+        "1": "Imran Dar",
+        "2": "9876500003",
+        "3": "Amaze",
+        "4": "JK01AA9012",
+        "5": "Aala Cabs"
+      }
+    }
+  ],
+  "sessionInteractiveMessages": [
+    {
+      "name": "quote_multi_list",
+      "priority": "P0",
+      "sendMethod": "session_interactive_list",
+      "api": "POST https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/",
+      "wiredInCode": "lib/whatsapp/templateCatalog.ts → buildQuoteMultiMessage (2+ vendors)",
+      "dashboardTemplate": false,
+      "bodyExample": "Your Kashmir Cab Quotes Are In 🚖\n\nNova Cabs: ₹17500/day (Sedan)\nOla Cabs: ₹18000/day (Sedan)",
+      "listButton": "Choose operator",
+      "listSectionTitle": "Pay ₹99 to lock",
+      "listRows": [
+        {
+          "title": "Nova Cabs",
+          "description": "₹17,500/day · Sedan",
+          "payload": "BOOK_TOKEN::{quote_snapshot_id}"
+        }
+      ],
+      "notes": "WhatsApp list (up to 10 rows). Tourist picks vendor from list — same BOOK_TOKEN payload as button flow."
+    },
+    {
+      "name": "quote_pay_token",
+      "priority": "P0",
+      "sendMethod": "session_interactive",
+      "api": "POST https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/",
+      "wiredInCode": "lib/whatsapp/buildQuoteDelivery.ts",
+      "dashboardTemplate": false,
+      "bodyExample": "Your Kashmir Cab Quote 🚖\n\nAala Cabs: ₹17500/day (Amaze)",
+      "buttons": [
+        {
+          "title": "Pay ₹99 to Lock",
+          "payload": "BOOK_TOKEN::{quote_snapshot_id}",
+          "maxTitleLength": 20
+        }
+      ],
+      "notes": "Dynamic quote_snapshot_id in button payload — use session interactive API, not bulk template."
+    },
+    {
+      "name": "driver_balance_payment",
+      "priority": "P0",
+      "sendMethod": "session_interactive",
+      "wiredInCode": "lib/demo/postTokenBookingFlow.ts",
+      "dashboardTemplate": false,
+      "bodyExample": "Your driver has been assigned 🚗\nOperator: Aala Cabs\nBalance due: ₹17,501 (after ₹99 token).\nComplete payment here to unlock your driver's contact number.",
+      "buttons": [
+        {
+          "title": "Pay ₹17,501 Now",
+          "payload": "COMPLETE_PAYMENT::{booking_id}",
+          "maxTitleLength": 20
+        }
+      ],
+      "notes": "Driver/car image card is demo UI only — not part of MSG91 template."
+    },
+    {
+      "name": "day1_checkin",
+      "priority": "P3",
+      "sendMethod": "session_interactive",
+      "wiredInCode": "supabase/functions/_shared/handlers/dispatchLifecycleEvents.ts",
+      "dashboardTemplate": false,
+      "bodyExample": "How was your pickup this morning?",
+      "buttons": [
+        { "title": "All Good", "payload": "CHECKIN_OK::{lifecycle_event_id}" },
+        { "title": "Report Issue", "payload": "CHECKIN_HELP::{lifecycle_event_id}" }
+      ]
+    },
+    {
+      "name": "post_trip_review",
+      "priority": "P3",
+      "sendMethod": "session_interactive",
+      "wiredInCode": "supabase/functions/_shared/handlers/dispatchLifecycleEvents.ts",
+      "dashboardTemplate": false,
+      "bodyExample": "How was your trip? Tap a rating below.",
+      "buttons": [
+        { "title": "Excellent", "payload": "RATE_5::{booking_id}" },
+        { "title": "Okay", "payload": "RATE_3::{booking_id}" },
+        { "title": "Poor", "payload": "RATE_1::{booking_id}" }
+      ]
+    }
+  ],
+  "deprecated": [
+    "quote_consolidated_v1 (3-button Book/Negotiate/Pay — removed from product)",
+    "negotiation_offer_v1",
+    "negotiation_final_v1"
+  ]
+}
