@@ -11,7 +11,7 @@ Plan and reference for replacing **direct Meta Graph API** WhatsApp sends with *
 - Live OTP SMS: `lib/sms/sendOtpSms.ts` → `POST /api/v5/otp` (`MSG91_AUTH_KEY` + `MSG91_OTP_TEMPLATE_ID`)
 - WhatsApp OTP retry: `lib/whatsapp/sendAuthTemplateOtp.ts` → MSG91 bulk template (`prefer=whatsapp`)
 - Live Edge send: `supabase/functions/_shared/whatsapp.ts` → `graph.facebook.com` (Phase 3)
-- Webhook: `app/api/whatsapp/webhook/route.ts` (Meta format; MSG91 adapter is Phase 4)
+- Webhook: `app/api/whatsapp/webhook/route.ts` (MSG91 Webhook (New) + legacy Meta envelope)
 
 ---
 
@@ -244,32 +244,54 @@ Agent does not log into MSG91. You complete these before Phase 2/3 can send:
 - [ ] Integrate WhatsApp Business number on MSG91
 - [ ] Create templates from [`whatsapp-templates.md`](./whatsapp-templates.md) (Authentication OTP + Utility for the other 8)
 - [ ] After Green approval, copy `name`, `namespace`, language into `MSG91_OTP_*` (and later utility env vars)
-- [ ] Point MSG91 **Webhook (New)** at `POST https://<your-production-host>/api/whatsapp/webhook`
+- [ ] Point MSG91 **Webhook (New)** at `POST https://<your-production-host>/api/whatsapp/webhook` with header `x-msg91-webhook-secret` = `MSG91_WEBHOOK_SECRET`
 
-Until Phase 4, that webhook URL still expects Meta HMAC + `entry[].changes[]` payloads — do not switch MSG91 inbound live until the adapter ships.
+The live webhook now accepts MSG91 Webhook (New) JSON. Do not point Meta's Cloud API webhook here — Meta posts to MSG91, MSG91 posts to us.
 
 ---
 
 ## 6. Webhooks — MSG91 Webhook (New)
 
-Guide: [Receive WhatsApp delivery reports via Webhook (New)](https://msg91.com/help/webhook-new/how-to-receive-whatsapp-delivery-reports-via-webhook-new)
+**WhatsApp does not POST to this app.** Meta delivers inbound + status events to MSG91 (the BSP). MSG91 then HTTP POSTs **its own** JSON to your callback. That JSON is **not** the Meta Cloud API envelope (`object` / `entry[].changes[].value.messages[]`).
 
-**Callback URL (Phase 0 document; adapter is Phase 4):** `POST /api/whatsapp/webhook` on the Next.js app (`https://<your-domain>/api/whatsapp/webhook`).
+Guides:
 
-**Setup:** Dashboard → WhatsApp → **Webhook (New)** → Create → that callback URL
+- [Webhook (New) overview](https://msg91.com/help/webhook-new) — 8s timeout, retries, auto-pause on 4xx
+- [WhatsApp delivery reports via Webhook (New)](https://msg91.com/help/webhook-new/how-to-receive-whatsapp-delivery-reports-via-webhook-new)
 
-**Subscribe to:**
+Context7 (`/websites/msg91`) covers **outbound** interactive sends, not this webhook shape. The help articles above are the source of truth for inbound payloads.
 
-| Event | Use in this app |
-|-------|-----------------|
-| On Inbound Request Received / Inbound Report | Customer/vendor messages |
-| On Read Event | `quote_snapshots` `sent` → `viewed` (replaces Meta `statuses[].status === "read"`) |
-| On Outbound Report Received | Delivery logging |
-| On Failed Event | Ops / retry visibility |
+**App callback:** `POST /api/whatsapp/webhook`  
+(`https://<your-domain>/api/whatsapp/webhook`)
+
+Parser: `lib/whatsapp/webhook/parseMsg91Webhook.ts`. Button payloads still go through `parseInboundAction.ts` (`BOOK_TOKEN::…`, `DRIVER:`, etc.).
+
+### 6.0 Create the webhook in MSG91 (dashboard)
+
+Create **two** WhatsApp webhooks (or one per event with the same URL). MSG91 does not use Meta's GET `hub.challenge`.
+
+1. MSG91 Dashboard → **WhatsApp** → **Webhook (New)** → **Create Webhook**
+2. Name them (e.g. `kmr-inbound`, `kmr-read`)
+3. Service: **WhatsApp**
+4. Events (minimum for quote-choice buttons + quote viewed):
+   - **On Inbound Request Received** — tourist taps `Select {vendor}` / vendor `DRIVER:` text
+   - **On Inbound Report Received** — optional duplicate of inbound; we dedupe by `uuid` (WAMID)
+   - **On Read Event** — `quote_snapshots.sent` → `viewed`
+   - **On Failed Event** — ops visibility (logged via status update)
+5. URL: `https://<your-production-host>/api/whatsapp/webhook`
+6. Method: **POST**, content-type **JSON**
+7. Parameters: keep at least `customerNumber`, `direction`, `uuid`, `text`, `contentType`, `button`, `interactive`, `messages`, `contacts`, `eventName`, `integratedNumber`, `ts`, `replyMsgId`, `templateName`
+8. Headers (required for our route):
+
+   | Key | Value |
+   |-----|--------|
+   | `x-msg91-webhook-secret` | same string as `MSG91_WEBHOOK_SECRET` in `.env.local` / Vercel |
+
+9. Create. Respond **200 within 8 seconds**. Do not return 4xx on processing bugs (MSG91 auto-pauses the webhook). Auth failures (401) will pause it — keep the secret in sync.
+
+`button`, `messages`, `interactive`, `contacts`, and `content` arrive as **stringified JSON**. The parser JSON-parses those fields.
 
 ### 6.1 Payload shape (not Meta)
-
-MSG91 sends flat JSON — **not** `entry[].changes[].value.messages[]`.
 
 **Inbound example fields:**
 
@@ -287,19 +309,38 @@ MSG91 sends flat JSON — **not** `entry[].changes[].value.messages[]`.
 
 **Outbound status example:** `eventName: "read"`, `uuid` = WAMID, `templateName`, `customerNumber`.
 
-### 6.2 Adapter requirements
+### 6.2 Adapter (shipped)
 
-New module (e.g. `lib/whatsapp/webhook/parseMsg91Webhook.ts`) should:
+`parseMsg91Webhook.ts` maps MSG91 JSON → `InboundWhatsAppMessage` / `InboundWhatsAppStatus`:
 
-1. Parse inbound `text` → `DRIVER:` free text → `parseInboundAction` input
-2. Parse `button` JSON → `payload` field → existing `BOOK_FULL::…` branching
-3. Map `read` events → update `whatsapp_message_log` + `quote_snapshots.viewed`
-4. **Dedupe by `uuid` (WAMID)** — MSG91 may send duplicate events
-5. Return 200 quickly; keep job enqueue pattern
+1. Parse inbound `text` / `messages[].text.body` → `DRIVER:` free text → `parseInboundAction`
+2. Parse stringified `button` (`payload`) **and** session `interactive.button_reply.id` → `BOOK_TOKEN::…` etc.
+3. Map `eventName: "read"` + `direction: "1"` + `uuid` → `quote_snapshots.viewed`
+4. **Dedupe by `uuid` (WAMID)** — MSG91 may retry / Meta may duplicate
+5. Auth via `x-msg91-webhook-secret` (not Meta `X-Hub-Signature-256`)
+6. Return 200 quickly; job enqueue only
 
-**Do not assume** Meta `X-Hub-Signature-256` or `hub.challenge` GET — verify MSG91’s verification method from their webhook docs when configuring.
+### 6.3 Simulate without live WhatsApp
 
-### 6.3 Inbound mapping to existing actions
+`POST /api/internal/msg91/simulate/webhook` (header `authkey` = `MSG91_SIM_AUTH_KEY` or `MSG91_AUTH_KEY`) builds a Webhook (New) body and **POSTs it to** `/api/whatsapp/webhook`.
+
+```bash
+curl -sS -X POST http://localhost:3000/api/internal/msg91/simulate/webhook \
+  -H "authkey: $MSG91_SIM_AUTH_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "kind": "button",
+    "customerNumber": "919876543210",
+    "buttonPayload": "BOOK_TOKEN::<quote_snapshot_uuid>",
+    "buttonText": "Select Aala Cabs"
+  }'
+```
+
+Other `kind` values: `text` (requires `text`), `read` / `delivered` / `sent` / `failed`, `raw` (pass a full MSG91 object as `payload`).
+
+You can also POST the same JSON straight at `/api/whatsapp/webhook` with header `x-msg91-webhook-secret`.
+
+### 6.4 Inbound mapping to existing actions
 
 | MSG91 inbound | Existing `ParsedAction` |
 |---------------|-------------------------|
@@ -324,9 +365,9 @@ New module (e.g. `lib/whatsapp/webhook/parseMsg91Webhook.ts`) should:
 | OTP WhatsApp retry | `lib/whatsapp/sendAuthTemplateOtp.ts` | MSG91 template API + `body_1`/`button_1` (`prefer=whatsapp`) |
 | OTP send route | `app/api/otp/send/route.ts` | SMS first; Phone.Email on failure; WhatsApp only if `prefer=whatsapp` |
 | Edge sends | `supabase/functions/_shared/whatsapp.ts` | MSG91 template / interactive / session APIs |
-| Webhook route | `app/api/whatsapp/webhook/route.ts` | MSG91 adapter; optional separate POST handler |
-| Webhook parse | `lib/whatsapp/webhook/parseWebhookPayload.ts` | Replace or branch for MSG91 |
-| Signature | `lib/whatsapp/webhook/verifyWebhookSignature.ts` | MSG91 verification if applicable |
+| Webhook route | `app/api/whatsapp/webhook/route.ts` | MSG91 adapter + optional Meta HMAC fallback |
+| Webhook parse | `lib/whatsapp/webhook/parseMsg91Webhook.ts` | Webhook (New) flat JSON |
+| Signature | `lib/whatsapp/webhook/verifyMsg91Webhook.ts` | `x-msg91-webhook-secret` |
 | Env | `.env.example` | MSG91 vars; deprecate Meta send vars |
 | Docs | `docs/whatsapp-templates.md` | Update “provider” column when done |
 
@@ -349,7 +390,7 @@ New module (e.g. `lib/whatsapp/webhook/parseMsg91Webhook.ts`) should:
 - [ ] Meta Business verification if required for auth templates
 - [ ] Create all templates in dashboard (copy from [`whatsapp-templates.md`](./whatsapp-templates.md))
 - [ ] Wait for Green approval status
-- [ ] Configure Webhook (New) → production `/api/whatsapp/webhook` (adapter is Phase 4)
+- [x] Configure Webhook (New) → production `/api/whatsapp/webhook` (code ready; you create the dashboard webhook)
 - [ ] Record template `name`, `namespace`, language from Get Templates / dashboard cURL
 
 ### Pass 1 — MSG91 client + config

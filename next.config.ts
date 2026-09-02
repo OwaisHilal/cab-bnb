@@ -1,13 +1,26 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // MSG91 twins are called with trailing slashes (control.msg91.com/api/v5/.../).
+  skipTrailingSlashRedirect: true,
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "images.unsplash.com" },
       { protocol: "https", hostname: "ui-avatars.com" },
     ],
   },
-  /* config options here */
+  async rewrites() {
+    return [
+      {
+        source: "/api/v5/:path*/",
+        destination: "/api/internal/msg91/v5/:path*",
+      },
+      {
+        source: "/api/v5/:path*",
+        destination: "/api/internal/msg91/v5/:path*",
+      },
+    ];
+  },
   async headers() {
     return [
       {

@@ -125,66 +125,75 @@ Your Kashmir BnB Cabs verification code is {{1}}. Do not share this code with an
 
 ---
 
-### Step 1 — Quotes (interactive list)
+### Step 1 — Quotes (first WhatsApp contact)
 
 | | |
 |---|---|
 | **Audience** | Guest |
 | **Trigger** | OTP verified → `send_quotes` job (Edge) or `runDemoPostVerification` → `deliverQuoteWhatsApp` (demo) |
-| **Template keys** | `quote_single_v1` (1 operator) or `quote_multi_v1` (2+) |
-| **MSG91 method** | **Session interactive list** |
-| **Code (copy)** | `lib/whatsapp/templateCatalog.ts` → `buildQuoteSingleMessage` / `buildQuoteMultiMessage` |
+| **Template keys** | `quote_single_v1` (1 operator) or `quote_choice_v1` (2–3 operators, lowest first) |
+| **MSG91 method** | **Utility bulk template** (cold start) with session interactive button fallback |
+| **Code (copy)** | `lib/whatsapp/templateCatalog.ts` → `buildQuoteSingleMessage` / `buildQuoteChoiceMessage` |
 | **Code (Edge send)** | `supabase/functions/_shared/handlers/sendQuotes.ts` |
 | **Code (Next send)** | `lib/whatsapp/deliverQuoteWhatsApp.ts` → `sendWhatsAppMessage()` |
-| **Code (MSG91 payload)** | `lib/msg91/pure.ts` → `buildMsg91InteractiveListBody()` |
+| **Code (MSG91 payload)** | `lib/msg91/pure.ts` → `buildMsg91BulkTemplateBody()` / `buildMsg91InteractiveButtonBody()` |
 
-**Full message body (example, 2 vendors):**
+**Full message body (example, 3 vendors):**
 
 ```text
-Your Kashmir Cab Quotes Are In 🚖
+Your Kashmir cab quotes are in.
 
-Nova Cabs: ₹10,800/day (Sedan)
-Ola Cabs: ₹11,200/day (Sedan)
+Trip: 3 days · 4 pax · Sedan · Srinagar → Pahalgam
+
+• Nova Cabs ₹10,800/day (4.8)
+• Ola Cabs ₹11,200/day (4.6)
+• Valley Rides ₹11,400/day (4.5)
+
+Lowest price is listed first.
 ```
 
-**Interactive list configuration:**
+**Footer:** `Tap a button below to choose your cab.`
 
-| Field | Value |
-|-------|--------|
-| List button label | `Choose operator` |
-| Section title | `Pay ₹99 to lock` |
-| Row title | Vendor name (max 24 chars) |
-| Row description | `₹10,800/day · Sedan` (max 72 chars) |
-| Row id (payload) | `BOOK_TOKEN::{quote_snapshot_uuid}` |
+**Quick-reply buttons (titles static at template approval):**
 
-**MSG91 JSON shape (session outbound):**
+| Title | Payload (send-time) |
+|-------|---------------------|
+| Select {vendor 1} | `BOOK_TOKEN::{cheapest quote_snapshot_uuid}` |
+| Select {vendor 2} | `BOOK_TOKEN::{second quote_snapshot_uuid}` |
+| Select {vendor 3} | `BOOK_TOKEN::{third quote_snapshot_uuid}` |
+
+**MSG91 JSON shape (bulk template send):**
 
 ```json
 {
-  "recipient_number": "919876543210",
   "integrated_number": "124XXXXXXXXX",
-  "content_type": "interactive",
-  "interactive": {
-    "type": "list",
-    "body": { "text": "Your Kashmir Cab Quotes Are In 🚖\n\n..." },
-    "action": {
-      "button": "Choose operator",
-      "sections": [{
-        "title": "Pay ₹99 to lock",
-        "rows": [{
-          "id": "BOOK_TOKEN::550e8400-e29b-41d4-a716-446655440000",
-          "title": "Nova Cabs",
-          "description": "₹10,800/day · Sedan"
-        }]
+  "content_type": "template",
+  "payload": {
+    "messaging_product": "whatsapp",
+    "type": "template",
+    "template": {
+      "name": "quote_choice_v1",
+      "language": { "code": "en_US", "policy": "deterministic" },
+      "to_and_components": [{
+        "to": ["919876543210"],
+        "components": {
+          "body_1": { "type": "text", "value": "3 days · 4 pax · Sedan · Srinagar → Pahalgam" },
+          "body_2": { "type": "text", "value": "Nova Cabs ₹10,800/day (4.8)" },
+          "body_3": { "type": "text", "value": "Ola Cabs ₹11,200/day (4.6)" },
+          "body_4": { "type": "text", "value": "Valley Rides ₹11,400/day (4.5)" },
+          "button_1": { "type": "text", "subtype": "quick_reply", "value": "BOOK_TOKEN::uuid-1" },
+          "button_2": { "type": "text", "subtype": "quick_reply", "value": "BOOK_TOKEN::uuid-2" },
+          "button_3": { "type": "text", "subtype": "quick_reply", "value": "BOOK_TOKEN::uuid-3" }
+        }
       }]
     }
   }
 }
 ```
 
-**Guest action:** Tap list row → webhook / demo API parses `BOOK_TOKEN::…` → `finalize_booking`.
+**Guest action:** Tap Select {vendor} → webhook / demo API parses `BOOK_TOKEN::…` → `finalize_booking`.
 
-**UI replay:** `features/demo/components/MockWhatsAppChat.tsx` reads list rows from `whatsapp_message_log.button_payload` via `lib/demo/mockMessaging.ts`.
+**UI replay:** `features/demo/components/MockWhatsAppChat.tsx` reads Select buttons from `whatsapp_message_log.button_payload` via `lib/demo/mockMessaging.ts`.
 
 ---
 
@@ -451,7 +460,8 @@ Demo equivalent: `app/api/demo/messaging/action/route.ts` → `lib/demo/mockMess
 | # | Message | Template name | Bulk template send? | Session send |
 |---|---------|---------------|---------------------|--------------|
 | 0 | WhatsApp OTP | `otp_verification` | **Yes (only one wired)** | — |
-| 1 | Quotes | `quote_multi_v1` / `quote_single_v1` | No (dynamic list ids) | **List** |
+| 1 | Quotes (2–3) | `quote_choice_v1` | **Yes (cold start)** | **Button fallback** |
+| 1b | Quote (1 operator) | `quote_single_v1` | No (dynamic list id) | **List** |
 | 2 | Nova notify | `vendor_booking_notify_v1` | No (in code) | **Text** |
 | 3 | Nova DRIVER reply | — | — | Inbound |
 | 4 | Balance | `driver_balance_v1` | No (dynamic button) | **Button** |
@@ -534,9 +544,51 @@ Your Kashmir Cab Quote 🚖
 
 ---
 
-### 3. `quote_multi_v1` — UTILITY (multi-line body)
+### 3. `quote_choice_v1` — UTILITY (first contact, 3 quote buttons)
 
-**Not a separate row in `whatsapp-templates.json`** — same pattern as single; runtime uses **session list**, not bulk.
+**Catalog:** `templates/msg91/whatsapp-templates.json`. Runtime uses **bulk template** (cold start) with session interactive fallback.
+
+**Raw template body (dashboard):**
+
+```text
+Your Kashmir cab quotes are in.
+
+Trip: {{1}}
+
+• {{2}}
+• {{3}}
+• {{4}}
+
+Lowest price is listed first.
+```
+
+**Footer:** `Tap a button below to choose your cab.`
+
+**Buttons:** Quick reply · `Select {vendor_1}` · `Select {vendor_2}` · `Select {vendor_3}` (titles truncated to 20 chars at send time)
+
+**Sample variables:**
+
+| Var | Example |
+|-----|---------|
+| `{{1}}` | 3 days · 4 pax · Sedan · Srinagar → Pahalgam |
+| `{{2}}` | Nova Cabs ₹10,800/day (4.8) |
+| `{{3}}` | Ola Cabs ₹11,200/day (4.6) |
+| `{{4}}` | Valley Rides ₹11,400/day (4.5) |
+
+**Code `msg91Components`:** `body_1` trip, `body_2`–`body_4` quote lines, `button_1`–`button_3` `BOOK_TOKEN::` payloads — see `buildQuoteChoiceMessage()`.
+
+**Env:**
+
+```env
+MSG91_QUOTE_CHOICE_TEMPLATE_NAME=quote_choice_v1
+MSG91_QUOTE_CHOICE_TEMPLATE_NAMESPACE=
+```
+
+---
+
+### 4. `quote_multi_v1` — UTILITY (legacy multi-line list)
+
+**Not the first-contact path anymore.** Kept for single-operator list fallbacks and older logs. Runtime used **session list**.
 
 **Raw template body (if registered):**
 

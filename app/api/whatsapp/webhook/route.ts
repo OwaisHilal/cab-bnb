@@ -1,23 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk } from "@/lib/api/errors";
-import { verifyWebhookSignature } from "@/lib/whatsapp/webhook/verifyWebhookSignature";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { isMsg91WebhookPayload, parseMsg91Webhook } from "@/lib/whatsapp/webhook/parseMsg91Webhook";
 import { parseWebhookPayload, parseWebhookStatuses } from "@/lib/whatsapp/webhook/parseWebhookPayload";
-import { parseInboundAction } from "@/lib/whatsapp/webhook/parseInboundAction";
-import { enqueueWebhookAction } from "@/lib/whatsapp/webhook/enqueueWebhookAction";
-import type { InboundWhatsAppMessage, InboundWhatsAppStatus } from "@/lib/whatsapp/webhook/types";
-
-const DUPLICATE_KEY_ERROR_CODE = "23505";
-const READ_STATUS = "read";
+import { processWhatsAppWebhook } from "@/lib/whatsapp/webhook/processWhatsAppWebhook";
+import {
+  getMsg91WebhookSecret,
+  readMsg91WebhookSecretHeader,
+  verifyMsg91WebhookSecret,
+} from "@/lib/whatsapp/webhook/verifyMsg91Webhook";
+import { verifyWebhookSignature } from "@/lib/whatsapp/webhook/verifyWebhookSignature";
 
 /**
- * Checklist 2.5 GET: Meta's webhook subscription challenge-response.
+ * GET is Meta's hub.challenge only. MSG91 Webhook (New) never calls GET.
  */
 export async function GET(request: NextRequest) {
   const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
   if (!verifyToken) {
-    return jsonError(500, "Missing WHATSAPP_VERIFY_TOKEN. Copy .env.example to .env.local and fill it in.");
+    return jsonError(403, "Meta webhook verification is not configured");
   }
 
   const mode = request.nextUrl.searchParams.get("hub.mode");
@@ -32,23 +32,15 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Checklist 2.5 POST: verify signature, dedupe + log every inbound message,
- * branch into job_queue rows only (Plan §7.2/§7.3), and ack fast — Meta
- * retries on timeout, so nothing here waits on WhatsApp sends or business
- * logic (that's Phase 3's job-queue workers).
+ * Production inbound from MSG91 Webhook (New): flat JSON, stringified
+ * `button` / `messages` / `interactive`. Meta `entry[].changes[]` + HMAC
+ * still accepted so local fixtures keep working.
+ *
+ * Always ack 200 after auth — MSG91 retries up to 4 times if we exceed 8s
+ * or return 5xx; 4xx (except 429) auto-pauses the MSG91 webhook.
  */
 export async function POST(request: NextRequest) {
-  const appSecret = process.env.WHATSAPP_APP_SECRET;
-  if (!appSecret) {
-    return jsonError(500, "Missing WHATSAPP_APP_SECRET. Copy .env.example to .env.local and fill it in.");
-  }
-
   const rawBody = await request.text();
-  const signatureHeader = request.headers.get("x-hub-signature-256");
-
-  if (!verifyWebhookSignature(rawBody, signatureHeader, appSecret)) {
-    return jsonError(401, "Invalid webhook signature");
-  }
 
   let payload: unknown;
   try {
@@ -57,90 +49,38 @@ export async function POST(request: NextRequest) {
     return jsonError(400, "Request body must be valid JSON");
   }
 
-  let supabase: SupabaseClient;
+  const msg91Payload = isMsg91WebhookPayload(payload);
+
+  if (msg91Payload) {
+    const expectedSecret = getMsg91WebhookSecret();
+    if (!expectedSecret) {
+      return jsonError(500, "Missing MSG91_WEBHOOK_SECRET. Copy .env.example to .env.local and fill it in.");
+    }
+    if (!verifyMsg91WebhookSecret(readMsg91WebhookSecretHeader(request.headers), expectedSecret)) {
+      return jsonError(401, "Invalid MSG91 webhook secret");
+    }
+  } else {
+    const appSecret = process.env.WHATSAPP_APP_SECRET;
+    if (!appSecret) {
+      return jsonError(500, "Missing WHATSAPP_APP_SECRET. Copy .env.example to .env.local and fill it in.");
+    }
+    if (!verifyWebhookSignature(rawBody, request.headers.get("x-hub-signature-256"), appSecret)) {
+      return jsonError(401, "Invalid webhook signature");
+    }
+  }
+
+  let supabase;
   try {
     supabase = getSupabaseServiceRoleClient();
   } catch (error) {
     return jsonError(500, error instanceof Error ? error.message : "Supabase is not configured");
   }
 
-  const messages = parseWebhookPayload(payload);
+  const parsed = msg91Payload
+    ? parseMsg91Webhook(payload)
+    : { messages: parseWebhookPayload(payload), statuses: parseWebhookStatuses(payload) };
 
-  for (const message of messages) {
-    try {
-      const isDuplicate = await logInboundMessage(supabase, message);
-      if (isDuplicate) continue;
+  await processWhatsAppWebhook(supabase, parsed.messages, parsed.statuses);
 
-      const action = parseInboundAction(message);
-      await enqueueWebhookAction(supabase, action, message);
-    } catch (error) {
-      // Meta requires a fast 200 ack regardless (Checklist 2.5) — log and
-      // keep processing the rest of the batch rather than failing the
-      // whole webhook delivery over one bad message.
-      console.error("[whatsapp webhook] failed to process inbound message", error);
-    }
-  }
-
-  const statuses = parseWebhookStatuses(payload);
-
-  for (const status of statuses) {
-    try {
-      await applyStatusUpdate(supabase, status);
-    } catch (error) {
-      // Same fast-ack contract as inbound messages above — status events
-      // are DB-only side effects (Plan §8's `viewed` state), never worth
-      // failing the whole webhook delivery over.
-      console.error("[whatsapp webhook] failed to process status event", error);
-    }
-  }
-
-  return jsonOk({ received: true });
-}
-
-/**
- * Phase 3 final pass / Plan §8: a `read` status on a `sent` quote_snapshot
- * means the customer opened the consolidated quote message — advance it
- * to `viewed`. Guarded by `.eq("status", "sent")` so this is a no-op once
- * negotiation/booking has already moved the snapshot further along the
- * state machine. Also mirrors the raw status onto whatsapp_message_log for
- * observability, independent of whether any quote_snapshot matched.
- */
-async function applyStatusUpdate(supabase: SupabaseClient, status: InboundWhatsAppStatus): Promise<void> {
-  const { error: logError } = await supabase
-    .from("whatsapp_message_log")
-    .update({ wa_status: status.status })
-    .eq("wa_message_id", status.waMessageId);
-
-  if (logError) throw new Error(`Failed to update whatsapp_message_log status: ${logError.message}`);
-
-  if (status.status !== READ_STATUS) return;
-
-  const { error: snapshotError } = await supabase
-    .from("quote_snapshots")
-    .update({ status: "viewed" })
-    .eq("wa_message_id", status.waMessageId)
-    .eq("status", "sent");
-
-  if (snapshotError) throw new Error(`Failed to mark quote_snapshot viewed: ${snapshotError.message}`);
-}
-
-/**
- * Returns true if this wa_message_id was already logged (duplicate
- * delivery per Plan §7.4's at-least-once retry note), false if this insert
- * newly recorded it.
- */
-async function logInboundMessage(supabase: SupabaseClient, message: InboundWhatsAppMessage): Promise<boolean> {
-  const { error } = await supabase.from("whatsapp_message_log").insert({
-    direction: "inbound",
-    wa_message_id: message.waMessageId,
-    body_snapshot: message.textBody,
-    button_payload: message.buttonPayload,
-    interaction_type: message.interactionType,
-    wa_status: "replied",
-  });
-
-  if (!error) return false;
-  if (error.code === DUPLICATE_KEY_ERROR_CODE) return true;
-
-  throw new Error(`Failed to log inbound WhatsApp message: ${error.message}`);
+  return jsonOk({ received: true, provider: msg91Payload ? "msg91" : "meta" });
 }

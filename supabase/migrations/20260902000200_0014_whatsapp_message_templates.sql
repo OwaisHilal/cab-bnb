@@ -1,5 +1,6 @@
--- WhatsApp message templates — copy, send method, and interactive config live in DB.
--- MSG91 dashboard registration still manual; this table is the app source of truth.
+-- 0014: WhatsApp message templates catalog (never applied as 0012 on remote)
+-- plus first-contact quote_choice_v1 (Select {vendorName} buttons).
+-- Does not run itself — apply from the Supabase SQL editor or `db push`.
 
 create table if not exists public.whatsapp_message_templates (
   template_key text primary key,
@@ -107,6 +108,22 @@ insert into public.whatsapp_message_templates (
     true,
     'lib/whatsapp/templateCatalog.ts → buildQuoteMultiMessage',
     'Session list — one row per vendor quote.'
+  ),
+  (
+    'quote_choice_v1',
+    'quote_choice_v1',
+    'UTILITY',
+    'session_button',
+    E'Your Kashmir cab quotes are in.\n\nTrip: {{trip_summary}}\n\n• {{quote_1}}\n• {{quote_2}}\n• {{quote_3}}\n\nLowest price is listed first.',
+    E'Your Kashmir cab quotes are in.\n\nTrip: {{1}}\n\n• {{2}}\n• {{3}}\n• {{4}}\n\nLowest price is listed first.',
+    '[{"type":"QUICK_REPLY","label":"Select {{vendor_1}}","payloadPrefix":"BOOK_TOKEN::"},{"type":"QUICK_REPLY","label":"Select {{vendor_2}}","payloadPrefix":"BOOK_TOKEN::"},{"type":"QUICK_REPLY","label":"Select {{vendor_3}}","payloadPrefix":"BOOK_TOKEN::"}]'::jsonb,
+    null,
+    '{"trip_summary":"days · pax · cab type · pickup → drop","quote_1":"lowest vendor price/day (rating)","quote_2":"second vendor price/day (rating)","quote_3":"third vendor price/day (rating)","vendor_1":"cheapest vendor name","vendor_2":"second vendor name","vendor_3":"third vendor name"}'::jsonb,
+    'MSG91_QUOTE_CHOICE_TEMPLATE_NAME',
+    'MSG91_QUOTE_CHOICE_TEMPLATE_NAMESPACE',
+    true,
+    'lib/whatsapp/templateCatalog.ts → buildQuoteChoiceMessage',
+    'First WhatsApp contact after phone submit. Live buttons are Select {vendorName} (max 20 chars). Body lists trip + top 3 quotes lowest-first.'
   ),
   (
     'driver_balance_v1',
@@ -267,4 +284,41 @@ on conflict (template_key) do update set
   wired_in_code = excluded.wired_in_code,
   notes = excluded.notes,
   active = excluded.active,
+  updated_at = now();
+
+update public.whatsapp_message_templates
+set footer_template = 'Tap a button below to choose your cab.'
+where template_key = 'quote_choice_v1';
+
+-- Simulator catalog already seeded (8 rows). Insert quote_choice_v1 so bulk/sim create can resolve it.
+insert into public.msg91_sim_templates (
+  name,
+  language,
+  template_status,
+  category,
+  integrated_number,
+  components,
+  raw_request
+) values (
+  'quote_choice_v1',
+  'en_US',
+  'approved',
+  'UTILITY',
+  '*',
+  jsonb_build_object(
+    'body', 'Your Kashmir cab quotes are in.',
+    'footer', 'Tap a button below to choose your cab.',
+    'buttons', jsonb_build_array(
+      'Select {{vendor_1}}',
+      'Select {{vendor_2}}',
+      'Select {{vendor_3}}'
+    )
+  ),
+  jsonb_build_object('seed', true, 'name', 'quote_choice_v1')
+)
+on conflict (name, language, integrated_number) do update set
+  template_status = excluded.template_status,
+  category = excluded.category,
+  components = excluded.components,
+  raw_request = excluded.raw_request,
   updated_at = now();

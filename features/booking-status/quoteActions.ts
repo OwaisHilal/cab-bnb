@@ -1,4 +1,5 @@
 import type { QuoteRowUi } from "@/features/booking-status/types"
+import { isQuoteChoiceSelectTitle } from "@/lib/whatsapp/quoteChoiceTemplate"
 
 export interface QuoteActionButton {
   id: string
@@ -14,7 +15,9 @@ export function buildSelectedQuoteChatBody(
 export function isQuoteCardMessageBody(body: string | null): boolean {
   if (!body) return false
   return (
-    body.startsWith("Your Kashmir Cab Quote") || body.startsWith("Your Kashmir Cab Quotes Are In")
+    body.startsWith("Your Kashmir Cab Quote") ||
+    body.startsWith("Your Kashmir Cab Quotes Are In") ||
+    body.startsWith("Your Kashmir cab quotes are in")
   )
 }
 
@@ -35,6 +38,11 @@ export function resolveQuoteCardButtons(
 ): QuoteActionButton[] {
   if (buttons.some((button) => button.id.startsWith("COMPLETE_PAYMENT"))) {
     return buttons
+  }
+
+  const isQuoteChoice = buttons.filter((button) => isQuoteChoiceSelectTitle(button.title)).length >= 2
+  if (isQuoteChoice) {
+    return buttons.filter((button) => button.id.startsWith("BOOK_TOKEN::"))
   }
 
   const hasQuoteActions = buttons.some(isQuoteActionButton)

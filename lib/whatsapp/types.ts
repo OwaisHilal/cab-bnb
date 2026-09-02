@@ -33,6 +33,8 @@ export interface WhatsAppMessageSpec {
   templateKey: WhatsAppTemplateKey
   bodyText: string
   buttons: WhatsAppButton[]
+  /** Static template / session footer (MSG91/Meta max 60 chars). */
+  footerText?: string
   /** Interactive list (e.g. pick operator + Pay ₹99). Mutually exclusive with buttons. */
   list?: WhatsAppListMessage
   msg91Components?: Record<string, { type: string; value: string; subtype?: string }>

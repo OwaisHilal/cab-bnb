@@ -1,21 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "crons": [
-    {
-      "path": "/api/cron/dispatch-jobs",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/cron/dispatch-lifecycle-events",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/expire-stale-quotes",
-      "schedule": "0 * * * *"
-    },
-    {
-      "path": "/api/cron/vendor-reply-timeouts",
-      "schedule": "*/10 * * * *"
-    }
-  ]
+  "crons": []
 }

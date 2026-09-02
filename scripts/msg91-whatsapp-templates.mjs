@@ -68,6 +68,9 @@ function printDashboardTemplate(template, index) {
   if (template.header) {
     console.info(`   HEADER: ${template.header.type} — sample ${template.header.sampleUrl}`)
   }
+  if (template.footer) {
+    console.info(`   FOOTER (max 60 chars): ${template.footer}`)
+  }
   if (template.buttons?.length) {
     console.info(`   BUTTONS: ${template.buttons.map((b) => b.label ?? b.type).join(" · ")}`)
   } else {
@@ -82,6 +85,7 @@ function printDashboardTemplate(template, index) {
   if (template.notes) {
     console.info(`   NOTE: ${template.notes}`)
   }
+  printCreateApiHint(template)
   if (template.env) {
     console.info("   ENV (after Green approval):")
     for (const [key, value] of Object.entries(template.env)) {
@@ -104,6 +108,10 @@ function printSessionMessage(message, index) {
   }
   console.info("   ---")
 
+  if (message.footer) {
+    console.info(`   FOOTER: ${message.footer}`)
+  }
+
   if (message.listRows?.length) {
     console.info(`   LIST BUTTON: ${message.listButton ?? "Choose"}`)
     console.info(`   LIST SECTION: ${message.listSectionTitle ?? "Options"}`)
@@ -123,6 +131,14 @@ function printSessionMessage(message, index) {
 
   if (message.notes) {
     console.info(`   NOTE: ${message.notes}`)
+  }
+}
+
+function printCreateApiHint(template) {
+  if (!template.createApi) return
+  console.info(`   CREATE API: ${template.createApi.method} ${template.createApi.url}`)
+  if (template.createApi.notes) {
+    console.info(`   CREATE NOTE: ${template.createApi.notes}`)
   }
 }
 

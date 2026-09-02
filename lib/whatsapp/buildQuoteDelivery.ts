@@ -5,7 +5,7 @@ import type { QuoteDeliveryPayload } from "@/lib/whatsapp/types"
 import { isDemoMode } from "@/lib/otp/demoMode"
 import { ensureMessageTemplates } from "@/lib/whatsapp/messageTemplateStore"
 import {
-  buildQuoteMultiMessage,
+  buildQuoteChoiceMessage,
   buildQuoteSingleMessage,
 } from "@/lib/whatsapp/templateCatalog"
 
@@ -14,8 +14,21 @@ interface QuoteSnapshotRow {
   vendor_id: string
   current_quote: number
   is_best_price: boolean
-  vendors: { business_name: string } | { business_name: string }[] | null
+  vendors:
+    | { business_name: string; reliability_score: number | null }
+    | { business_name: string; reliability_score: number | null }[]
+    | null
   vehicle_types: { label: string } | { label: string }[] | null
+}
+
+interface TripRequestRow {
+  id: string
+  pickup_location: string | null
+  drop_location: string | null
+  trip_days: number
+  pax_count: number
+  tourists: { phone_e164: string } | { phone_e164: string }[] | null
+  requested_vehicle_type: { label: string } | { label: string }[] | null
 }
 
 function firstOrSelf<T>(value: T | T[] | null): T | null {
@@ -29,7 +42,7 @@ async function loadQuoteSnapshotRows(
   includeAlreadySent: boolean,
 ): Promise<QuoteSnapshotRow[] | { error: string; status: number }> {
   const select =
-    "id, vendor_id, current_quote, is_best_price, vendors(business_name), vehicle_types(label)"
+    "id, vendor_id, current_quote, is_best_price, vendors(business_name, reliability_score), vehicle_types(label)"
 
   const { data: pendingRows, error: pendingError } = await supabase
     .from("quote_snapshots")
@@ -77,7 +90,9 @@ export async function buildQuoteDeliveryPayload(
 
   const { data: tripRequest, error: tripRequestError } = await supabase
     .from("trip_requests")
-    .select("id, tourists(phone_e164)")
+    .select(
+      "id, pickup_location, drop_location, trip_days, pax_count, tourists(phone_e164), requested_vehicle_type:vehicle_types!requested_vehicle_type_id(label)",
+    )
     .eq("id", tripRequestId)
     .maybeSingle()
 
@@ -88,9 +103,8 @@ export async function buildQuoteDeliveryPayload(
     return { error: `trip_request ${tripRequestId} not found`, status: 404 }
   }
 
-  const touristPhone = firstOrSelf(
-    (tripRequest as unknown as { tourists: { phone_e164: string } | { phone_e164: string }[] | null }).tourists,
-  )?.phone_e164
+  const trip = tripRequest as unknown as TripRequestRow
+  const touristPhone = firstOrSelf(trip.tourists)?.phone_e164
 
   if (!touristPhone) {
     return { error: "Trip request has no verified tourist phone yet — complete OTP first", status: 400 }
@@ -118,14 +132,18 @@ export async function buildQuoteDeliveryPayload(
   const activeRows = options?.quoteSnapshotId ? selectedRows : rows
   const focusQuote = activeRows[0]
   const bestPrice = rows.find((row) => row.is_best_price) ?? rows[0]
+  const vehicleLabel =
+    firstOrSelf(trip.requested_vehicle_type)?.label ??
+    firstOrSelf(focusQuote.vehicle_types)?.label ??
+    "Cab"
 
-  if (options?.quoteSnapshotId) {
+  if (options?.quoteSnapshotId || activeRows.length === 1) {
     const vendorName = firstOrSelf(focusQuote.vendors)?.business_name ?? "Vendor"
-    const vehicleLabel = firstOrSelf(focusQuote.vehicle_types)?.label ?? "Vehicle"
+    const quoteVehicleLabel = firstOrSelf(focusQuote.vehicle_types)?.label ?? vehicleLabel
     const message = buildQuoteSingleMessage({
       vendorName,
       pricePerDay: focusQuote.current_quote,
-      vehicleLabel,
+      vehicleLabel: quoteVehicleLabel,
       quoteSnapshotId: focusQuote.id,
     })
 
@@ -138,23 +156,25 @@ export async function buildQuoteDeliveryPayload(
     }
   }
 
-  const quoteLines = activeRows.map((row) => {
-    const vendorName = firstOrSelf(row.vendors)?.business_name ?? "Vendor"
-    const vehicleLabel = firstOrSelf(row.vehicle_types)?.label ?? "Vehicle"
-    return `${vendorName}: \u20b9${row.current_quote}/day (${vehicleLabel})`
+  const quotes = activeRows.slice(0, 3).map((row) => {
+    const vendor = firstOrSelf(row.vendors)
+    return {
+      quoteSnapshotId: row.id,
+      vendorName: vendor?.business_name ?? "Vendor",
+      pricePerDay: row.current_quote,
+      rating: vendor?.reliability_score ?? null,
+    }
   })
 
-  const quoteRows = activeRows.map((row) => ({
-    quoteSnapshotId: row.id,
-    vendorName: firstOrSelf(row.vendors)?.business_name ?? "Vendor",
-    pricePerDay: row.current_quote,
-    vehicleLabel: firstOrSelf(row.vehicle_types)?.label ?? "Vehicle",
-  }))
-
-  const message = buildQuoteMultiMessage({
-    quoteLines,
-    bestQuoteSnapshotId: bestPrice.id,
-    quoteRows,
+  const message = buildQuoteChoiceMessage({
+    trip: {
+      tripDays: trip.trip_days,
+      paxCount: trip.pax_count,
+      vehicleLabel,
+      pickupLocation: trip.pickup_location,
+      dropLocation: trip.drop_location,
+    },
+    quotes,
   })
 
   return {

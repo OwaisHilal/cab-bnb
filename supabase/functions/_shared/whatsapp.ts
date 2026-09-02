@@ -86,7 +86,9 @@ export async function sendWhatsAppButtonMessage(
   phoneE164: string,
   bodyText: string,
   buttons: WhatsAppButton[],
+  options?: { footerText?: string },
 ): Promise<SendWhatsAppResult> {
+  const footerText = options?.footerText?.trim();
   const msg91 = readMsg91Credentials();
   if (msg91) {
     return sendMsg91InteractiveButtonWithConfig(
@@ -94,6 +96,7 @@ export async function sendWhatsAppButtonMessage(
         toE164: phoneE164,
         bodyText,
         buttons: buttons as Msg91WhatsAppButton[],
+        ...(footerText ? { footerText } : {}),
       },
       msg91,
     );
@@ -111,6 +114,7 @@ export async function sendWhatsAppButtonMessage(
     interactive: {
       type: "button",
       body: { text: bodyText },
+      ...(footerText ? { footer: { text: footerText.slice(0, 60) } } : {}),
       action: {
         buttons: buttons.map((button) => ({
           type: "reply",

@@ -25,8 +25,9 @@ Reference for Meta WhatsApp template submission and MSG91 SMS/WhatsApp setup. De
 | `WHATSAPP_ACCESS_TOKEN` | Edge Functions (until Phase 3) | Meta Graph API bearer token |
 | `WHATSAPP_PHONE_NUMBER_ID` | Edge Functions (until Phase 3) | Meta phone number ID for sends |
 | `WHATSAPP_OTP_TEMPLATE_NAME` | Unused after Phase 2 (kept until Phase 5) | Former Graph OTP template name |
-| `WHATSAPP_VERIFY_TOKEN` | `app/api/whatsapp/webhook/route.ts` | Meta webhook GET challenge (until Phase 4) |
-| `WHATSAPP_APP_SECRET` | Webhook signature verification | HMAC for inbound payloads (until Phase 4) |
+| `WHATSAPP_VERIFY_TOKEN` | `app/api/whatsapp/webhook/route.ts` | Meta webhook GET challenge (legacy; MSG91 never GETs) |
+| `WHATSAPP_APP_SECRET` | Webhook signature verification | HMAC for leftover Meta envelopes only |
+| `MSG91_WEBHOOK_SECRET` | `POST /api/whatsapp/webhook` | Custom header `x-msg91-webhook-secret` on MSG91 Webhook (New) |
 | `MSG91_AUTH_KEY` | `lib/msg91/` + Deno `msg91WhatsApp.ts` | MSG91 `authkey` header |
 | `MSG91_WHATSAPP_INTEGRATED_NUMBER` | Same | MSG91 WhatsApp sender number |
 | `MSG91_OTP_TEMPLATE_NAME` | `lib/whatsapp/sendAuthTemplateOtp.ts` | Auth template name (default `otp_verification`) |

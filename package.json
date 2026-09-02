@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "npx --yes tsx --test lib/msg91-sim/*.test.ts lib/msg91/pure.test.ts lib/sms/pure.test.ts lib/whatsapp/quoteChoiceTemplate.test.ts lib/whatsapp/webhook/parseMsg91Webhook.test.ts",
     "db:reset": "supabase db reset",
     "db:seed": "node scripts/apply-seed.mjs",
     "db:templates": "node scripts/apply-whatsapp-templates-migration.mjs",

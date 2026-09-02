@@ -10,6 +10,15 @@ import {
   renderMessageTemplate,
   type WhatsAppMessageTemplateRow,
 } from "@/lib/whatsapp/messageTemplateStore"
+import {
+  QUOTE_CHOICE_FOOTER,
+  buildQuoteChoiceMsg91Components,
+  buildQuoteChoiceNamedVariables,
+  buildQuoteChoiceSessionButtons,
+  formatQuoteChoiceTripSummary,
+  type QuoteChoiceRow,
+  type QuoteChoiceTripDetails,
+} from "@/lib/whatsapp/quoteChoiceTemplate"
 import { WHATSAPP_TEMPLATE_KEYS, type WhatsAppTemplateKey } from "@/lib/whatsapp/templateKeys"
 import type { WhatsAppButton, WhatsAppMessageSpec } from "@/lib/whatsapp/types"
 
@@ -41,6 +50,8 @@ export const MSG91_DASHBOARD_BODIES: Partial<Record<WhatsAppTemplateKey, string>
     "Your Kashmir Cab Quote \ud83d\ude96\n\n{{1}}: \u20b9{{2}}/day ({{3}})",
   [WHATSAPP_TEMPLATE_KEYS.QUOTE_MULTI]:
     "Your Kashmir Cab Quotes Are In \ud83d\ude96\n\n{{1}}",
+  [WHATSAPP_TEMPLATE_KEYS.QUOTE_CHOICE]:
+    "Your Kashmir cab quotes are in.\n\nTrip: {{1}}\n\n• {{2}}\n• {{3}}\n• {{4}}\n\nLowest price is listed first.",
   [WHATSAPP_TEMPLATE_KEYS.DRIVER_BALANCE]:
     "Your driver has been assigned \ud83d\ude97\nOperator: {{1}}\nBalance due: \u20b9{{2}} (after \u20b999 token).\nComplete payment here to unlock your driver's contact number.",
   [WHATSAPP_TEMPLATE_KEYS.DRIVER_CONTACT]:
@@ -55,6 +66,7 @@ export function resolveMsg91DashboardBody(templateKey: string): string | null {
 
 export const MSG91_DASHBOARD_BUTTONS = {
   [WHATSAPP_TEMPLATE_KEYS.QUOTE_SINGLE]: ["Pay \u20b999 to Lock"],
+  [WHATSAPP_TEMPLATE_KEYS.QUOTE_CHOICE]: ["Select {{vendor_1}}", "Select {{vendor_2}}", "Select {{vendor_3}}"],
   [WHATSAPP_TEMPLATE_KEYS.DRIVER_BALANCE]: ["Pay balance Now"],
 } as const
 
@@ -156,6 +168,27 @@ export function buildQuoteMultiMessage(input: {
     msg91Components: {
       body_1: { type: "text", value: joinedLines },
     },
+    msg91SendMode: "interactive",
+  }
+}
+
+export function buildQuoteChoiceMessage(input: {
+  trip: QuoteChoiceTripDetails
+  quotes: QuoteChoiceRow[]
+}): WhatsAppMessageSpec {
+  const template = requireTemplate(WHATSAPP_TEMPLATE_KEYS.QUOTE_CHOICE)
+  const quotes = input.quotes.slice(0, 3)
+  const tripSummary = formatQuoteChoiceTripSummary(input.trip)
+  const named = buildQuoteChoiceNamedVariables({ tripSummary, rows: quotes })
+  const bodyText = renderMessageTemplate(template.body_template, named)
+  const footerText = template.footer_template?.trim() || QUOTE_CHOICE_FOOTER
+
+  return {
+    templateKey: WHATSAPP_TEMPLATE_KEYS.QUOTE_CHOICE,
+    bodyText,
+    footerText,
+    buttons: buildQuoteChoiceSessionButtons(quotes),
+    msg91Components: buildQuoteChoiceMsg91Components({ tripSummary, rows: quotes }),
     msg91SendMode: "interactive",
   }
 }

@@ -7,6 +7,24 @@ import {
   renderMessageTemplate,
   type WhatsAppMessageTemplateRow,
 } from "./messageTemplateStore.ts";
+import {
+  QUOTE_CHOICE_FOOTER,
+  buildQuoteChoiceMsg91Components,
+  buildQuoteChoiceNamedVariables,
+  buildQuoteChoiceSessionButtons,
+  formatQuoteChoiceTripSummary,
+  type QuoteChoiceRow,
+  type QuoteChoiceTripDetails,
+} from "./quoteChoiceTemplate.ts";
+import {
+  QUOTE_CHOICE_FOOTER,
+  buildQuoteChoiceMsg91Components,
+  buildQuoteChoiceNamedVariables,
+  buildQuoteChoiceSessionButtons,
+  formatQuoteChoiceTripSummary,
+  type QuoteChoiceRow,
+  type QuoteChoiceTripDetails,
+} from "./quoteChoiceTemplate.ts";
 
 export const TOKEN_LOCK_AMOUNT = 99;
 
@@ -216,5 +234,31 @@ export function buildQuoteMultiListMessage(input: {
         description: `${formatInr(row.pricePerDay)}/day \u00b7 ${row.vehicleLabel}`.slice(0, 72),
       })),
     ),
+  };
+}
+
+export function buildQuoteChoiceMessage(input: {
+  trip: QuoteChoiceTripDetails;
+  quotes: QuoteChoiceRow[];
+}): {
+  templateKey: "quote_choice_v1";
+  bodyText: string;
+  footerText: string;
+  buttons: Array<{ id: string; title: string }>;
+  msg91Components: Record<string, { type: string; value: string; subtype?: string }>;
+} {
+  const template = requireTemplate("quote_choice_v1");
+  const quotes = input.quotes.slice(0, 3);
+  const tripSummary = formatQuoteChoiceTripSummary(input.trip);
+  const named = buildQuoteChoiceNamedVariables({ tripSummary, rows: quotes });
+  const bodyText = renderMessageTemplate(template.body_template, named);
+  const footerText = template.footer_template?.trim() || QUOTE_CHOICE_FOOTER;
+
+  return {
+    templateKey: "quote_choice_v1",
+    bodyText,
+    footerText,
+    buttons: buildQuoteChoiceSessionButtons(quotes),
+    msg91Components: buildQuoteChoiceMsg91Components({ tripSummary, rows: quotes }),
   };
 }

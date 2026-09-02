@@ -42,6 +42,36 @@
       "notes": "Until Green: send via session interactive API with dynamic BOOK_TOKEN::{quote_snapshot_id} button payload. After Green: bulk template + interactive fallback."
     },
     {
+      "name": "quote_choice_v1",
+      "category": "UTILITY",
+      "priority": "P0",
+      "sendMethod": "bulk_template_or_session_interactive",
+      "wiredInCode": "lib/whatsapp/templateCatalog.ts → buildQuoteChoiceMessage",
+      "env": {
+        "MSG91_QUOTE_CHOICE_TEMPLATE_NAME": "quote_choice_v1",
+        "MSG91_QUOTE_CHOICE_TEMPLATE_NAMESPACE": "<after Green>"
+      },
+      "body": "Your Kashmir cab quotes are in.\n\nTrip: {{1}}\n\n• {{2}}\n• {{3}}\n• {{4}}\n\nLowest price is listed first.",
+      "footer": "Tap a button below to choose your cab.",
+      "buttons": [
+        { "type": "QUICK_REPLY", "label": "Select {{vendor_1}}" },
+        { "type": "QUICK_REPLY", "label": "Select {{vendor_2}}" },
+        { "type": "QUICK_REPLY", "label": "Select {{vendor_3}}" }
+      ],
+      "sampleVariables": {
+        "1": "3 days · 4 pax · Sedan · Srinagar → Pahalgam",
+        "2": "Aala Cabs ₹17,500/day (4.8)",
+        "3": "Nova Cabs ₹18,000/day (4.6)",
+        "4": "Valley Rides ₹18,400/day (4.5)"
+      },
+      "createApi": {
+        "method": "POST",
+        "url": "https://api.msg91.com/api/v5/whatsapp/client-panel-template/",
+        "notes": "MSG91 create-template docs omit the JSON body and point at Facebook WABA components. Simulator persists this raw JSON. Quick-reply titles are static at approval; send-time button_1..button_3 payloads carry BOOK_TOKEN::{quote_snapshot_id}."
+      },
+      "notes": "First WhatsApp contact after the tourist submits a phone number. Body carries trip summary + top 3 quotes lowest-first. Live buttons are Select {vendorName} (≤20 chars) via session interactive. Meta Utility QR titles are frozen at approval — sample titles in createApi use Aala/Nova/Valley."
+    },
+    {
       "name": "driver_balance_v1",
       "category": "UTILITY",
       "priority": "P0",
@@ -167,6 +197,34 @@
     }
   ],
   "sessionInteractiveMessages": [
+    {
+      "name": "quote_choice_buttons",
+      "priority": "P0",
+      "sendMethod": "session_interactive",
+      "api": "POST https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/",
+      "wiredInCode": "lib/whatsapp/templateCatalog.ts → buildQuoteChoiceMessage (session fallback)",
+      "dashboardTemplate": "quote_choice_v1",
+      "bodyExample": "Your Kashmir cab quotes are in.\n\nTrip: 3 days · 4 pax · Sedan · Srinagar → Pahalgam\n\n• Aala Cabs ₹17,500/day (4.8)\n• Nova Cabs ₹18,000/day (4.6)\n• Valley Rides ₹18,400/day (4.5)\n\nLowest price is listed first.",
+      "footer": "Tap a button below to choose your cab.",
+      "buttons": [
+        {
+          "title": "Select {{vendor_1}}",
+          "payload": "BOOK_TOKEN::{quote_snapshot_id}",
+          "maxTitleLength": 20
+        },
+        {
+          "title": "Select {{vendor_2}}",
+          "payload": "BOOK_TOKEN::{quote_snapshot_id}",
+          "maxTitleLength": 20
+        },
+        {
+          "title": "Select {{vendor_3}}",
+          "payload": "BOOK_TOKEN::{quote_snapshot_id}",
+          "maxTitleLength": 20
+        }
+      ],
+      "notes": "Fallback when a 24h WhatsApp session is already open (e.g. WhatsApp OTP retry) or the Utility template is not yet Green. Same copy as quote_choice_v1; dynamic BOOK_TOKEN ids are allowed on session interactive only."
+    },
     {
       "name": "quote_multi_list",
       "priority": "P0",

@@ -16,7 +16,7 @@ export const MESSAGING_FLOW_STEPS: MessagingFlowStep[] = [
     id: "quote",
     label: "1 · Quote",
     audience: "customer",
-    description: "Interactive list or Pay ₹99 button",
+    description: "Select {vendor} buttons or Pay ₹99",
   },
   {
     id: "vendor_notify",
@@ -110,7 +110,7 @@ export function inferFlowStepId(input: {
   direction: "outbound" | "inbound"
   body_snapshot: string | null
 }): string | null {
-  if (input.template_name === "quote_single_v1" || input.template_name === "quote_multi_v1") {
+  if (input.template_name === "quote_single_v1" || input.template_name === "quote_multi_v1" || input.template_name === "quote_choice_v1") {
     return "quote"
   }
   if (input.template_name === "vendor_booking_notify_v1") return "vendor_notify"

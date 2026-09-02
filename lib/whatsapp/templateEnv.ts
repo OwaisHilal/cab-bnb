@@ -29,6 +29,11 @@ const TEMPLATE_ENV_MAP: Record<
     namespaceKey: "MSG91_QUOTE_MULTI_TEMPLATE_NAMESPACE",
     defaultName: "quote_multi_v1",
   },
+  quote_choice_v1: {
+    nameKey: "MSG91_QUOTE_CHOICE_TEMPLATE_NAME",
+    namespaceKey: "MSG91_QUOTE_CHOICE_TEMPLATE_NAMESPACE",
+    defaultName: "quote_choice_v1",
+  },
   driver_balance_v1: {
     nameKey: "MSG91_DRIVER_BALANCE_TEMPLATE_NAME",
     namespaceKey: "MSG91_DRIVER_BALANCE_TEMPLATE_NAMESPACE",

@@ -50,24 +50,57 @@ MSG91_OTP_TEMPLATE_LANGUAGE=en_US
 
 ---
 
-### 2. Quote + Pay ₹99 — session interactive (no dashboard template)
+### 2. `quote_choice_v1` — first WhatsApp contact (Utility + 3 quick replies)
 
-**Do not create** `quote_consolidated_v1` with 3 buttons — negotiate was removed.
+Sent right after the tourist submits a phone number at the end of the cab-quote flow. Default OTP is SMS, so this is usually a **cold start** and **must** be an approved Utility template (session interactive only works inside a 24h window).
 
-**Body (example):**
+**MSG91 / Meta limits that shape this template:**
+
+- Quick-reply **titles are static** at approval (max **3**, each ≤ **20** chars). Vendor names cannot go on the buttons.
+- Footer ≤ **60** chars. Body ≤ **1024** and must not start or end with a variable.
+- Dynamic `BOOK_TOKEN::{quote_snapshot_id}` values are sent at **send time** as `button_1`…`button_3` (`subtype: quick_reply`), not typed into the dashboard.
+
+**Body (paste in MSG91 dashboard):**
 ```
-Your Kashmir Cab Quote 🚖
+Your Kashmir cab quotes are in.
 
-Aala Cabs: ₹17500/day (Amaze)
+Trip: {{1}}
+
+• {{2}}
+• {{3}}
+• {{4}}
+
+Lowest price is listed first.
 ```
 
-**Button (1):**
+**Footer:** `Tap a button below to choose your cab.`
 
-| Title | Payload (in code only) |
-|-------|--------------------------|
-| Pay ₹99 to Lock | `BOOK_TOKEN::{quote_snapshot_id}` |
+**Buttons (Quick Reply):**
 
-**Wired in:** `lib/whatsapp/buildQuoteDelivery.ts` → MSG91 interactive send
+| Title | Send-time payload (code only) |
+|-------|-------------------------------|
+| Select {vendor 1} | `BOOK_TOKEN::{cheapest quote_snapshot_id}` |
+| Select {vendor 2} | `BOOK_TOKEN::{second quote_snapshot_id}` |
+| Select {vendor 3} | `BOOK_TOKEN::{third quote_snapshot_id}` |
+
+| Var | Sample |
+|-----|--------|
+| {{1}} | 3 days · 4 pax · Sedan · Srinagar → Pahalgam |
+| {{2}} | Aala Cabs ₹17,500/day (4.8) |
+| {{3}} | Nova Cabs ₹18,000/day (4.6) |
+| {{4}} | Valley Rides ₹18,400/day (4.5) |
+
+**Create API:** `POST https://api.msg91.com/api/v5/whatsapp/client-panel-template/` (MSG91 docs omit the JSON body and point at Facebook WABA components). Spec + builder: `lib/whatsapp/quoteChoiceTemplate.ts`.
+
+**Env after Green:**
+```env
+MSG91_QUOTE_CHOICE_TEMPLATE_NAME=quote_choice_v1
+MSG91_QUOTE_CHOICE_TEMPLATE_NAMESPACE=<from MSG91 code view>
+```
+
+**Wired in:** `lib/whatsapp/buildQuoteDelivery.ts` → `buildQuoteChoiceMessage`
+
+**Do not create** `quote_consolidated_v1` with Book/Negotiate/Pay — negotiate was removed.
 
 ---
 

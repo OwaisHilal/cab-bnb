@@ -90,6 +90,41 @@ const FALLBACK_TEMPLATES: WhatsAppMessageTemplateRow[] = [
     active: true,
   },
   {
+    template_key: "quote_choice_v1",
+    msg91_template_name: "quote_choice_v1",
+    category: "UTILITY",
+    send_method: "session_button",
+    language_code: "en_US",
+    body_template:
+      "Your Kashmir cab quotes are in.\n\nTrip: {{trip_summary}}\n\n• {{quote_1}}\n• {{quote_2}}\n• {{quote_3}}\n\nLowest price is listed first.",
+    dashboard_body:
+      "Your Kashmir cab quotes are in.\n\nTrip: {{1}}\n\n• {{2}}\n• {{3}}\n• {{4}}\n\nLowest price is listed first.",
+    header_template: null,
+    footer_template: "Tap a button below to choose your cab.",
+    buttons: [
+      { type: "QUICK_REPLY", label: "Select {{vendor_1}}", payloadPrefix: "BOOK_TOKEN::" },
+      { type: "QUICK_REPLY", label: "Select {{vendor_2}}", payloadPrefix: "BOOK_TOKEN::" },
+      { type: "QUICK_REPLY", label: "Select {{vendor_3}}", payloadPrefix: "BOOK_TOKEN::" },
+    ],
+    list_config: null,
+    variable_schema: {
+      trip_summary: "days · pax · cab type · pickup → drop",
+      quote_1: "lowest vendor price/day (rating)",
+      quote_2: "second vendor price/day (rating)",
+      quote_3: "third vendor price/day (rating)",
+      vendor_1: "cheapest vendor name (button title, max 20 chars as Select {name})",
+      vendor_2: "second vendor name",
+      vendor_3: "third vendor name",
+    },
+    env_name_key: "MSG91_QUOTE_CHOICE_TEMPLATE_NAME",
+    env_namespace_key: "MSG91_QUOTE_CHOICE_TEMPLATE_NAMESPACE",
+    requires_dashboard_create: true,
+    wired_in_code: "lib/whatsapp/templateCatalog.ts → buildQuoteChoiceMessage",
+    notes:
+      "First WhatsApp contact after phone submit. Button titles are Select {vendorName} (≤20 chars) on the session interactive send. Body lists trip + top 3 quotes lowest-first.",
+    active: true,
+  },
+  {
     template_key: "driver_balance_v1",
     msg91_template_name: "driver_balance_v1",
     category: "UTILITY",

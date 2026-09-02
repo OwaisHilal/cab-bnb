@@ -313,7 +313,7 @@ function ConfigPill({ label, tone }: { label: string; tone: "green" | "orange" |
 
 function WaStatusBadge({ status, template }: { status: string | null; template: string | null }) {
   const label =
-    template === "quote_single_v1" || template === "quote_multi_v1"
+    template === "quote_single_v1" || template === "quote_multi_v1" || template === "quote_choice_v1"
       ? "quote sent"
       : template === "driver_balance_v1"
         ? "balance due"
