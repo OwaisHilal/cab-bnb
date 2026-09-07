@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { runDemoPostVerification } from "@/lib/demo/runDemoPostVerification";
+import { processDueJobs } from "@/lib/jobs/processDueJobs";
+import { SEND_QUOTES_JOB_TYPE } from "@/lib/jobs/localJobHandlerTypes";
 
 /**
  * Both the OTP-code path (app/api/otp/verify/route.ts) and the Phone.Email
@@ -102,7 +103,15 @@ export async function completePhoneVerification(
       return { ok: false, status: 500, message: `Failed to enqueue send_quotes job: ${jobEnqueueError.message}` };
     }
 
-    await runDemoPostVerification(supabase, tripRequestId);
+    try {
+      const jobs = await processDueJobs(supabase, { jobTypes: [SEND_QUOTES_JOB_TYPE] });
+      console.info("[quotes send] jobs", jobs);
+    } catch (error) {
+      console.info(
+        "[quotes send] process failed",
+        error instanceof Error ? error.message : "unknown",
+      );
+    }
   }
 
   return { ok: true, touristId: tourist.id as string };

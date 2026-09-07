@@ -16,6 +16,10 @@ import type { WhatsAppButton } from "@/lib/whatsapp/types"
 export const QUOTE_CHOICE_TEMPLATE_KEY = "quote_choice_v1"
 /** MSG91 dashboard name. v1 was recategorized MARKETING and deleted. */
 export const MSG91_QUOTE_CHOICE_TEMPLATE_NAME = "quote_choice_v2"
+/** Cold-start first quote uses MSG91 Utility bulk; session buttons are fallback. */
+export const QUOTE_CHOICE_MSG91_SEND_MODE = "template" as const
+/** One-operator quote stays session list (dynamic BOOK_TOKEN row id). */
+export const QUOTE_SINGLE_MSG91_SEND_MODE = "interactive" as const
 export const QUOTE_CHOICE_MAX_QUOTES = 3
 export const QUOTE_CHOICE_FOOTER = "Tap a button below to choose your cab."
 export const QUOTE_CHOICE_EMPTY_LINE = "—"

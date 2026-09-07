@@ -5,6 +5,7 @@ import { applyDemoSendFallback } from "@/lib/whatsapp/deliverAndLogOutbound"
 import { buildQuoteDeliveryPayload } from "@/lib/whatsapp/buildQuoteDelivery"
 import { serializeWhatsAppMessageLogPayload } from "@/lib/whatsapp/messagePayload"
 import { sendWhatsAppMessage } from "@/lib/whatsapp/sendWhatsAppMessage"
+import { phoneLast4 } from "@/lib/utils/phone"
 import type { QuoteDeliveryPayload, SendWhatsAppResult } from "@/lib/whatsapp/types"
 
 export type DeliverQuoteWhatsAppResult =
@@ -88,6 +89,16 @@ export async function deliverQuoteWhatsApp(
 
   let send = applyDemoSendFallback(await sendWhatsAppMessage(built.touristPhone, built.message))
   const channel: "whatsapp" | "demo_simulated" = send.simulated ? "demo_simulated" : "whatsapp"
+
+  console.info("[quotes send] delivery", {
+    last4: phoneLast4(built.touristPhone),
+    template: built.message.templateKey,
+    sendMode: built.message.msg91SendMode,
+    configured: send.configured,
+    success: send.success,
+    simulated: Boolean(send.simulated),
+    error: send.error ?? null,
+  })
 
   try {
     await persistQuoteDelivery(supabase, built, send, channel)

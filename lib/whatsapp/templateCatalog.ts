@@ -12,6 +12,8 @@ import {
 } from "@/lib/whatsapp/messageTemplateStore"
 import {
   QUOTE_CHOICE_FOOTER,
+  QUOTE_CHOICE_MSG91_SEND_MODE,
+  QUOTE_SINGLE_MSG91_SEND_MODE,
   buildQuoteChoiceMsg91Components,
   buildQuoteChoiceNamedVariables,
   buildQuoteChoiceSessionButtons,
@@ -126,7 +128,7 @@ export function buildQuoteSingleMessage(input: {
       },
     ]),
     msg91Components: components,
-    msg91SendMode: "interactive",
+    msg91SendMode: QUOTE_SINGLE_MSG91_SEND_MODE,
   }
 }
 
@@ -189,7 +191,7 @@ export function buildQuoteChoiceMessage(input: {
     footerText,
     buttons: buildQuoteChoiceSessionButtons(quotes),
     msg91Components: buildQuoteChoiceMsg91Components({ tripSummary, rows: quotes }),
-    msg91SendMode: "interactive",
+    msg91SendMode: QUOTE_CHOICE_MSG91_SEND_MODE,
   }
 }
 

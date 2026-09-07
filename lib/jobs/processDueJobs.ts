@@ -11,6 +11,8 @@ import { handleCompleteBalancePayment } from "@/lib/whatsapp/completeBalancePaym
 import { handleCreateRideGroup } from "@/lib/whatsapp/createRideGroup"
 import { handleRemindRideGroupJoin } from "@/lib/whatsapp/remindRideGroupJoin"
 import { handleDeleteRideGroup } from "@/lib/whatsapp/deleteRideGroup"
+import { handleSendQuotes } from "@/lib/jobs/handleSendQuotes"
+import { SEND_QUOTES_JOB_TYPE } from "@/lib/jobs/localJobHandlerTypes"
 
 const BATCH_SIZE = 20
 const MAX_BACKOFF_MINUTES = 60
@@ -27,6 +29,8 @@ const LOCAL_HANDLERS: Record<
   string,
   (supabase: SupabaseClient, payload: Record<string, unknown>) => Promise<void>
 > = {
+  [SEND_QUOTES_JOB_TYPE]: (supabase, payload) =>
+    handleSendQuotes(supabase, payload as { trip_request_id?: string }),
   send_token_payment_link: (supabase, payload) =>
     handleSendTokenPaymentLink(supabase, payload as { quote_snapshot_id: string }),
   finalize_booking: (supabase, payload) =>

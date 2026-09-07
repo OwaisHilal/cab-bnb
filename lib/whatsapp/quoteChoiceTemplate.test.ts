@@ -6,6 +6,8 @@ import {
   QUOTE_CHOICE_FOOTER,
   QUOTE_CHOICE_SAMPLE_BUTTON_TITLES,
   MSG91_QUOTE_CHOICE_TEMPLATE_NAME,
+  QUOTE_CHOICE_MSG91_SEND_MODE,
+  QUOTE_SINGLE_MSG91_SEND_MODE,
   QUOTE_CHOICE_UNAVAILABLE_PAYLOAD,
   WHATSAPP_QUICK_REPLY_TITLE_MAX,
   buildQuoteChoiceButtons,
@@ -149,5 +151,15 @@ describe("buildQuoteChoiceCreateApiBody", () => {
     assert.equal(buttons[0]?.text, "Select Aala Cabs")
     assert.equal(buttons[1]?.text, "Select Nova Cabs")
     assert.equal(buttons[2]?.text, "Select Valley Rides")
+  })
+})
+
+describe("quote MSG91 send modes", () => {
+  it("sends quote_choice as Utility bulk template on cold start", () => {
+    assert.equal(QUOTE_CHOICE_MSG91_SEND_MODE, "template")
+  })
+
+  it("keeps quote_single on the session list path", () => {
+    assert.equal(QUOTE_SINGLE_MSG91_SEND_MODE, "interactive")
   })
 })
