@@ -1,19 +1,39 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { enqueueJob } from "../jobQueue.ts";
 
-/**
- * Checklist 3.4: async counterpart of app/api/bookings/finalize/route.ts,
- * triggered when the customer taps BOOK_FULL/BOOK_TOKEN over WhatsApp
- * (webhook -> job_queue, see lib/whatsapp/webhook/enqueueWebhookAction.ts)
- * rather than the in-app fallback route (Plan §10).
- *
- * Delegates to the existing `finalize_quote_booking` Postgres function
- * (migration 0009, unchanged) — same row lock, same sibling-snapshot-loss
- * and notify_vendor_booking enqueue behavior either path takes.
- *
- * No customer-facing message here: per Plan §6.4 the confirmation card is
- * only sent once the vendor's driver details are parsed (Phase 2d/2e,
- * out of scope for this increment).
- */
+async function lookupBookingId(
+  supabase: SupabaseClient,
+  quoteSnapshotId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("bookings")
+    .select("id")
+    .eq("winning_quote_snapshot_id", quoteSnapshotId)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to load booking for quote: ${error.message}`);
+  return (data?.id as string | null) ?? null;
+}
+
+async function enqueueAckIfMissing(supabase: SupabaseClient, bookingId: string): Promise<void> {
+  const { data: existing, error } = await supabase
+    .from("job_queue")
+    .select("id")
+    .eq("job_type", "send_token_received_ack")
+    .contains("payload", { booking_id: bookingId })
+    .in("status", ["queued", "processing", "done"])
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to check token ack job: ${error.message}`);
+  if (existing?.id) return;
+
+  await enqueueJob(supabase, "send_token_received_ack", { booking_id: bookingId });
+}
+
+function isAlreadyFinalized(message: string): boolean {
+  return message.includes("quote_snapshot_not_negotiable") || message.toLowerCase().includes("not_negotiable");
+}
+
 export async function handleFinalizeBooking(
   supabase: SupabaseClient,
   payload: { quote_snapshot_id: string; lock_type: "full_payment" | "token_99" },
@@ -25,5 +45,17 @@ export async function handleFinalizeBooking(
     p_lock_type: lock_type,
   });
 
-  if (error) throw new Error(`finalize_quote_booking failed: ${error.message}`);
+  if (error) {
+    if (lock_type === "token_99" && isAlreadyFinalized(error.message)) {
+      const bookingId = await lookupBookingId(supabase, quote_snapshot_id);
+      if (bookingId) await enqueueAckIfMissing(supabase, bookingId);
+      return;
+    }
+    throw new Error(`finalize_quote_booking failed: ${error.message}`);
+  }
+
+  if (lock_type === "token_99") {
+    const bookingId = await lookupBookingId(supabase, quote_snapshot_id);
+    if (bookingId) await enqueueAckIfMissing(supabase, bookingId);
+  }
 }

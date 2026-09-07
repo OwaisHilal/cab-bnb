@@ -48,6 +48,18 @@ export const MESSAGING_FLOW_STEPS: MessagingFlowStep[] = [
     audience: "driver",
     description: "Text — route, guest, vehicle",
   },
+  {
+    id: "ride_group_guest",
+    label: "7 · Ride group (guest)",
+    audience: "customer",
+    description: "Join ride group — quality control",
+  },
+  {
+    id: "ride_group_driver",
+    label: "8 · Ride group (driver)",
+    audience: "driver",
+    description: "Join ride group with passenger",
+  },
 ]
 
 const AUDIENCE_LABELS: Record<MessagingFlowAudience, string> = {
@@ -74,10 +86,11 @@ export function classifyMessagingAudience(input: {
   tourist_id?: string | null
   direction: "outbound" | "inbound"
 }): MessagingFlowAudience {
-  if (input.template_name === "driver_assignment_v1") return "driver"
+  if (input.template_name === "driver_assignment_v1" || input.template_name === "ride_group_driver_v1") return "driver"
   if (input.vendor_id) return "vendor"
   if (
     input.template_name === "vendor_booking_notify_v1" ||
+    input.template_name === "vendor_assign_driver_v1" ||
     input.template_name === "vendor_inbound_driver_reply"
   ) {
     return "vendor"
@@ -88,7 +101,7 @@ export function classifyMessagingAudience(input: {
 export function classifyMessagingKind(buttonPayload: string | null): MessagingFlowKind {
   const payload = parseWhatsAppMessageLogPayload(buttonPayload)
   if (payload.list?.sections.some((section) => section.rows.length > 0)) return "list"
-  if (payload.buttons.length > 0) return "button"
+  if (payload.ctaUrl?.url || payload.buttons.length > 0) return "button"
   return "text"
 }
 
@@ -113,19 +126,29 @@ export function inferFlowStepId(input: {
   if (input.template_name === "quote_single_v1" || input.template_name === "quote_multi_v1" || input.template_name === "quote_choice_v1") {
     return "quote"
   }
-  if (input.template_name === "vendor_booking_notify_v1") return "vendor_notify"
+  if (input.template_name === "vendor_booking_notify_v1" || input.template_name === "vendor_assign_driver_v1") {
+    return "vendor_notify"
+  }
   if (
     input.template_name === "vendor_inbound_driver_reply" ||
-    (input.direction === "inbound" && input.vendor_id && input.body_snapshot?.startsWith("DRIVER:"))
+    (input.direction === "inbound" && input.vendor_id && (
+      input.body_snapshot?.startsWith("DRIVER:") ||
+      /^\+?[\d\s\-()]{10,20}$/.test(input.body_snapshot?.trim() ?? "")
+    ))
   ) {
     return "vendor_reply"
   }
-  if (input.template_name === "driver_balance_v1") return "balance"
+  if (input.template_name === "token_received_v1") return "token_ack"
+  if (input.template_name === "driver_assigned_payment_v1" || input.template_name === "driver_balance_v1") return "balance"
   if (input.template_name === "driver_contact_v1") return "driver_contact"
   if (input.template_name === "driver_assignment_v1") return "driver_assign"
+  if (input.template_name === "ride_group_guest_v1") return "ride_group_guest"
+  if (input.template_name === "ride_group_driver_v1") return "ride_group_driver"
   if (input.body_snapshot?.includes("Booking confirmed")) return "quote"
   if (input.body_snapshot?.includes("Balance due")) return "balance"
-  if (input.body_snapshot?.includes("Payment received")) return "driver_contact"
+  if (input.body_snapshot?.includes("Payment received")) return "token_ack"
+  if (input.body_snapshot?.includes("We've created a private WhatsApp group")) return "ride_group_guest"
+  if (input.body_snapshot?.includes("We've created a WhatsApp group with the passenger")) return "ride_group_driver"
   if (input.body_snapshot?.includes("New ride assigned")) return "driver_assign"
   return null
 }

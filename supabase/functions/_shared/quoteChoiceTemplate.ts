@@ -26,6 +26,8 @@ interface WhatsAppButton {
  *   (`subtype: quick_reply`) so inbound parses as `BOOK_TOKEN::{quote_snapshot_id}`.
  */
 export const QUOTE_CHOICE_TEMPLATE_KEY = "quote_choice_v1"
+/** MSG91 dashboard name. v1 was recategorized MARKETING and deleted. */
+export const MSG91_QUOTE_CHOICE_TEMPLATE_NAME = "quote_choice_v2"
 export const QUOTE_CHOICE_MAX_QUOTES = 3
 export const QUOTE_CHOICE_FOOTER = "Tap a button below to choose your cab."
 export const QUOTE_CHOICE_EMPTY_LINE = "—"
@@ -81,12 +83,13 @@ export interface QuoteChoiceRow {
 }
 
 export interface QuoteChoiceCreateApiBody {
-  integrated_number: string
-  template_name: string
-  name: string
-  language: string
-  category: "UTILITY"
-  components: Array<Record<string, unknown>>
+  integrated_number: string;
+  template_name: string;
+  name: string;
+  language: string;
+  category: "UTILITY";
+  allow_category_change: false;
+  components: Array<Record<string, unknown>>;
 }
 
 export const formatVendorRating = (rating: number | null | undefined): string => {
@@ -205,10 +208,11 @@ export const buildQuoteChoiceCreateApiBody = (
 ): QuoteChoiceCreateApiBody => {
   return {
     integrated_number: integratedNumber.replace(/^\+/, ""),
-    template_name: QUOTE_CHOICE_TEMPLATE_KEY,
-    name: QUOTE_CHOICE_TEMPLATE_KEY,
+    template_name: MSG91_QUOTE_CHOICE_TEMPLATE_NAME,
+    name: MSG91_QUOTE_CHOICE_TEMPLATE_NAME,
     language: "en_US",
     category: "UTILITY",
+    allow_category_change: false,
     components: [
       {
         type: "BODY",

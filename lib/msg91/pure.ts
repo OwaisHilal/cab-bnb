@@ -6,6 +6,8 @@ import type {
   SendMsg91ImageInput,
   SendMsg91InteractiveInput,
   SendMsg91InteractiveListInput,
+  SendMsg91CtaUrlInput,
+  SendMsg91PaymentLinkInput,
   SendMsg91TemplateInput,
   SendMsg91TextInput,
 } from "./types";
@@ -237,6 +239,43 @@ export function buildMsg91InteractiveListBody(
   return buildMsg91InteractiveSessionBody(input.toE164, integratedNumber, interactive);
 }
 
+export const MSG91_PAYMENT_LINK_ITEM_NAME_MAX = 60;
+
+export function buildMsg91PaymentLinkBody(
+  input: SendMsg91PaymentLinkInput,
+  integratedNumber: string,
+): Record<string, unknown> {
+  const interactive: Record<string, unknown> = {
+    type: "payment_link",
+    body: { text: input.bodyText },
+    items: input.items.map((item) => ({
+      name: item.name.trim().slice(0, MSG91_PAYMENT_LINK_ITEM_NAME_MAX),
+      amount: Number(item.amount),
+      quantity: Number(item.quantity),
+    })),
+  };
+
+  const headerImageUrl = input.headerImageUrl?.trim();
+  if (headerImageUrl) {
+    interactive.header = {
+      type: "image",
+      image: { link: headerImageUrl },
+    };
+  }
+
+  const footerText = input.footerText?.trim();
+  if (footerText) {
+    interactive.footer = { text: footerText.slice(0, 60) };
+  }
+
+  const body = buildMsg91InteractiveSessionBody(input.toE164, integratedNumber, interactive);
+  const crqid = input.crqid?.trim();
+  if (crqid) {
+    body.CRQID = crqid;
+  }
+  return body;
+}
+
 export function buildMsg91InteractiveButtonBody(
   input: SendMsg91InteractiveInput,
   integratedNumber: string,
@@ -261,6 +300,30 @@ export function buildMsg91InteractiveButtonBody(
   }
 
   return buildMsg91InteractiveSessionBody(input.toE164, integratedNumber, interactive);
+}
+
+export function buildMsg91CtaUrlBody(
+  input: SendMsg91CtaUrlInput,
+  integratedNumber: string,
+): Record<string, unknown> {
+  const interactive: Record<string, unknown> = {
+    type: "cta_url",
+    body: { text: input.bodyText },
+    action: {
+      name: "cta_url",
+      parameters: {
+        display_text: truncateButtonTitle(input.buttonTitle),
+        url: input.url,
+      },
+    },
+  }
+
+  const footerText = input.footerText?.trim()
+  if (footerText) {
+    interactive.footer = { text: footerText.slice(0, 60) }
+  }
+
+  return buildMsg91InteractiveSessionBody(input.toE164, integratedNumber, interactive)
 }
 
 export function buildMsg91TextOutboundUrl(
@@ -344,6 +407,22 @@ async function postMsg91Request(
   }
 }
 
+export async function sendMsg91PaymentLinkWithConfig(
+  input: SendMsg91PaymentLinkInput,
+  credentials: { authKey?: string; integratedNumber?: string } | null,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Msg91SendResult> {
+  const integratedNumber = credentials?.integratedNumber?.trim() ?? "";
+  return postMsg91Request(
+    credentials,
+    MSG91_WHATSAPP_OUTBOUND_URL,
+    {
+      body: JSON.stringify(buildMsg91PaymentLinkBody(input, integratedNumber)),
+    },
+    fetchImpl,
+  );
+}
+
 export async function sendMsg91InteractiveButtonWithConfig(
   input: SendMsg91InteractiveInput,
   credentials: { authKey?: string; integratedNumber?: string } | null,
@@ -355,6 +434,22 @@ export async function sendMsg91InteractiveButtonWithConfig(
     MSG91_WHATSAPP_OUTBOUND_URL,
     {
       body: JSON.stringify(buildMsg91InteractiveButtonBody(input, integratedNumber)),
+    },
+    fetchImpl,
+  );
+}
+
+export async function sendMsg91CtaUrlWithConfig(
+  input: SendMsg91CtaUrlInput,
+  credentials: { authKey?: string; integratedNumber?: string } | null,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Msg91SendResult> {
+  const integratedNumber = credentials?.integratedNumber?.trim() ?? "";
+  return postMsg91Request(
+    credentials,
+    MSG91_WHATSAPP_OUTBOUND_URL,
+    {
+      body: JSON.stringify(buildMsg91CtaUrlBody(input, integratedNumber)),
     },
     fetchImpl,
   );

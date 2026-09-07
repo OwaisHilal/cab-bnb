@@ -22,7 +22,7 @@ const TEMPLATE_ENV_MAP: Record<
   quote_single_v1: {
     nameKey: "MSG91_QUOTE_SINGLE_TEMPLATE_NAME",
     namespaceKey: "MSG91_QUOTE_SINGLE_TEMPLATE_NAMESPACE",
-    defaultName: "quote_single_v1",
+    defaultName: "quote_single_v2",
   },
   quote_multi_v1: {
     nameKey: "MSG91_QUOTE_MULTI_TEMPLATE_NAME",
@@ -32,7 +32,23 @@ const TEMPLATE_ENV_MAP: Record<
   quote_choice_v1: {
     nameKey: "MSG91_QUOTE_CHOICE_TEMPLATE_NAME",
     namespaceKey: "MSG91_QUOTE_CHOICE_TEMPLATE_NAMESPACE",
-    defaultName: "quote_choice_v1",
+    defaultName: "quote_choice_v2",
+  },
+  token_received_v1: {
+    nameKey: "MSG91_TOKEN_RECEIVED_TEMPLATE_NAME",
+    namespaceKey: "MSG91_TOKEN_RECEIVED_TEMPLATE_NAMESPACE",
+    defaultName: "token_received_v1",
+  },
+  vendor_assign_driver_v1: {
+    // Live vendor-assign path. Do not point these env vars at vendor_booking_notify_*.
+    nameKey: "MSG91_VENDOR_NOTIFY_TEMPLATE_NAME",
+    namespaceKey: "MSG91_VENDOR_NOTIFY_TEMPLATE_NAMESPACE",
+    defaultName: "vendor_assign_driver_v1",
+  },
+  driver_assigned_payment_v1: {
+    nameKey: "MSG91_DRIVER_ASSIGNED_PAYMENT_TEMPLATE_NAME",
+    namespaceKey: "MSG91_DRIVER_ASSIGNED_PAYMENT_TEMPLATE_NAMESPACE",
+    defaultName: "driver_assigned_payment_v1",
   },
   driver_balance_v1: {
     nameKey: "MSG91_DRIVER_BALANCE_TEMPLATE_NAME",
@@ -43,6 +59,16 @@ const TEMPLATE_ENV_MAP: Record<
     nameKey: "MSG91_DRIVER_CONTACT_TEMPLATE_NAME",
     namespaceKey: "MSG91_DRIVER_CONTACT_TEMPLATE_NAMESPACE",
     defaultName: "driver_contact_v1",
+  },
+  ride_group_guest_v1: {
+    nameKey: "MSG91_RIDE_GROUP_GUEST_TEMPLATE_NAME",
+    namespaceKey: "MSG91_RIDE_GROUP_GUEST_TEMPLATE_NAMESPACE",
+    defaultName: "ride_group_guest_v1",
+  },
+  ride_group_driver_v1: {
+    nameKey: "MSG91_RIDE_GROUP_DRIVER_TEMPLATE_NAME",
+    namespaceKey: "MSG91_RIDE_GROUP_DRIVER_TEMPLATE_NAMESPACE",
+    defaultName: "ride_group_driver_v1",
   },
 }
 

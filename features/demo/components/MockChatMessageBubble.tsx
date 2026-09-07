@@ -63,17 +63,18 @@ export function MockChatMessageBubble({
     selectedQuote && isQuoteCardMessageBody(message.body_snapshot)
       ? buildSelectedQuoteChatBody(selectedQuote)
       : formatDriverCardBody(rawBody, hasMedia)
-  const showInlineButtons = isOutbound && buttons.length > 0
+  const showCta = isOutbound && Boolean(message.ctaUrl?.url)
+  const showInlineButtons = isOutbound && !showCta && buttons.length > 0
   const driverMeta = parseDriverMeta(message.body_snapshot)
 
   return (
     <div className={cn("flex", isOutbound ? "justify-start" : "justify-end")}>
-      <div className={cn("max-w-[88%]", showInlineButtons && "w-full max-w-[88%]")}>
+      <div className={cn("max-w-[88%]", (showInlineButtons || showCta) && "w-full max-w-[88%]")}>
         <div
           className={cn(
             "overflow-hidden shadow-sm",
             isOutbound ? "rounded-lg rounded-tl-none bg-white" : "rounded-lg rounded-tr-none bg-[#d9fdd3]",
-            showInlineButtons && "rounded-b-none",
+            (showInlineButtons || showCta) && "rounded-b-none",
           )}
         >
           {hasMedia && message.media && (
@@ -123,7 +124,7 @@ export function MockChatMessageBubble({
               <pre className="whitespace-pre-wrap font-archivo text-[13px] leading-snug text-kmr-ink">
                 {bodyText}
               </pre>
-              {!showInlineButtons && (
+              {!showInlineButtons && !showCta && (
                 <span className="mt-1 block text-right font-mono text-[8px] text-kmr-muted-3">
                   {formatTime(message.created_at)}
                 </span>
@@ -131,6 +132,23 @@ export function MockChatMessageBubble({
             </div>
           )}
         </div>
+
+        {showCta && message.ctaUrl && (
+          <div className="overflow-hidden rounded-b-lg rounded-t-none border border-t-0 border-black/5 bg-white shadow-sm">
+            <a
+              href={message.ctaUrl.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex w-full items-center justify-center px-3 py-3 font-archivo text-[14px] font-semibold text-[#008069] transition-colors active:bg-black/5"
+              aria-label={message.ctaUrl.title}
+            >
+              {message.ctaUrl.title}
+            </a>
+            <span className="block px-3 pb-2 text-right font-mono text-[8px] text-kmr-muted-3">
+              {formatTime(message.created_at)}
+            </span>
+          </div>
+        )}
 
         {showInlineButtons && (
           <div className="overflow-hidden rounded-b-lg rounded-t-none border border-t-0 border-black/5 bg-white shadow-sm">

@@ -7,12 +7,19 @@ import { buildDemoDriverMedia } from "@/features/demo/constants/mockChatMedia"
 import { ensureMessageTemplates } from "@/lib/whatsapp/messageTemplateStore"
 import {
   buildDriverAssignmentMessage,
-  buildDriverBalanceMessage,
   buildDriverContactMessage,
-  buildVendorNotificationDemoMessage,
 } from "@/lib/whatsapp/templateCatalog"
+import { buildVendorAssignDriverMessage } from "@/lib/whatsapp/notifyVendorBooking"
+import {
+  BALANCE_PAY_PAYLOAD_PREFIX,
+  buildBalancePaymentLinkCopy,
+  calculateBalanceDue,
+  DRIVER_ASSIGNED_PAYMENT_TEMPLATE_KEY,
+} from "@/lib/whatsapp/balancePaymentLink"
+import { formatInr, formatWhatsAppPayButtonTitle } from "@/lib/whatsapp/formatInr"
 import { deliverAndLogWhatsAppSpec, deliverAndLogWhatsAppText } from "@/lib/whatsapp/deliverAndLogOutbound"
-import { TOKEN_LOCK_AMOUNT } from "@/lib/whatsapp/formatInr"
+import { handleCreateRideGroup } from "@/lib/whatsapp/createRideGroup"
+import type { WhatsAppMessageSpec } from "@/lib/whatsapp/types"
 
 const DEMO_VENDOR_DRIVERS: Record<string, { name: string; phone: string; vehicleNumber: string }> = {
   "11111111-1111-1111-1111-111111111101": {
@@ -42,8 +49,12 @@ function firstOrSelf<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? value[0] ?? null : value
 }
 
-function formatInr(amount: number): string {
-  return `\u20b9${amount.toLocaleString("en-IN")}`
+async function runDemoRideGroup(supabase: SupabaseClient, bookingId: string): Promise<void> {
+  try {
+    await handleCreateRideGroup(supabase, { booking_id: bookingId })
+  } catch (error) {
+    console.error("[demo] create ride group failed", error)
+  }
 }
 
 export function formatDemoInr(amount: number): string {
@@ -178,7 +189,7 @@ async function attachDemoDriver(
     vehicleNumber: "JK01XX0000",
   }
   const vehicleModel = await resolveVehicleModel(supabase, booking.vendor_id, vehicleTypeId)
-  const rawVendorReply = `DRIVER: ${demoDriver.name} | ${demoDriver.phone} | ${demoDriver.vehicleNumber} | ${vehicleModel}`
+  const rawVendorReply = demoDriver.phone
 
   await logDemoInboundFreeText(supabase, {
     tripRequestId,
@@ -243,23 +254,22 @@ export async function runDemoPostTokenBookingFlow(
   if (!touristPhone) throw new Error("Booking has no tourist phone for WhatsApp delivery")
 
   const tripRequest = firstOrSelf(booking.trip_requests)
-  const vendorBody = buildVendorNotificationDemoMessage({
-    vendorName: vendor?.business_name ?? "Vendor",
-    guestName: tourist?.full_name ?? null,
-    guestPhone: tourist?.phone_e164 ?? "phone TBD",
+  const vehicleLabel = firstOrSelf(booking.vehicle_types)?.label ?? "Vehicle"
+  const vendorSpec = buildVendorAssignDriverMessage({
+    guestName: tourist?.full_name?.trim() || "Guest",
     pickupLocation: tripRequest?.pickup_location ?? "Pickup",
     dropLocation: tripRequest?.drop_location ?? "Drop",
     pickupAt: booking.pickup_at,
     tripDays: booking.trip_days,
     paxCount: booking.pax_count,
-    vehicleLabel: firstOrSelf(booking.vehicle_types)?.label ?? "Vehicle",
-    finalQuotePerDay: booking.final_quote ?? 0,
+    vehicleLabel,
+    tripTotal: calculateDemoTripTotal(booking.final_quote ?? 0, booking.trip_days),
   })
   if (vendor?.whatsapp_number) {
-    await deliverAndLogWhatsAppText(supabase, {
+    await deliverAndLogWhatsAppSpec(supabase, {
       phoneE164: vendor.whatsapp_number,
-      bodyText: vendorBody,
-      templateName: "vendor_booking_notify_v1",
+      spec: vendorSpec,
+      templateName: "vendor_assign_driver_v1",
       log: {
         tripRequestId,
         bookingId: booking.id,
@@ -292,8 +302,7 @@ export async function runDemoPostTokenBookingFlow(
 
   const driver = await attachDemoDriver(supabase, booking, tripRequestId, vehicleTypeId)
 
-  const totalTripCost = calculateDemoTripTotal(booking.final_quote ?? 0, booking.trip_days)
-  const balanceDue = Math.max(totalTripCost - TOKEN_LOCK_AMOUNT, 0)
+  const balanceDue = calculateBalanceDue(booking.final_quote ?? 0, booking.trip_days)
   const skipPaymentStep = booking.payment_status === "fully_paid"
 
   if (skipPaymentStep) {
@@ -337,17 +346,37 @@ export async function runDemoPostTokenBookingFlow(
         vehicleNumber: driver.vehicleNumber,
       }),
     })
+    await runDemoRideGroup(supabase, booking.id)
     return
   }
 
-  const balanceMessage = buildDriverBalanceMessage({
+  const copy = buildBalancePaymentLinkCopy({
+    tripDays: booking.trip_days,
+    paxCount: booking.pax_count,
+    vehicleLabel,
+    pickupLocation: firstOrSelf(booking.trip_requests)?.pickup_location,
+    dropLocation: firstOrSelf(booking.trip_requests)?.drop_location,
     vendorName,
-    balanceDue,
-    bookingId: booking.id,
+    pricePerDay: booking.final_quote ?? 0,
+    rating: null,
     driverName: driver.driverName,
     vehicleModel: driver.vehicleModel,
     vehicleNumber: driver.vehicleNumber,
+    balanceDue,
   })
+
+  const balanceMessage: WhatsAppMessageSpec = {
+    templateKey: DRIVER_ASSIGNED_PAYMENT_TEMPLATE_KEY,
+    bodyText: copy.bodyText,
+    footerText: copy.footerText,
+    buttons: [{ id: `${BALANCE_PAY_PAYLOAD_PREFIX}${booking.id}`, title: formatWhatsAppPayButtonTitle(balanceDue) }],
+    msg91SendMode: "interactive",
+    mediaMeta: {
+      driverName: driver.driverName,
+      vehicleModel: driver.vehicleModel,
+      vehicleNumber: driver.vehicleNumber,
+    },
+  }
 
   await deliverAndLogWhatsAppSpec(supabase, {
     phoneE164: touristPhone,
@@ -394,6 +423,7 @@ export async function runDemoCompleteBalancePayment(
   if (!booking) throw new Error("Booking not found")
 
   if (booking.payment_status === "fully_paid") {
+    await runDemoRideGroup(supabase, bookingId)
     return
   }
 
@@ -466,4 +496,6 @@ export async function runDemoCompleteBalancePayment(
       }),
     })
   }
+
+  await runDemoRideGroup(supabase, bookingId)
 }

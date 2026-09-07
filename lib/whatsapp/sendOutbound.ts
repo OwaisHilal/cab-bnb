@@ -4,12 +4,17 @@ import {
   isMsg91WhatsAppConfigured,
   sendMsg91ImageMessage,
   sendMsg91InteractiveButtonMessage,
+  sendMsg91InteractiveCtaUrlMessage,
   sendMsg91InteractiveListMessage,
+  sendMsg91PaymentLinkMessage,
   sendMsg91TextMessage,
 } from "@/lib/msg91/sendSession"
+import type { SendMsg91PaymentLinkInput } from "@/lib/msg91/types"
+import { paymentLinkHeaderAttempts } from "@/lib/whatsapp/paymentReport"
 import type {
   SendWhatsAppResult,
   WhatsAppButton,
+  WhatsAppCtaUrl,
   WhatsAppListMessage,
 } from "@/lib/whatsapp/types"
 
@@ -113,6 +118,47 @@ export async function sendWhatsAppButtonMessage(
   })
 }
 
+export async function sendWhatsAppCtaUrlMessage(
+  phoneE164: string,
+  bodyText: string,
+  cta: WhatsAppCtaUrl,
+  options?: { footerText?: string },
+): Promise<SendWhatsAppResult> {
+  const footerText = options?.footerText?.trim()
+  if (isMsg91WhatsAppConfigured()) {
+    return sendMsg91InteractiveCtaUrlMessage({
+      toE164: phoneE164,
+      bodyText,
+      buttonTitle: cta.title,
+      url: cta.url,
+      ...(footerText ? { footerText } : {}),
+    })
+  }
+
+  const credentials = getMetaWhatsAppCredentials()
+  if (!credentials) {
+    return { configured: false, success: false, error: "WhatsApp outbound credentials are not configured" }
+  }
+
+  return postMetaWhatsAppMessage(credentials.phoneNumberId, credentials.accessToken, {
+    messaging_product: "whatsapp",
+    to: phoneE164.replace(/^\+/, ""),
+    type: "interactive",
+    interactive: {
+      type: "cta_url",
+      body: { text: bodyText },
+      ...(footerText ? { footer: { text: footerText.slice(0, 60) } } : {}),
+      action: {
+        name: "cta_url",
+        parameters: {
+          display_text: cta.title.slice(0, 20),
+          url: cta.url,
+        },
+      },
+    },
+  })
+}
+
 export async function sendWhatsAppListMessage(
   phoneE164: string,
   bodyText: string,
@@ -173,6 +219,35 @@ export async function sendWhatsAppTextMessage(
     type: "text",
     text: { body: bodyText },
   })
+}
+
+export async function sendWhatsAppPaymentLinkMessage(
+  input: SendMsg91PaymentLinkInput,
+): Promise<SendWhatsAppResult> {
+  if (!isMsg91WhatsAppConfigured()) {
+    return {
+      configured: false,
+      success: false,
+      error: "MSG91 WhatsApp is required to send a Cashfree payment link",
+    }
+  }
+
+  return sendMsg91PaymentLinkMessage(input)
+}
+
+export async function sendWhatsAppPaymentLinkMessageWithHeaderRetry(
+  input: SendMsg91PaymentLinkInput,
+): Promise<SendWhatsAppResult> {
+  let last: SendWhatsAppResult | undefined
+  for (const headerImageUrl of paymentLinkHeaderAttempts(input.headerImageUrl)) {
+    last = await sendWhatsAppPaymentLinkMessage({ ...input, headerImageUrl })
+    if (last.success) return last
+  }
+  return last ?? {
+    configured: false,
+    success: false,
+    error: "payment_link_send_failed",
+  }
 }
 
 export async function sendWhatsAppImageMessage(

@@ -5,7 +5,7 @@ import {
   QUOTE_CHOICE_DASHBOARD_BODY,
   QUOTE_CHOICE_FOOTER,
   QUOTE_CHOICE_SAMPLE_BUTTON_TITLES,
-  QUOTE_CHOICE_TEMPLATE_KEY,
+  MSG91_QUOTE_CHOICE_TEMPLATE_NAME,
   QUOTE_CHOICE_UNAVAILABLE_PAYLOAD,
   WHATSAPP_QUICK_REPLY_TITLE_MAX,
   buildQuoteChoiceButtons,
@@ -137,7 +137,8 @@ describe("buildQuoteChoiceNamedVariables", () => {
 describe("buildQuoteChoiceCreateApiBody", () => {
   it("emits Facebook-shaped BODY + FOOTER + 3 QUICK_REPLY buttons", () => {
     const body = buildQuoteChoiceCreateApiBody("+919111111111")
-    assert.equal(body.template_name, QUOTE_CHOICE_TEMPLATE_KEY)
+    assert.equal(body.template_name, MSG91_QUOTE_CHOICE_TEMPLATE_NAME)
+    assert.equal(body.allow_category_change, false)
     assert.equal(body.integrated_number, "919111111111")
     assert.equal(body.category, "UTILITY")
     const types = body.components.map((component) => component.type)

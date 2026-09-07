@@ -11,8 +11,11 @@ export async function enqueueJob(
   supabase: SupabaseClient,
   jobType: string,
   payload: Record<string, unknown>,
+  options?: { runAfter?: string },
 ): Promise<void> {
-  const { error } = await supabase.from("job_queue").insert({ job_type: jobType, payload });
+  const row: Record<string, unknown> = { job_type: jobType, payload };
+  if (options?.runAfter) row.run_after = options.runAfter;
+  const { error } = await supabase.from("job_queue").insert(row);
   if (error) {
     throw new Error(`Failed to enqueue ${jobType} job: ${error.message}`);
   }

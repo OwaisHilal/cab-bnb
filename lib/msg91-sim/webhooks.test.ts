@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import { buildInboundWebhookPayload, buildOutboundWebhookPayload } from "./webhookPayload"
+import { buildInboundWebhookPayload, buildOutboundWebhookPayload, buildPaymentWebhookPayload } from "./webhookPayload"
 
 describe("webhook payloads", () => {
   it("stringifies outbound content and sets direction 1", () => {
@@ -38,5 +38,21 @@ describe("webhook payloads", () => {
     assert.equal(typeof payload.interactive, "string")
     assert.match(String(payload.button), /BOOK_TOKEN::uuid/)
     assert.match(String(payload.interactive), /button_reply/)
+  })
+
+  it("builds On Payment Report Received fields", () => {
+    const payload = buildPaymentWebhookPayload({
+      customerNumber: "919876543210",
+      integratedNumber: "919999988888",
+      uuid: "wamid.PAY",
+      requestId: "req-pay",
+      crqid: "11111111-1111-4111-8111-111111111111",
+      paymentStatus: "paid",
+      ts: "2026-09-03T12:00:00+05:30",
+    })
+    assert.equal(payload.eventName, "payment")
+    assert.equal(payload.paymentStatus, "paid")
+    assert.equal(payload.crqid, "11111111-1111-4111-8111-111111111111")
+    assert.match(String(payload.orders), /paid/)
   })
 })

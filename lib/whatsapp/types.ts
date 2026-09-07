@@ -29,6 +29,11 @@ export interface WhatsAppMessageMediaMeta {
 
 export type WhatsAppMsg91SendMode = "interactive" | "template" | "text"
 
+export interface WhatsAppCtaUrl {
+  title: string
+  url: string
+}
+
 export interface WhatsAppMessageSpec {
   templateKey: WhatsAppTemplateKey
   bodyText: string
@@ -37,6 +42,8 @@ export interface WhatsAppMessageSpec {
   footerText?: string
   /** Interactive list (e.g. pick operator + Pay ₹99). Mutually exclusive with buttons. */
   list?: WhatsAppListMessage
+  /** Session CTA URL (invite links). Tried before reply buttons; body still includes the URL. */
+  ctaUrl?: WhatsAppCtaUrl
   msg91Components?: Record<string, { type: string; value: string; subtype?: string }>
   msg91SendMode: WhatsAppMsg91SendMode
   /** Demo-only driver/car card metadata (not sent on real WhatsApp). */

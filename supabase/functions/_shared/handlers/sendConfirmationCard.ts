@@ -5,10 +5,12 @@ import { logOutboundWhatsAppMessage } from "../messageLog.ts";
 import { firstOrSelf } from "../relations.ts";
 import { ensureMessageTemplates } from "../messageTemplateStore.ts";
 import { buildConfirmationMessage as renderConfirmationMessage } from "../templateMessages.ts";
+import { enqueueCreateRideGroupJob } from "./createRideGroup.ts";
 
 interface BookingRow {
   id: string;
   status: string;
+  payment_status: string;
   pickup_at: string;
   trip_days: number;
   tourist_id: string;
@@ -70,7 +72,7 @@ export async function handleSendConfirmationCard(
   const { data: booking, error: bookingError } = await supabase
     .from("bookings")
     .select(
-      "id, status, pickup_at, trip_days, tourist_id, tourists(phone_e164), vendors(business_name), trip_requests(pickup_location), vehicle_types(code)",
+      "id, status, payment_status, pickup_at, trip_days, tourist_id, tourists(phone_e164), vendors(business_name), trip_requests(pickup_location), vehicle_types(code)",
     )
     .eq("id", booking_id)
     .maybeSingle();
@@ -80,7 +82,12 @@ export async function handleSendConfirmationCard(
 
   const row = booking as unknown as BookingRow;
 
-  if (row.status === "ready_for_pickup") return; // already confirmed; idempotent no-op
+  if (row.status === "ready_for_pickup") {
+    if (row.payment_status === "fully_paid") {
+      await enqueueCreateRideGroupJob(supabase, booking_id);
+    }
+    return;
+  }
 
   const touristPhone = firstOrSelf(row.tourists)?.phone_e164;
   if (!touristPhone) throw new Error(`booking ${booking_id} has no verified tourist phone`);
@@ -136,4 +143,8 @@ export async function handleSendConfirmationCard(
     .neq("status", "ready_for_pickup");
 
   if (updateError) throw new Error(`Failed to update booking to ready_for_pickup: ${updateError.message}`);
+
+  if (row.payment_status === "fully_paid") {
+    await enqueueCreateRideGroupJob(supabase, booking_id);
+  }
 }

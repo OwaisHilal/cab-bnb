@@ -16,15 +16,6 @@ import {
   type QuoteChoiceRow,
   type QuoteChoiceTripDetails,
 } from "./quoteChoiceTemplate.ts";
-import {
-  QUOTE_CHOICE_FOOTER,
-  buildQuoteChoiceMsg91Components,
-  buildQuoteChoiceNamedVariables,
-  buildQuoteChoiceSessionButtons,
-  formatQuoteChoiceTripSummary,
-  type QuoteChoiceRow,
-  type QuoteChoiceTripDetails,
-} from "./quoteChoiceTemplate.ts";
 
 export const TOKEN_LOCK_AMOUNT = 99;
 
@@ -38,6 +29,136 @@ export function calculateTripTotal(finalQuote: number, tripDays: number): number
 
 export function calculateBalanceDue(finalQuote: number, tripDays: number): number {
   return Math.max(calculateTripTotal(finalQuote, tripDays) - TOKEN_LOCK_AMOUNT, 0);
+}
+
+export const TOKEN_RECEIVED_TEMPLATE_KEY = "token_received_v1";
+export const VENDOR_ASSIGN_DRIVER_TEMPLATE_KEY = "vendor_assign_driver_v1";
+export const DRIVER_ASSIGNED_PAYMENT_TEMPLATE_KEY = "driver_assigned_payment_v1";
+export const DRIVER_ASSIGNED_PAYMENT_FOOTER = "Pay remaining balance to confirm.";
+
+export function buildTokenReceivedAckMessage(input: {
+  tripDays: number;
+  paxCount: number;
+  vehicleLabel: string;
+  pickupLocation?: string | null;
+  dropLocation?: string | null;
+  vendorName: string;
+}): {
+  bodyText: string;
+  msg91Components: Record<string, { type: string; value: string }>;
+} {
+  const tripSummary = formatQuoteChoiceTripSummary({
+    tripDays: input.tripDays,
+    paxCount: input.paxCount,
+    vehicleLabel: input.vehicleLabel,
+    pickupLocation: input.pickupLocation,
+    dropLocation: input.dropLocation,
+  });
+  const vendorName = input.vendorName.trim() || "your operator";
+  const template = getMessageTemplate(TOKEN_RECEIVED_TEMPLATE_KEY);
+  const bodyText = renderMessageTemplate(
+    template?.body_template ??
+      "Payment received. Your ₹99 token is confirmed.\n\nTrip: {{trip_summary}}\nOperator: {{vendor_name}}\n\nWe are allocating a driver for you. This can take about 30 minutes.",
+    { trip_summary: tripSummary, vendor_name: vendorName },
+  );
+  return {
+    bodyText,
+    msg91Components: {
+      body_1: { type: "text", value: tripSummary },
+      body_2: { type: "text", value: vendorName },
+    },
+  };
+}
+
+export function buildVendorAssignDriverMessage(input: {
+  guestName: string;
+  pickupLocation: string;
+  dropLocation: string;
+  pickupAt: string;
+  tripDays: number;
+  paxCount: number;
+  vehicleLabel: string;
+  tripTotal: number;
+}): {
+  bodyText: string;
+  msg91Components: Record<string, { type: string; value: string }>;
+} {
+  const dates = tripDateVariables(input.pickupAt, input.tripDays);
+  const tripTotal = formatInr(input.tripTotal);
+  const template = getMessageTemplate(VENDOR_ASSIGN_DRIVER_TEMPLATE_KEY);
+  const bodyText = renderMessageTemplate(
+    template?.body_template ??
+      "New booking confirmed.\n\nGuest: {{guest_name}}\nRoute: {{pickup}} → {{drop}}\nDate: {{pickup_date}}, {{trip_days}} {{day_label}}\nPax: {{pax_count}} | Cab: {{vehicle_label}}\nTotal: {{trip_total}}\n\nReply with the driver's 10-digit mobile to assign.\nOptional: DRIVER: <name> | <phone> | <vehicle_number> | <vehicle_model>",
+    {
+      guest_name: input.guestName,
+      pickup: input.pickupLocation,
+      drop: input.dropLocation,
+      pax_count: String(input.paxCount),
+      vehicle_label: input.vehicleLabel,
+      trip_total: tripTotal,
+      ...dates,
+    },
+  );
+  return {
+    bodyText,
+    msg91Components: {
+      body_1: { type: "text", value: input.guestName },
+      body_2: { type: "text", value: input.pickupLocation },
+      body_3: { type: "text", value: input.dropLocation },
+      body_4: { type: "text", value: dates.pickup_date },
+      body_5: { type: "text", value: dates.trip_days },
+      body_6: { type: "text", value: dates.day_label },
+      body_7: { type: "text", value: String(input.paxCount) },
+      body_8: { type: "text", value: input.vehicleLabel },
+      body_9: { type: "text", value: tripTotal },
+    },
+  };
+}
+
+export function buildBalancePaymentLinkCopy(input: {
+  tripDays: number;
+  paxCount: number;
+  vehicleLabel: string;
+  pickupLocation?: string | null;
+  dropLocation?: string | null;
+  vendorName: string;
+  pricePerDay: number;
+  rating: number | null;
+  driverName: string;
+  vehicleModel: string;
+  vehicleNumber: string;
+  balanceDue: number;
+}): { bodyText: string; footerText: string; itemName: string; amountInr: number; quantity: number } {
+  const tripSummary = formatQuoteChoiceTripSummary({
+    tripDays: input.tripDays,
+    paxCount: input.paxCount,
+    vehicleLabel: input.vehicleLabel,
+    pickupLocation: input.pickupLocation,
+    dropLocation: input.dropLocation,
+  });
+  const rating =
+    input.rating === null || input.rating === undefined || Number.isNaN(Number(input.rating))
+      ? "n/a"
+      : Number(input.rating).toFixed(1);
+  const vendorLine = `${input.vendorName} ${formatInr(input.pricePerDay)}/day (${rating})`;
+  const tripTotal = input.pricePerDay * input.tripDays;
+  const vehicleLine = `${input.vehicleModel} (${input.vehicleNumber})`;
+  const body = [
+    "Your driver has been assigned.",
+    "",
+    `Trip: ${tripSummary}`,
+    vendorLine,
+    `Driver: ${input.driverName} · ${vehicleLine}`,
+    `Total: ${formatInr(tripTotal)} · Token paid: ${formatInr(TOKEN_LOCK_AMOUNT)} · Balance: ${formatInr(input.balanceDue)}`,
+  ].join("\n");
+  const dayLabel = input.tripDays === 1 ? "1 day" : `${input.tripDays} days`;
+  return {
+    bodyText: body.length > 1024 ? body.slice(0, 1024) : body,
+    footerText: DRIVER_ASSIGNED_PAYMENT_FOOTER.slice(0, 60),
+    itemName: `Balance · ${input.vendorName.trim() || "Vendor"} · ${dayLabel}`.slice(0, 60),
+    amountInr: input.balanceDue,
+    quantity: 1,
+  };
 }
 
 function requireTemplate(templateKey: string): WhatsAppMessageTemplateRow {

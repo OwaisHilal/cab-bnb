@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isDemoMode } from "@/lib/otp/demoMode";
 import type { InboundWhatsAppMessage, ParsedAction } from "./types";
 
 /**
@@ -24,6 +25,14 @@ export async function enqueueWebhookAction(
       return;
 
     case "book_token":
+      await enqueueJob(supabase, "send_token_payment_link", {
+        quote_snapshot_id: action.quoteSnapshotId,
+        wa_message_id: waMessageId,
+      });
+      return;
+
+    case "token_pay":
+      if (!isDemoMode()) return;
       await enqueueJob(supabase, "finalize_booking", {
         quote_snapshot_id: action.quoteSnapshotId,
         lock_type: "token_99",
@@ -68,6 +77,7 @@ export async function enqueueWebhookAction(
       return;
 
     case "complete_payment":
+      if (!isDemoMode()) return;
       if (!action.bookingId) return;
       await enqueueJob(supabase, "complete_balance_payment", {
         booking_id: action.bookingId,

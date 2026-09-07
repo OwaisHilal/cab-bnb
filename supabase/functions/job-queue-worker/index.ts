@@ -4,11 +4,16 @@ import { verifyServiceRoleCaller } from "../_shared/verifyServiceRoleCaller.ts";
 import { handleSendQuotes } from "../_shared/handlers/sendQuotes.ts";
 import { handleComputeNegotiation } from "../_shared/handlers/computeNegotiation.ts";
 import { handleFinalizeBooking } from "../_shared/handlers/finalizeBooking.ts";
+import { handleSendTokenPaymentLink } from "../_shared/handlers/sendTokenPaymentLink.ts";
+import { handleSendTokenReceivedAck } from "../_shared/handlers/sendTokenReceivedAck.ts";
 import { handleNotifyVendorBooking } from "../_shared/handlers/notifyVendorBooking.ts";
 import { handleParseDriverDetails } from "../_shared/handlers/parseDriverDetails.ts";
 import { handleSendBalancePayment } from "../_shared/handlers/sendBalancePayment.ts";
 import { handleCompleteBalancePayment } from "../_shared/handlers/completeBalancePayment.ts";
 import { handleSendConfirmationCard } from "../_shared/handlers/sendConfirmationCard.ts";
+import { handleCreateRideGroup } from "../_shared/handlers/createRideGroup.ts";
+import { handleRemindRideGroupJoin } from "../_shared/handlers/remindRideGroupJoin.ts";
+import { handleDeleteRideGroup } from "../_shared/handlers/deleteRideGroup.ts";
 import { handleDispatchLifecycleEvents } from "../_shared/handlers/dispatchLifecycleEvents.ts";
 import { handleExpireStaleQuotes } from "../_shared/handlers/expireStaleQuotes.ts";
 import { handleRecordLifecycleResponse } from "../_shared/handlers/recordLifecycleResponse.ts";
@@ -58,6 +63,10 @@ const HANDLERS: Record<string, (supabase: SupabaseClient, payload: Record<string
     handleComputeNegotiation(supabase, payload as unknown as { quote_snapshot_id: string }),
   finalize_booking: (supabase, payload) =>
     handleFinalizeBooking(supabase, payload as unknown as { quote_snapshot_id: string; lock_type: "full_payment" | "token_99" }),
+  send_token_payment_link: (supabase, payload) =>
+    handleSendTokenPaymentLink(supabase, payload as unknown as { quote_snapshot_id: string }),
+  send_token_received_ack: (supabase, payload) =>
+    handleSendTokenReceivedAck(supabase, payload as unknown as { booking_id: string }),
   notify_vendor_booking: (supabase, payload) =>
     handleNotifyVendorBooking(supabase, payload as unknown as { booking_id: string }),
   parse_driver_details: (supabase, payload) =>
@@ -74,6 +83,12 @@ const HANDLERS: Record<string, (supabase: SupabaseClient, payload: Record<string
       supabase,
       payload as unknown as { booking_id: string; wa_message_id?: string },
     ),
+  create_ride_group: (supabase, payload) =>
+    handleCreateRideGroup(supabase, payload as unknown as { booking_id: string }),
+  remind_ride_group_join: (supabase, payload) =>
+    handleRemindRideGroupJoin(supabase, payload as unknown as { booking_id: string }),
+  delete_ride_group: (supabase, payload) =>
+    handleDeleteRideGroup(supabase, payload as unknown as { booking_id: string }),
   dispatch_lifecycle_events: (supabase) => handleDispatchLifecycleEvents(supabase).then(() => undefined),
   expire_stale_quotes: (supabase) => handleExpireStaleQuotes(supabase).then(() => undefined),
   record_lifecycle_response: (supabase, payload) =>

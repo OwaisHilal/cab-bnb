@@ -5,6 +5,7 @@ import { isMsg91WhatsAppConfigured } from "@/lib/msg91/sendSession"
 import { resolveWhatsAppTemplateEnv } from "@/lib/whatsapp/templateEnv"
 import {
   sendWhatsAppButtonMessage,
+  sendWhatsAppCtaUrlMessage,
   sendWhatsAppListMessage,
   sendWhatsAppTextMessage,
 } from "@/lib/whatsapp/sendOutbound"
@@ -41,6 +42,14 @@ export async function sendWhatsAppMessage(
 
   if (spec.list && spec.list.sections.some((section) => section.rows.length > 0)) {
     return sendWhatsAppListMessage(phoneE164, spec.bodyText, spec.list)
+  }
+
+  if (spec.ctaUrl?.url) {
+    const ctaSend = await sendWhatsAppCtaUrlMessage(phoneE164, spec.bodyText, spec.ctaUrl, {
+      footerText: spec.footerText,
+    })
+    if (ctaSend.success) return ctaSend
+    return sendWhatsAppTextMessage(phoneE164, spec.bodyText)
   }
 
   if (spec.buttons.length > 0) {

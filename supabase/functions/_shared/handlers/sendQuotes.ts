@@ -125,7 +125,7 @@ export async function handleSendQuotes(
       msg91Components: choice.msg91Components,
     });
 
-    const templateNameEnv = Deno.env.get("MSG91_QUOTE_CHOICE_TEMPLATE_NAME")?.trim() || "quote_choice_v1";
+    const templateNameEnv = Deno.env.get("MSG91_QUOTE_CHOICE_TEMPLATE_NAME")?.trim() || "quote_choice_v2";
     const namespace = Deno.env.get("MSG91_QUOTE_CHOICE_TEMPLATE_NAMESPACE")?.trim();
     const languageCode = Deno.env.get("MSG91_OTP_TEMPLATE_LANGUAGE")?.trim() || "en_US";
 

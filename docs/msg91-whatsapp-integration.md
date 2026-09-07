@@ -159,6 +159,83 @@ RATE_1::<booking_id> … RATE_5::<booking_id>
 
 Labels ≤ 20 characters (Meta/MSG91 limit). See button table in [`whatsapp-templates.md`](./whatsapp-templates.md).
 
+### 3.5 Payment link (₹99 token lock)
+
+Not a Meta Utility template. After the tourist taps `Select {vendor}` (`BOOK_TOKEN::`), we send MSG91 **WhatsApp Payments** inside the open 24h session.
+
+Docs used:
+
+- [Send Payment link via WhatsApp Payments](https://docs.msg91.com/whatsapp/-send-payment-link-via-whatsapp-payments) — Context7 `/websites/msg91`
+- [Payment Link Feature Using Cashfree](https://msg91.com/help) (Cashfree client id/secret on the MSG91 panel; Cashfree is the only PG)
+- [How to pass CRQID](https://msg91.com/help/whatsapp/how-to-pass-crqid-in-whatsapp-)
+- [On Payment Report Received](https://msg91.com/help/webhook-new/how-to-receive-whatsapp-delivery-reports-via-webhook-new)
+
+`POST https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/` (`api.msg91.com` is an alias; this app keeps `control.msg91.com`)
+
+```json
+{
+  "recipient_number": "9198XXXXXXXX",
+  "integrated_number": "91XXXXXXXXXX",
+  "content_type": "interactive",
+  "CRQID": "<whatsapp_payment_intents.id>",
+  "interactive": {
+    "type": "payment_link",
+    "header": { "type": "image", "image": { "link": "https://…" } },
+    "body": { "text": "Lock this cab with a ₹99 token. …" },
+    "footer": { "text": "Pay ₹99 to lock this cab." },
+    "items": [{ "name": "Token lock · Aala Cabs · 5 days", "amount": 99, "quantity": 1 }]
+  }
+}
+```
+
+Rules we follow:
+
+- Body required; header/footer optional. Footer ≤ 60. Item **name** ≤ 60.
+- Amount/quantity are **numbers**. Cart totals **₹99** (one line item). Trip days and vendor overview live in **body text**, not extra line items.
+- Must be inside the 24h customer-care window (opened by `quote_choice_v1`).
+- `CRQID` at payload root is returned on **On Payment Report Received**. Never treat `unpaid` as paid.
+
+Flow:
+
+1. `BOOK_TOKEN::{quote_snapshot_id}` → job `send_token_payment_link`
+2. Guest pays Cashfree Pay Now → MSG91 payment webhook → `finalize_booking` (`token_99`)
+3. Demo mock chat cannot render Cashfree; it shows `TOKEN_PAY::{quote_snapshot_id}` instead
+
+Catalog key: `token_lock_payment_v1` (`SESSION` / `session_payment_link`). Optional header image: `MSG91_PAYMENT_LINK_HEADER_IMAGE_URL`.
+
+**On Payment Report Received is still required** for both the ₹99 token and the remaining-balance Pay Now. `COMPLETE_PAYMENT` / `BALANCE_PAY` / `TOKEN_PAY` buttons are demo-only.
+
+### 3.6 After token: guest ack, vendor UTILITY, remaining payment_link
+
+Token paid → `finalize_booking` → booking `token_paid` / `vendor_confirming`. Jobs then:
+
+1. `send_token_received_ack` (`token_received_v1`, **UTILITY** / bulk template) — payment received, allocating a driver, ~30 minutes. Create this template **Green** on MSG91 (`MSG91_TOKEN_RECEIVED_TEMPLATE_NAME`). Body cannot start or end with a variable. Session text is the fallback if bulk fails.
+2. `notify_vendor_booking` (`vendor_assign_driver_v1`, **UTILITY**) — selected vendor POC only. Env still `MSG91_VENDOR_NOTIFY_TEMPLATE_*` (default name `vendor_assign_driver_v1`). Do not mutate approved `vendor_booking_notify_v1`. Session text fallback if the template is not Green. Vendor replies with a whole-body 10-digit mobile, or optional `DRIVER: name | phone | vehicle | model`.
+3. `send_balance_payment` — session `payment_link` (`driver_assigned_payment_v1`) for `tripTotal − ₹99`. Header image is a public HTTPS Storage URL from bucket `driver-cards` (compose via Node `POST /api/internal/driver-card`, `APP_URL` + `CRON_SECRET`). **Never** put Pay Now on a Utility template. If the image send fails, retry `payment_link` without image. `localhost` / `/public` paths will not fetch in production; do not use short-lived signed URLs.
+4. Paid remaining report (`purpose = balance`, same **On Payment Report Received**, `CRQID` = balance intent id) → `complete_balance_payment` → `fully_paid` / `ready_for_pickup`.
+
+Utility templates **cannot** include WhatsApp Payments Pay Now. Remaining amount is always session `payment_link`.
+
+### 3.7 Ride WhatsApp groups (after `fully_paid` + `ready_for_pickup`)
+
+WhatsApp cannot add the guest or driver into a group. MSG91 creates the group and returns an invite link; both people tap **Join**. Use `join_approval_mode: auto_approve`.
+
+Trigger: `create_ride_group` after payment success **and** driver assigned (`complete_balance_payment` or confirmation card). Do not create the group on payment alone.
+
+| Job | When |
+|-----|------|
+| `create_ride_group` | Booking is `fully_paid` + `ready_for_pickup` |
+| `remind_ride_group_join` | +30 minutes if either party has not joined → reminder + `ops_alert` |
+| `delete_ride_group` | Pickup + trip days + 24h — delete the group (no remove-then-delete) |
+
+Invite messages: **UTILITY template first** (`ride_group_guest_v1` / `ride_group_driver_v1`) with CTA URL `https://chat.whatsapp.com/{{1}}`. Session `cta_url` then plain text (link in the body) are fallbacks. The guest copy states that joining helps quality-control communication.
+
+Create the two templates Green on MSG91. Env: `MSG91_RIDE_GROUP_GUEST_*`, `MSG91_RIDE_GROUP_DRIVER_*`. Optional `MSG91_WHATSAPP_GROUPS_URL` (default `https://control.msg91.com/api/v5/whatsapp/groups`).
+
+Group webhooks update `whatsapp_ride_groups.customer_joined_at` / `driver_joined_at`. Conversation text is **not** treated as the source of truth — we store metadata + events, then moderate from our DB.
+
+[MSG91 create group](https://docs.msg91.com/whatsapp/create-group) · [send on group](https://docs.msg91.com/whatsapp/send-message-on-group) · [delete group](https://docs.msg91.com/whatsapp/delete-group)
+
 ---
 
 ## 4. Template management
@@ -277,10 +354,11 @@ Create **two** WhatsApp webhooks (or one per event with the same URL). MSG91 doe
    - **On Inbound Request Received** — tourist taps `Select {vendor}` / vendor `DRIVER:` text
    - **On Inbound Report Received** — optional duplicate of inbound; we dedupe by `uuid` (WAMID)
    - **On Read Event** — `quote_snapshots.sent` → `viewed`
+   - **On Payment Report Received** — Cashfree ₹99 token paid/failed (`paymentStatus`, `orders`, `crqid`)
    - **On Failed Event** — ops visibility (logged via status update)
 5. URL: `https://<your-production-host>/api/whatsapp/webhook`
 6. Method: **POST**, content-type **JSON**
-7. Parameters: keep at least `customerNumber`, `direction`, `uuid`, `text`, `contentType`, `button`, `interactive`, `messages`, `contacts`, `eventName`, `integratedNumber`, `ts`, `replyMsgId`, `templateName`
+7. Parameters: keep at least `customerNumber`, `direction`, `uuid`, `text`, `contentType`, `button`, `interactive`, `messages`, `contacts`, `eventName`, `integratedNumber`, `ts`, `replyMsgId`, `templateName`, `crqid`, `paymentStatus`, `orders`, `webhookType`
 8. Headers (required for our route):
 
    | Key | Value |
@@ -336,7 +414,21 @@ curl -sS -X POST http://localhost:3000/api/internal/msg91/simulate/webhook \
   }'
 ```
 
-Other `kind` values: `text` (requires `text`), `read` / `delivered` / `sent` / `failed`, `raw` (pass a full MSG91 object as `payload`).
+Other `kind` values: `text` (requires `text`), `payment` (requires `crqid`, optional `paymentStatus`, default `paid`), `read` / `delivered` / `sent` / `failed`, `raw` (pass a full MSG91 object as `payload`).
+
+The simulator also runs local `processDueJobs` after a successful webhook (so `send_token_payment_link` can send without cron / an undeployed Edge worker).
+
+```bash
+curl -sS -X POST http://localhost:3000/api/internal/msg91/simulate/webhook \
+  -H "authkey: $MSG91_AUTH_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "kind": "payment",
+    "customerNumber": "919876543210",
+    "crqid": "<payment_intent_uuid_or_quote_snapshot_id>",
+    "paymentStatus": "paid"
+  }'
+```
 
 You can also POST the same JSON straight at `/api/whatsapp/webhook` with header `x-msg91-webhook-secret`.
 
@@ -345,12 +437,17 @@ You can also POST the same JSON straight at `/api/whatsapp/webhook` with header 
 | MSG91 inbound | Existing `ParsedAction` |
 |---------------|-------------------------|
 | `button.payload` = `BOOK_FULL::…` | `book_full` |
-| `button.payload` = `BOOK_TOKEN::…` | `book_token` |
+| `button.payload` = `BOOK_TOKEN::…` | `book_token` → job `send_token_payment_link` |
+| `button.payload` = `TOKEN_PAY::…` | `token_pay` (demo / mock chat only) → `finalize_booking` |
+| MSG91 `paymentStatus` paid + `crqid` + intent `purpose=token_lock` | enqueue `finalize_booking` (`token_99`) |
+| MSG91 `paymentStatus` paid + `crqid` + intent `purpose=balance` | enqueue `complete_balance_payment` |
+| Missing `crqid` / unknown purpose | log, do not guess |
+| `button.payload` = `BALANCE_PAY::…` / `COMPLETE_PAYMENT::…` | `complete_payment` (demo / mock chat only) |
+| `text` matching `DRIVER:…` or a whole-body phone | `driver_details` |
 | `button.payload` = `NEGOTIATE::…` | `negotiate` |
 | `button.payload` = `CHECKIN_OK::…` | `checkin_ok` |
 | `button.payload` = `CHECKIN_HELP::…` | `checkin_help` |
 | `button.payload` = `RATE_N::…` | `rate` |
-| `text` matching `DRIVER:…` | `driver_details` |
 | Other text | `unknown` (no auto-reply today) |
 
 `enqueueWebhookAction.ts` and job handlers stay the same after adapter produces `InboundWhatsAppMessage` / `ParsedAction`.

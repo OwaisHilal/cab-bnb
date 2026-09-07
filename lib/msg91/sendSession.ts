@@ -2,16 +2,20 @@ import "server-only"
 
 import {
   resolveMsg91SendCredentials,
+  sendMsg91CtaUrlWithConfig,
   sendMsg91ImageWithConfig,
   sendMsg91InteractiveButtonWithConfig,
   sendMsg91InteractiveListWithConfig,
+  sendMsg91PaymentLinkWithConfig,
   sendMsg91TextWithConfig,
 } from "./pure"
 import type {
   Msg91SendResult,
+  SendMsg91CtaUrlInput,
   SendMsg91ImageInput,
   SendMsg91InteractiveInput,
   SendMsg91InteractiveListInput,
+  SendMsg91PaymentLinkInput,
   SendMsg91TextInput,
 } from "./types"
 
@@ -32,10 +36,22 @@ export async function sendMsg91InteractiveButtonMessage(
   return sendMsg91InteractiveButtonWithConfig(input, readMsg91Credentials())
 }
 
+export async function sendMsg91InteractiveCtaUrlMessage(
+  input: SendMsg91CtaUrlInput,
+): Promise<Msg91SendResult> {
+  return sendMsg91CtaUrlWithConfig(input, readMsg91Credentials())
+}
+
 export async function sendMsg91InteractiveListMessage(
   input: SendMsg91InteractiveListInput,
 ): Promise<Msg91SendResult> {
   return sendMsg91InteractiveListWithConfig(input, readMsg91Credentials())
+}
+
+export async function sendMsg91PaymentLinkMessage(
+  input: SendMsg91PaymentLinkInput,
+): Promise<Msg91SendResult> {
+  return sendMsg91PaymentLinkWithConfig(input, readMsg91Credentials())
 }
 
 export async function sendMsg91TextMessage(input: SendMsg91TextInput): Promise<Msg91SendResult> {

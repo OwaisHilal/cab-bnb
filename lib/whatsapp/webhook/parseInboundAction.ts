@@ -1,18 +1,8 @@
 import type { InboundWhatsAppMessage, ParsedAction } from "./types";
+import { parseWholeBodyPhone } from "@/lib/drivers/phone";
 
-// Plan §7.3's regex verbatim (`/^DRIVER:\s*([^|]+)\|\s*(\+?\d{10,13})\|\s*([A-Z0-9\- ]+)\|\s*(.+)$/i`)
-// doesn't actually match the Plan's own example message ("DRIVER: Bilal
-// Ahmed | 9876543210 | JK01AB1234 | Swift Dzire") — it requires zero
-// whitespace between the phone digits and the following `|`, but the
-// example has a space there. Fixed here by allowing `\s*` before every
-// delimiter, confirmed against the exact example string in testing.
-const DRIVER_DETAILS_REGEX = /^DRIVER:\s*([^|]+?)\s*\|\s*(\+?\d{10,13})\s*\|\s*([A-Z0-9\- ]+?)\s*\|\s*(.+)$/i;
-// Loosely matches anything that looks like a driver-detail reply attempt
-// (right prefix, wrong delimiters/field count) so it still reaches the
-// `parse-driver-details` job (Checklist 3.6) instead of being dropped as
-// `unknown` — that job re-runs the strict regex above against the raw text
-// and is what actually files `parse_failed` + `ops_alert` for malformed
-// replies (Plan §7.3).
+const DRIVER_DETAILS_REGEX =
+  /^DRIVER:\s*([^|]+?)\s*\|\s*(\+?\d{10,13})\s*\|\s*([A-Z0-9\- ]+?)\s*\|\s*([^|]+?)(?:\s*\|\s*(.+))?$/i;
 const DRIVER_DETAILS_PREFIX_REGEX = /^DRIVER:/i;
 const RATE_ACTION_PREFIX = "RATE_";
 
@@ -42,9 +32,13 @@ function parseButtonPayload(payload: string): ParsedAction {
       return entityId ? { type: "book_full", quoteSnapshotId: entityId } : { type: "unknown" };
     case "BOOK_TOKEN":
       return entityId ? { type: "book_token", quoteSnapshotId: entityId } : { type: "unknown" };
+    case "TOKEN_PAY":
+      return entityId ? { type: "token_pay", quoteSnapshotId: entityId } : { type: "unknown" };
     case "NEGOTIATE":
       return entityId ? { type: "negotiate", quoteSnapshotId: entityId } : { type: "unknown" };
     case "COMPLETE_PAYMENT":
+      return entityId ? { type: "complete_payment", bookingId: entityId } : { type: "unknown" };
+    case "BALANCE_PAY":
       return entityId ? { type: "complete_payment", bookingId: entityId } : { type: "unknown" };
     case "CHECKIN_OK":
       return entityId ? { type: "checkin_ok", lifecycleEventId: entityId } : { type: "unknown" };
@@ -85,6 +79,11 @@ function parseTextBody(text: string): ParsedAction {
 
   if (DRIVER_DETAILS_PREFIX_REGEX.test(text.trim())) {
     return { type: "driver_details" };
+  }
+
+  const phone = parseWholeBodyPhone(text);
+  if (phone) {
+    return { type: "driver_details", driverDetails: { phone } };
   }
 
   return { type: "unknown" };

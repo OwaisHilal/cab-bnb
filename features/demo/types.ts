@@ -9,6 +9,7 @@ export interface MockMessagingMessage {
   body_snapshot: string | null
   button_payload: string | null
   buttons: MockMessagingButton[]
+  ctaUrl?: { title: string; url: string } | null
   media: MockChatMedia | null
   template_name: string | null
   wa_status: string | null

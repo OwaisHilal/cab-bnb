@@ -41,6 +41,38 @@ export type InboundWebhookInput = {
   ts: string
 }
 
+export type PaymentWebhookInput = {
+  customerNumber: string
+  integratedNumber: string
+  uuid: string
+  requestId: string
+  crqid: string
+  paymentStatus: string
+  ts: string
+}
+
+export function buildPaymentWebhookPayload(input: PaymentWebhookInput): Record<string, unknown> {
+  return {
+    crqid: input.crqid,
+    companyId: "sim",
+    requestedAt: input.ts,
+    customerNumber: input.customerNumber,
+    content: JSON.stringify({ type: "payment_link" }),
+    requestId: input.requestId,
+    reason: "",
+    direction: "1",
+    templateName: "",
+    integratedNumber: input.integratedNumber,
+    eventName: "payment",
+    webhookType: "payment",
+    paymentStatus: input.paymentStatus,
+    orders: JSON.stringify([{ status: input.paymentStatus, amount: 99 }]),
+    uuid: input.uuid,
+    ts: input.ts,
+    contentType: "interactive",
+  }
+}
+
 export function buildInboundWebhookPayload(input: InboundWebhookInput): Record<string, unknown> {
   const text = input.text ?? input.button?.text ?? ""
   const unix = String(Math.floor(Date.parse(input.ts) / 1000) || Math.floor(Date.now() / 1000))

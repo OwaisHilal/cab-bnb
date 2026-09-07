@@ -5,6 +5,7 @@ import { firstOrSelf } from "../relations.ts";
 import { ensureMessageTemplates } from "../messageTemplateStore.ts";
 import { buildDriverAssignmentMessage, buildDriverContactMessage } from "../templateMessages.ts";
 import { sendWhatsAppTextMessage } from "../whatsapp.ts";
+import { enqueueCreateRideGroupJob } from "./createRideGroup.ts";
 
 interface BookingRow {
   id: string;
@@ -62,6 +63,7 @@ export async function handleCompleteBalancePayment(
   const row = booking as unknown as BookingRow;
 
   if (row.payment_status === "fully_paid" && row.status === "ready_for_pickup") {
+    await enqueueCreateRideGroupJob(supabase, booking_id);
     return;
   }
 
@@ -85,12 +87,31 @@ export async function handleCompleteBalancePayment(
   const tripRequest = firstOrSelf(row.trip_requests);
   const tourist = firstOrSelf(row.tourists);
 
-  const { error: updateError } = await supabase
+  const { data: claimed, error: updateError } = await supabase
     .from("bookings")
     .update({ payment_status: "fully_paid", status: "ready_for_pickup" })
-    .eq("id", booking_id);
+    .eq("id", booking_id)
+    .eq("payment_status", "token_paid")
+    .select("id")
+    .maybeSingle();
 
   if (updateError) throw new Error(`Failed to mark booking paid: ${updateError.message}`);
+  if (!claimed?.id) {
+    if (row.payment_status === "fully_paid" && row.status === "ready_for_pickup") {
+      await enqueueCreateRideGroupJob(supabase, booking_id);
+      return;
+    }
+    const { data: current } = await supabase
+      .from("bookings")
+      .select("payment_status, status")
+      .eq("id", booking_id)
+      .maybeSingle();
+    if (current?.payment_status === "fully_paid" && current.status === "ready_for_pickup") {
+      await enqueueCreateRideGroupJob(supabase, booking_id);
+      return;
+    }
+    throw new Error(`booking ${booking_id} could not be marked fully_paid`);
+  }
 
   const contactBody = buildDriverContactMessage({
     driverName: driver.parsed_driver_name ?? "Your driver",
@@ -142,4 +163,5 @@ export async function handleCompleteBalancePayment(
   }
 
   await scheduleLifecycleEvents(supabase, booking_id, row.pickup_at, row.trip_days);
+  await enqueueCreateRideGroupJob(supabase, booking_id);
 }

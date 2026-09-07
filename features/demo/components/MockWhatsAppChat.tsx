@@ -77,6 +77,8 @@ export function MockWhatsAppChat({
         if (message.direction !== "outbound") return false
         if (message.template_name === "driver_assignment_v1") return false
         if (message.buttons.some((button) => button.id.startsWith("COMPLETE_PAYMENT"))) return true
+        if (message.buttons.some((button) => button.id.startsWith("BALANCE_PAY"))) return true
+        if (message.buttons.some((button) => button.id.startsWith("TOKEN_PAY"))) return true
         if (message.buttons.some((button) => button.id.startsWith("BOOK_TOKEN"))) return true
         return Boolean(selectedQuote && isQuoteCardMessageBody(message.body_snapshot))
       })

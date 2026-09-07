@@ -4,6 +4,7 @@ export interface WhatsAppMessageLogPayload {
   templateKey: string
   buttons: WhatsAppButton[]
   list?: WhatsAppMessageSpec["list"]
+  ctaUrl?: WhatsAppMessageSpec["ctaUrl"]
   media?: {
     carImageUrl: string
     driverImageUrl: string
@@ -32,6 +33,9 @@ export function serializeWhatsAppMessageLogPayload(
   if (spec.list) {
     payload.list = spec.list
   }
+  if (spec.ctaUrl) {
+    payload.ctaUrl = spec.ctaUrl
+  }
   if (media) {
     payload.media = media
   }
@@ -50,6 +54,12 @@ export function parseWhatsAppMessageLogPayload(raw: string | null): WhatsAppMess
       const record = parsed as Partial<WhatsAppMessageLogPayload> & { buttons?: unknown }
       const buttons = Array.isArray(record.buttons) ? record.buttons.filter(isButton) : []
       const media = record.media
+      const ctaUrl =
+        record.ctaUrl &&
+        typeof record.ctaUrl.title === "string" &&
+        typeof record.ctaUrl.url === "string"
+          ? { title: record.ctaUrl.title, url: record.ctaUrl.url }
+          : undefined
       if (
         media &&
         typeof media.carImageUrl === "string" &&
@@ -60,6 +70,7 @@ export function parseWhatsAppMessageLogPayload(raw: string | null): WhatsAppMess
         buttons,
         media,
         list: record.list,
+        ctaUrl,
         msg91Components: record.msg91Components,
       }
     }
@@ -67,6 +78,7 @@ export function parseWhatsAppMessageLogPayload(raw: string | null): WhatsAppMess
       templateKey: record.templateKey ?? "unknown",
       buttons,
       list: record.list,
+      ctaUrl,
       msg91Components: record.msg91Components,
     }
     }

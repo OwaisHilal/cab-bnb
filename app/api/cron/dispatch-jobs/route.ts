@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk } from "@/lib/api/errors";
+import { processDueJobs } from "@/lib/jobs/processDueJobs";
 
 /**
  * Checklist 2.8: worker endpoint invoked every 1 min by a scheduler,
@@ -31,11 +32,31 @@ async function handleDispatch(request: NextRequest) {
 
   const { data, error } = await supabase.functions.invoke("job-queue-worker");
 
-  if (error) {
-    return jsonError(502, `job-queue-worker invocation failed: ${error.message}`);
+  let local: { claimed: number; succeeded: number; failed: number } | null = null;
+  let localError: string | undefined;
+  try {
+    local = await processDueJobs(supabase);
+  } catch (caught) {
+    localError = caught instanceof Error ? caught.message : "unknown";
   }
 
-  return jsonOk(data ?? { claimed: 0, succeeded: 0, failed: 0 });
+  if (!error && !localError) {
+    return jsonOk({ worker: data ?? { claimed: 0, succeeded: 0, failed: 0 }, local });
+  }
+
+  if (error && localError) {
+    return jsonError(
+      502,
+      `job-queue-worker invocation failed: ${error.message}; local fallback failed: ${localError}`,
+    );
+  }
+
+  return jsonOk({
+    worker: error ? null : (data ?? { claimed: 0, succeeded: 0, failed: 0 }),
+    workerError: error?.message,
+    local,
+    localError,
+  });
 }
 
 export async function GET(request: NextRequest) {

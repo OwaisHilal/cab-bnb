@@ -6,6 +6,9 @@ import { parseInboundAction } from "@/lib/whatsapp/webhook/parseInboundAction"
 import { parseWhatsAppMessageLogPayload, serializeWhatsAppMessageLogPayload } from "@/lib/whatsapp/messagePayload"
 import { serializeMockChatPayload } from "@/lib/demo/mockChatPayload"
 import type { WhatsAppButton } from "@/lib/whatsapp/types"
+import { buildTokenPaymentLinkCopy } from "@/lib/whatsapp/tokenPaymentLink"
+import { handleSendTokenReceivedAck } from "@/lib/whatsapp/sendTokenReceivedAck"
+import { formatWhatsAppPayButtonTitle } from "@/lib/whatsapp/formatInr"
 
 import type { MockMessagingThread } from "@/features/demo/types"
 import {
@@ -25,6 +28,7 @@ function isCustomerFacingMessage(row: Record<string, unknown>): boolean {
   const templateName = row.template_name as string | null
   if (templateName === "driver_assignment_v1") return false
   if (templateName === "vendor_booking_notify_v1") return false
+  if (templateName === "vendor_assign_driver_v1") return false
   if (templateName === "vendor_inbound_driver_reply") return false
   if (row.vendor_id) return false
   return true
@@ -133,6 +137,7 @@ export async function loadMockMessagingThread(
         body_snapshot: bodySnapshot,
         button_payload: row.button_payload as string | null,
         buttons,
+        ctaUrl: payload.ctaUrl ?? null,
         media: payload.media ?? null,
         template_name: templateName,
         wa_status: row.wa_status as string | null,
@@ -164,6 +169,7 @@ async function logMockMessage(
     buttonPayload?: string
     interactionType?: "button_click" | "free_text"
     waStatus?: string
+    templateName?: string
   },
 ): Promise<void> {
   const { error } = await supabase.from("whatsapp_message_log").insert({
@@ -177,7 +183,7 @@ async function logMockMessage(
     interaction_type: input.interactionType ?? null,
     wa_message_id: `demo-${randomUUID()}`,
     wa_status: input.waStatus ?? "sent",
-    template_name: "demo_mock_chat",
+    template_name: input.templateName ?? "demo_mock_chat",
   })
 
   if (error) {
@@ -192,6 +198,7 @@ function firstOrSelf<T>(value: T | T[] | null): T | null {
 
 export type MockMessagingActionResult =
   | { ok: true; kind: "negotiate"; next_quote: number; is_final: boolean }
+  | { ok: true; kind: "token_payment_link"; quote_snapshot_id: string }
   | { ok: true; kind: "book"; booking_ref: string; lock_type: "full_payment" | "token_99"; booking_id: string }
   | { ok: true; kind: "complete_payment"; booking_id: string }
   | { ok: false; status: number; message: string }
@@ -258,9 +265,93 @@ export async function handleMockMessagingAction(
     return { ok: true, kind: "negotiate", next_quote: data.next_quote, is_final: data.is_final }
   }
 
-  if (action.type === "book_full" || action.type === "book_token") {
+  if (action.type === "book_token") {
+    const quoteSnapshotId = action.quoteSnapshotId
+    if (!quoteSnapshotId) {
+      return { ok: false, status: 400, message: "Missing quote snapshot for token lock" }
+    }
+
+    const { data: snapshot, error: snapshotError } = await supabase
+      .from("quote_snapshots")
+      .select(
+        "id, trip_request_id, current_quote, status, vendors(business_name, reliability_score), vehicle_types(label), trip_requests(trip_days, pax_count, pickup_location, drop_location, trip_start_date, requested_vehicle_type:vehicle_types!requested_vehicle_type_id(label))",
+      )
+      .eq("id", quoteSnapshotId)
+      .maybeSingle()
+
+    if (snapshotError) {
+      return { ok: false, status: 500, message: snapshotError.message }
+    }
+    if (!snapshot) {
+      return { ok: false, status: 404, message: "Quote not found" }
+    }
+    if ((snapshot as { trip_request_id?: string }).trip_request_id !== tripRequestId) {
+      return { ok: false, status: 404, message: "Quote not found for this trip" }
+    }
+    if (snapshot.status === "finalized") {
+      return { ok: false, status: 409, message: "This quote is no longer available to book" }
+    }
+
+    const trip = firstOrSelf(
+      (snapshot as { trip_requests: Record<string, unknown> | Record<string, unknown>[] | null }).trip_requests,
+    )
+    const vendor = firstOrSelf(
+      (snapshot as { vendors: { business_name: string; reliability_score: number | null } | { business_name: string; reliability_score: number | null }[] | null }).vendors,
+    )
+    const vehicleLabel =
+      firstOrSelf(
+        (trip as { requested_vehicle_type?: { label: string } | { label: string }[] | null } | null)
+          ?.requested_vehicle_type,
+      )?.label ??
+      firstOrSelf(
+        (snapshot as { vehicle_types: { label: string } | { label: string }[] | null }).vehicle_types,
+      )?.label ??
+      "Cab"
+
+    const copy = buildTokenPaymentLinkCopy({
+      trip: {
+        tripDays: Number((trip as { trip_days?: number } | null)?.trip_days ?? 1),
+        paxCount: Number((trip as { pax_count?: number } | null)?.pax_count ?? 1),
+        vehicleLabel,
+        pickupLocation: (trip as { pickup_location?: string | null } | null)?.pickup_location ?? null,
+        dropLocation: (trip as { drop_location?: string | null } | null)?.drop_location ?? null,
+        tripStartDate: (trip as { trip_start_date?: string | null } | null)?.trip_start_date ?? null,
+      },
+      vendor: {
+        vendorName: vendor?.business_name ?? "Vendor",
+        pricePerDay: Number((snapshot as { current_quote: number }).current_quote),
+        rating: vendor?.reliability_score ?? null,
+      },
+    })
+
+    await logMockMessage(supabase, {
+      tripRequestId,
+      quoteSnapshotId,
+      direction: "outbound",
+      body: copy.bodyText,
+      buttons: [{ id: `TOKEN_PAY::${quoteSnapshotId}`, title: "Pay ₹99 now" }],
+    })
+
+    return { ok: true, kind: "token_payment_link", quote_snapshot_id: quoteSnapshotId }
+  }
+
+  if (action.type === "book_full" || action.type === "token_pay") {
     const lockType = action.type === "book_full" ? "full_payment" : "token_99"
     const quoteSnapshotId = action.quoteSnapshotId
+    if (!quoteSnapshotId) {
+      return { ok: false, status: 400, message: "Missing quote snapshot for booking" }
+    }
+
+    const { data: quoteForTrip } = await supabase
+      .from("quote_snapshots")
+      .select("id")
+      .eq("id", quoteSnapshotId)
+      .eq("trip_request_id", tripRequestId)
+      .maybeSingle()
+
+    if (!quoteForTrip) {
+      return { ok: false, status: 404, message: "Quote not found for this trip" }
+    }
 
     const { data, error } = await supabase
       .rpc("finalize_quote_booking", {
@@ -291,7 +382,9 @@ export async function handleMockMessagingAction(
 
     const { data: bookingRow, error: bookingRowError } = await supabase
       .from("bookings")
-      .select("final_quote, trip_days, lock_type")
+      .select(
+        "final_quote, trip_days, pax_count, lock_type, vehicle_types(label), trip_requests(pickup_location, drop_location)",
+      )
       .eq("id", data.booking_id)
       .maybeSingle()
 
@@ -324,24 +417,10 @@ export async function handleMockMessagingAction(
         quoteSnapshotId,
         direction: "outbound",
         body: bodyText,
-        buttons: [{ id: `COMPLETE_PAYMENT::${data.booking_id}`, title: `Pay ${formatDemoInr(totalDue)} Now` }],
+        buttons: [{ id: `COMPLETE_PAYMENT::${data.booking_id}`, title: formatWhatsAppPayButtonTitle(totalDue) }],
       })
     } else {
-      const bodyText = [
-        `Booking confirmed! Ref ${data.booking_ref}.`,
-        vendorName ? `Operator: ${vendorName}.` : "",
-        "\u20b999 token received — driver details follow shortly.",
-      ]
-        .filter(Boolean)
-        .join("\n")
-
-      await logMockMessage(supabase, {
-        tripRequestId,
-        quoteSnapshotId,
-        direction: "outbound",
-        body: bodyText,
-      })
-
+      await handleSendTokenReceivedAck(supabase, { booking_id: data.booking_id })
       await runDemoPostTokenBookingFlow(supabase, data.booking_id, tripRequestId)
     }
 

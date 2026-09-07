@@ -40,6 +40,14 @@ export function resolveQuoteCardButtons(
     return buttons
   }
 
+  if (buttons.some((button) => button.id.startsWith("BALANCE_PAY"))) {
+    return buttons
+  }
+
+  if (buttons.some((button) => button.id.startsWith("TOKEN_PAY"))) {
+    return buttons
+  }
+
   const isQuoteChoice = buttons.filter((button) => isQuoteChoiceSelectTitle(button.title)).length >= 2
   if (isQuoteChoice) {
     return buttons.filter((button) => button.id.startsWith("BOOK_TOKEN::"))

@@ -3,7 +3,7 @@
  * (loaded via messageTemplateStore). Inline fallbacks exist when migration not applied.
  */
 
-import { formatInr, TOKEN_LOCK_AMOUNT } from "@/lib/whatsapp/formatInr"
+import { formatInr, formatWhatsAppPayButtonTitle, TOKEN_LOCK_AMOUNT } from "@/lib/whatsapp/formatInr"
 import type { Msg91TemplateComponent } from "@/lib/msg91/types"
 import {
   getMessageTemplate,
@@ -75,7 +75,7 @@ function bookTokenButton(quoteSnapshotId: string): WhatsAppButton {
 }
 
 function completePaymentButton(bookingId: string, balanceDue: number): WhatsAppButton {
-  return { id: `COMPLETE_PAYMENT::${bookingId}`, title: `Pay ${formatInr(balanceDue)} Now` }
+  return { id: `BALANCE_PAY::${bookingId}`, title: formatWhatsAppPayButtonTitle(balanceDue) }
 }
 
 function buildListFromTemplate(

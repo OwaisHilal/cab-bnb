@@ -7,11 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npx --yes tsx --test lib/msg91-sim/*.test.ts lib/msg91/pure.test.ts lib/sms/pure.test.ts lib/whatsapp/quoteChoiceTemplate.test.ts lib/whatsapp/webhook/parseMsg91Webhook.test.ts",
+    "test": "npx --yes tsx --test lib/msg91-sim/*.test.ts lib/msg91/pure.test.ts lib/msg91/groupApi.test.ts lib/sms/pure.test.ts lib/drivers/vendorPhone.test.ts lib/whatsapp/quoteChoiceTemplate.test.ts lib/whatsapp/tokenPaymentLink.test.ts lib/whatsapp/balancePaymentLink.test.ts lib/whatsapp/paymentReport.test.ts lib/whatsapp/rideGroup.test.ts lib/whatsapp/webhook/parseMsg91Webhook.test.ts",
     "db:reset": "supabase db reset",
     "db:seed": "node scripts/apply-seed.mjs",
     "db:templates": "node scripts/apply-whatsapp-templates-migration.mjs",
-    "msg91:templates": "node scripts/msg91-whatsapp-templates.mjs"
+    "msg91:templates": "node scripts/msg91-whatsapp-templates.mjs",
+    "msg91:templates:create": "node scripts/msg91-create-dashboard-templates.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
@@ -21,6 +22,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
+    "sharp": "^0.35.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {

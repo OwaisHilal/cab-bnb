@@ -5,8 +5,10 @@ import { asRecord, newRequestId, newWamid, readString, stripPhone } from "@/lib/
 import {
   buildInboundWebhookPayload,
   buildOutboundWebhookPayload,
+  buildPaymentWebhookPayload,
 } from "@/lib/msg91-sim/webhookPayload"
 import { persistWebhookEvent } from "@/lib/msg91-sim/webhooks"
+import { processDueJobs } from "@/lib/jobs/processDueJobs"
 import { parseInboundAction } from "@/lib/whatsapp/webhook/parseInboundAction"
 import { parseMsg91Webhook } from "@/lib/whatsapp/webhook/parseMsg91Webhook"
 import {
@@ -72,6 +74,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const shouldProcessJobs =
+      parsedAction?.type === "book_token" ||
+      parsedAction?.type === "token_pay" ||
+      parsed.payments.some((payment) => payment.paid)
+
+    let jobs: { claimed: number; succeeded: number; failed: number } | null = null
+    if (webhookStatus < 400 && shouldProcessJobs) {
+      try {
+        jobs = await processDueJobs(supabase)
+      } catch (error) {
+        jobs = { claimed: 0, succeeded: 0, failed: 0 }
+        console.error("[msg91 simulate] processDueJobs failed", error)
+      }
+    }
+
     return jsonMsg91(
       bulkOk({
         forwarded: true,
@@ -82,6 +99,8 @@ export async function POST(request: NextRequest) {
         parsedAction,
         messages: parsed.messages,
         statuses: parsed.statuses,
+        payments: parsed.payments,
+        jobs,
       }),
     )
   })
@@ -141,6 +160,26 @@ function buildSimulatedPayload(
         requestId,
         text,
         contentType: "text",
+        ts,
+      }),
+    }
+  }
+
+  if (kind === "payment") {
+    const crqid = readString(raw, ["crqid", "CRQID"])
+    if (!crqid) {
+      return { ok: false, message: "kind=payment requires crqid (payment intent id or quote_snapshot_id)" }
+    }
+    const paymentStatus = readString(raw, ["paymentStatus", "payment_status"]) ?? "paid"
+    return {
+      ok: true,
+      body: buildPaymentWebhookPayload({
+        customerNumber: stripPhone(customerNumber),
+        integratedNumber: stripPhone(integratedNumber),
+        uuid,
+        requestId,
+        crqid,
+        paymentStatus,
         ts,
       }),
     }

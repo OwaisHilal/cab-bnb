@@ -1,10 +1,27 @@
-import type { InboundInteractionType, InboundWhatsAppMessage, InboundWhatsAppStatus } from "./types";
+import type {
+  InboundInteractionType,
+  InboundWhatsAppMessage,
+  InboundWhatsAppPayment,
+  InboundWhatsAppStatus,
+} from "./types";
 
 const OUTBOUND_STATUS_EVENTS = new Set(["sent", "delivered", "read", "failed", "submitted"]);
+const PAID_PAYMENT_STATUSES = new Set(["paid", "success", "successful", "captured", "completed", "complete"]);
+const UNPAID_PAYMENT_STATUSES = new Set([
+  "unpaid",
+  "pending",
+  "failed",
+  "cancelled",
+  "canceled",
+  "expired",
+  "user_dropped",
+  "dropped",
+]);
 
 export type ParsedMsg91Webhook = {
   messages: InboundWhatsAppMessage[];
   statuses: InboundWhatsAppStatus[];
+  payments: InboundWhatsAppPayment[];
 };
 
 /**
@@ -38,13 +55,26 @@ export function isMsg91WebhookPayload(payload: unknown): boolean {
     raw.direction === "1" ||
     typeof raw.button === "string" ||
     typeof raw.messages === "string" ||
-    typeof raw.interactive === "string"
+    typeof raw.interactive === "string" ||
+    hasValue(raw.paymentStatus) ||
+    hasValue(raw.payment_status) ||
+    hasValue(raw.webhookType) ||
+    hasValue(raw.webhook_type) ||
+    hasValue(raw.orders)
   );
+}
+
+export function isPaidPaymentStatus(status: string | null | undefined): boolean {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (!normalized || UNPAID_PAYMENT_STATUSES.has(normalized)) {
+    return false;
+  }
+  return PAID_PAYMENT_STATUSES.has(normalized);
 }
 
 export function parseMsg91Webhook(payload: unknown): ParsedMsg91Webhook {
   if (!isMsg91WebhookPayload(payload)) {
-    return { messages: [], statuses: [] };
+    return { messages: [], statuses: [], payments: [] };
   }
 
   const raw = payload as Record<string, unknown>;
@@ -64,15 +94,66 @@ export function parseMsg91Webhook(payload: unknown): ParsedMsg91Webhook {
     }
   }
 
+  const payment = parsePaymentReport(raw);
+  if (payment) {
+    return { messages: [], statuses, payments: [payment] };
+  }
+
   if (isOutboundStatus && direction === "1") {
-    return { messages: [], statuses };
+    return { messages: [], statuses, payments: [] };
   }
 
   const message = parseInboundMessage(raw);
   return {
     messages: message ? [message] : [],
     statuses,
+    payments: [],
   };
+}
+
+function isPaymentReportPayload(raw: Record<string, unknown>): boolean {
+  const eventName = String(raw.eventName ?? raw.event ?? "").trim().toLowerCase();
+  const webhookType = String(raw.webhookType ?? raw.webhook_type ?? "").trim().toLowerCase();
+  return (
+    eventName.includes("payment") ||
+    webhookType.includes("payment") ||
+    hasValue(raw.paymentStatus) ||
+    hasValue(raw.payment_status)
+  );
+}
+
+function parsePaymentReport(raw: Record<string, unknown>): InboundWhatsAppPayment | null {
+  if (!isPaymentReportPayload(raw)) {
+    return null;
+  }
+
+  const paymentStatus =
+    readString(raw, ["paymentStatus", "payment_status"]) ??
+    readNestedOrderStatus(raw) ??
+    String(raw.eventName ?? raw.event ?? "").trim();
+
+  return {
+    crqid: readString(raw, ["crqid", "CRQID", "CrqId"]),
+    customerNumber: readString(raw, ["customerNumber", "customer_number"]),
+    paymentStatus,
+    paid: isPaidPaymentStatus(paymentStatus),
+    waMessageId: readString(raw, ["uuid", "message_uuid", "replyMsgId"]),
+    timestamp: readString(raw, ["ts", "requestedAt"]) ?? new Date().toISOString(),
+    rawStatus: paymentStatus,
+  };
+}
+
+function readNestedOrderStatus(raw: Record<string, unknown>): string | null {
+  const orders = asArray(parseJsonValue(raw.orders));
+  const first = asRecord(orders[0]);
+  if (!first) {
+    return null;
+  }
+  return (
+    readNonEmpty(first.status) ??
+    readNonEmpty(first.paymentStatus) ??
+    readNonEmpty(first.payment_status)
+  );
 }
 
 function parseInboundMessage(raw: Record<string, unknown>): InboundWhatsAppMessage | null {
@@ -149,6 +230,7 @@ function parseInboundMessage(raw: Record<string, unknown>): InboundWhatsAppMessa
     textBody,
     buttonPayload,
     interactionType,
+    groupId: readString(raw, ["group_id", "groupId"]) ?? readNonEmpty(nestedMessage?.group_id) ?? readNonEmpty(nestedMessage?.groupId),
   };
 }
 

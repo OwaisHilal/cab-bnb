@@ -78,9 +78,9 @@ export async function POST(request: NextRequest) {
 
   const parsed = msg91Payload
     ? parseMsg91Webhook(payload)
-    : { messages: parseWebhookPayload(payload), statuses: parseWebhookStatuses(payload) };
+    : { messages: parseWebhookPayload(payload), statuses: parseWebhookStatuses(payload), payments: [] };
 
-  await processWhatsAppWebhook(supabase, parsed.messages, parsed.statuses);
+  await processWhatsAppWebhook(supabase, parsed.messages, parsed.statuses, parsed.payments, payload);
 
   return jsonOk({ received: true, provider: msg91Payload ? "msg91" : "meta" });
 }

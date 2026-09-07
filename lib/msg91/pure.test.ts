@@ -10,11 +10,13 @@ import {
   buildMsg91BulkTemplateBody,
   buildMsg91InteractiveButtonBody,
   buildMsg91InteractiveListBody,
+  buildMsg91PaymentLinkBody,
   buildMsg91TextOutboundUrl,
   mapMsg91ResponseToWaMessageId,
   resolveMsg91OtpTemplateConfig,
   resolveMsg91SendCredentials,
   sendMsg91InteractiveButtonWithConfig,
+  sendMsg91PaymentLinkWithConfig,
   sendMsg91TemplateWithConfig,
   stripE164Plus,
 } from "./pure";
@@ -294,6 +296,39 @@ describe("buildMsg91InteractiveListBody", () => {
   });
 });
 
+describe("buildMsg91PaymentLinkBody", () => {
+  it("maps Cashfree payment_link session payload with numeric amount and CRQID", () => {
+    const body = buildMsg91PaymentLinkBody(
+      {
+        toE164: "+919876543210",
+        bodyText: "Lock this cab with a ₹99 token.",
+        footerText: "Pay ₹99 to lock this cab.",
+        headerImageUrl: "https://example.com/cab.jpg",
+        items: [{ name: "Token lock · Aala Cabs · 5 days", amount: 99, quantity: 1 }],
+        crqid: "11111111-1111-4111-8111-111111111111",
+      },
+      "+919111111111",
+    );
+
+    assert.equal(body.recipient_number, "919876543210");
+    assert.equal(body.integrated_number, "919111111111");
+    assert.equal(body.content_type, "interactive");
+    assert.equal(body.CRQID, "11111111-1111-4111-8111-111111111111");
+    const interactive = body.interactive as Record<string, unknown>;
+    assert.equal(interactive.type, "payment_link");
+    assert.equal((interactive.body as { text: string }).text, "Lock this cab with a ₹99 token.");
+    assert.equal((interactive.footer as { text: string }).text, "Pay ₹99 to lock this cab.");
+    const items = interactive.items as Array<{ name: string; amount: number; quantity: number }>;
+    assert.equal(items[0]?.amount, 99);
+    assert.equal(typeof items[0]?.amount, "number");
+    assert.equal(items[0]?.quantity, 1);
+    assert.deepEqual(interactive.header, {
+      type: "image",
+      image: { link: "https://example.com/cab.jpg" },
+    });
+  });
+});
+
 describe("buildMsg91TextOutboundUrl", () => {
   it("builds the documented text session query string", () => {
     const url = buildMsg91TextOutboundUrl(
@@ -330,6 +365,34 @@ describe("sendMsg91InteractiveButtonWithConfig", () => {
       configured: true,
       success: true,
       waMessageId: "wamid.BUTTON",
+    });
+  });
+});
+
+describe("sendMsg91PaymentLinkWithConfig", () => {
+  it("posts payment_link JSON to the session outbound endpoint", async () => {
+    const result = await sendMsg91PaymentLinkWithConfig(
+      {
+        toE164: "+919876543210",
+        bodyText: "Lock this cab with a ₹99 token.",
+        items: [{ name: "Token lock · Aala Cabs", amount: 99, quantity: 1 }],
+        crqid: "pay-1",
+      },
+      { authKey: "key", integratedNumber: "919111111111" },
+      async (url, init) => {
+        assert.equal(url, MSG91_WHATSAPP_OUTBOUND_URL);
+        const parsed = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        assert.equal(parsed.CRQID, "pay-1");
+        const interactive = parsed.interactive as { type: string };
+        assert.equal(interactive.type, "payment_link");
+        return new Response(JSON.stringify({ request_id: "req-pay" }), { status: 200 });
+      },
+    );
+
+    assert.deepEqual(result, {
+      configured: true,
+      success: true,
+      waMessageId: "req-pay",
     });
   });
 });

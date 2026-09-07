@@ -66,6 +66,14 @@ export interface SendMsg91InteractiveInput {
   footerText?: string;
 }
 
+export interface SendMsg91CtaUrlInput {
+  toE164: string;
+  bodyText: string;
+  buttonTitle: string;
+  url: string;
+  footerText?: string;
+}
+
 export interface SendMsg91InteractiveListInput {
   toE164: string;
   bodyText: string;
@@ -84,4 +92,24 @@ export interface SendMsg91ImageInput {
   toE164: string;
   imageUrl: string;
   caption: string;
+}
+
+/** MSG91 WhatsApp Payments cart line (Cashfree). Item name max 60 chars. */
+export interface Msg91PaymentLinkItem {
+  name: string;
+  amount: number;
+  quantity: number;
+}
+
+/**
+ * Session interactive `type: "payment_link"` (docs.msg91.com WhatsApp Payments).
+ * Must be sent inside the 24h customer-care window. Cashfree only.
+ */
+export interface SendMsg91PaymentLinkInput {
+  toE164: string;
+  bodyText: string;
+  footerText?: string;
+  headerImageUrl?: string;
+  items: Msg91PaymentLinkItem[];
+  crqid?: string;
 }
