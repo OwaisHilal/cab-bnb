@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils/cn";
 import { UPCOMING_DATES, VEHICLE_TYPES } from "@/features/booking-request/constants";
+import { resolveTripStartDate } from "@/features/booking-request/resolveTripStartDate";
 import type {
   BookingRequestDraft,
   BookingRequestStep,
@@ -346,6 +347,7 @@ function StepSummary({
 }) {
   const vehicleLabel =
     VEHICLE_TYPES.find((vehicle) => vehicle.code === draft.vehicleType)?.label ?? "cab";
+  const canGetQuotes = resolveTripStartDate(draft) !== null;
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -440,10 +442,10 @@ function StepSummary({
         onClick={onSubmit}
         loading={isSubmitting}
         loadingLabel="Matching operators…"
+        disabled={!canGetQuotes}
       >
         Get my quotes
       </Button>
-      
     </div>
   );
 }

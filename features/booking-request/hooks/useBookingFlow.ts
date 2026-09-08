@@ -7,11 +7,11 @@ import {
   MIN_PAX_COUNT,
   MIN_TRIP_DAYS,
   SEDAN_SEAT_CAPACITY,
-  UPCOMING_DATES,
   VEHICLE_TYPE_IDS_BY_CODE,
   VEHICLE_TYPES,
   DEMO_VENDOR_NAMES,
 } from "@/features/booking-request/constants";
+import { resolveTripStartDate } from "@/features/booking-request/resolveTripStartDate";
 import type {
   BookingRequestDraft,
   BookingRequestStep,
@@ -323,6 +323,12 @@ export function useBookingFlow() {
   );
 
   const submitRequest = useCallback(async () => {
+    const isoDate = resolveTripStartDate(draft);
+    if (!isoDate) {
+      setRequestError("Pick a departure date to get quotes.");
+      return;
+    }
+
     clearDispatchTimers();
     setRequestError(null);
     setDispatchRows([]);
@@ -334,11 +340,6 @@ export function useBookingFlow() {
       setOverlay("sheet");
       return;
     }
-
-    const isoDate =
-      draft.customDate ??
-      UPCOMING_DATES.find((date) => date.id === draft.selectedDateId)?.isoDate ??
-      UPCOMING_DATES[0].isoDate;
 
     try {
       const response = await fetch("/api/trip-requests", {
