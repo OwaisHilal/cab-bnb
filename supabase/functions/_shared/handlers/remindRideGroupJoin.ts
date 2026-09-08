@@ -4,6 +4,7 @@ import { logOutboundWhatsAppMessage } from "../messageLog.ts";
 import { ensureMessageTemplates } from "../messageTemplateStore.ts";
 import { firstOrSelf } from "../relations.ts";
 import { sendMsg91TemplateMessage } from "../msg91WhatsApp.ts";
+import { shouldUseMsg91ApprovedTemplates } from "../useApprovedTemplates.ts";
 import { sendWhatsAppCtaUrlMessage, sendWhatsAppTextMessage } from "../whatsapp.ts";
 import {
   buildDriverRideGroupInvite,
@@ -35,13 +36,15 @@ async function deliverRideGroupInvite(
 ): Promise<void> {
   const templateName = Deno.env.get(input.envNameKey)?.trim() || input.spec.templateKey;
   const namespace = Deno.env.get(input.envNamespaceKey)?.trim();
-  let send = await sendMsg91TemplateMessage({
-    toE164: input.phoneE164,
-    templateName,
-    languageCode: Deno.env.get("MSG91_OTP_TEMPLATE_LANGUAGE")?.trim() || "en_US",
-    namespace: namespace || undefined,
-    components: input.spec.msg91Components,
-  });
+  let send = shouldUseMsg91ApprovedTemplates()
+    ? await sendMsg91TemplateMessage({
+        toE164: input.phoneE164,
+        templateName,
+        languageCode: Deno.env.get("MSG91_OTP_TEMPLATE_LANGUAGE")?.trim() || "en_US",
+        namespace: namespace || undefined,
+        components: input.spec.msg91Components,
+      })
+    : { configured: true, success: false };
   if (!send.success) {
     send = await sendWhatsAppCtaUrlMessage(input.phoneE164, input.spec.bodyText, {
       title: input.spec.ctaTitle,

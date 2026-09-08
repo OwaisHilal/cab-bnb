@@ -40,7 +40,7 @@ async function loadQuoteSnapshotRows(
   supabase: SupabaseClient,
   tripRequestId: string,
   includeAlreadySent: boolean,
-): Promise<QuoteSnapshotRow[] | { error: string; status: number }> {
+): Promise<QuoteSnapshotRow[] | { error: string; status: number; alreadySent?: boolean }> {
   const select =
     "id, vendor_id, current_quote, is_best_price, vendors(business_name, reliability_score), vehicle_types(label)"
 
@@ -60,7 +60,11 @@ async function loadQuoteSnapshotRows(
   }
 
   if (!includeAlreadySent) {
-    return { error: "No pending_send quote snapshots — quotes may already be sent", status: 400 }
+    return {
+      error: "No pending_send quote snapshots — quotes may already be sent",
+      status: 400,
+      alreadySent: true,
+    }
   }
 
   const { data: sentRows, error: sentError } = await supabase
@@ -85,7 +89,7 @@ export async function buildQuoteDeliveryPayload(
   supabase: SupabaseClient,
   tripRequestId: string,
   options?: { includeAlreadySent?: boolean; quoteSnapshotId?: string },
-): Promise<QuoteDeliveryPayload | { error: string; status: number }> {
+): Promise<QuoteDeliveryPayload | { error: string; status: number; alreadySent?: boolean }> {
   await ensureMessageTemplates(supabase)
 
   const { data: tripRequest, error: tripRequestError } = await supabase

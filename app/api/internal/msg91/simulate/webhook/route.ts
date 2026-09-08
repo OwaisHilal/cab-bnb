@@ -8,9 +8,11 @@ import {
   buildPaymentWebhookPayload,
 } from "@/lib/msg91-sim/webhookPayload"
 import { persistWebhookEvent } from "@/lib/msg91-sim/webhooks"
+import { fillSimulatedButtonPayload } from "@/lib/msg91-sim/fillSimulatedButtonPayload"
 import { processDueJobs } from "@/lib/jobs/processDueJobs"
 import { parseInboundAction } from "@/lib/whatsapp/webhook/parseInboundAction"
 import { parseMsg91Webhook } from "@/lib/whatsapp/webhook/parseMsg91Webhook"
+import { resolveSelectVendorTap } from "@/lib/whatsapp/webhook/resolveSelectVendorTap"
 import {
   MSG91_WEBHOOK_SECRET_HEADER,
   getMsg91WebhookSecret,
@@ -43,7 +45,9 @@ export async function POST(request: NextRequest) {
     }
 
     const kind = (readString(raw, ["kind", "event"]) ?? "button").toLowerCase()
-    const payload = buildSimulatedPayload(raw, kind)
+    const resolvedQuoteSnapshotId =
+      kind === "button" ? await resolveSimulatedSelectSnapshot(supabase, raw) : null
+    const payload = buildSimulatedPayload(raw, kind, resolvedQuoteSnapshotId)
     if (!payload.ok) {
       return jsonMsg91(bulkFail(payload.message), 400)
     }
@@ -51,7 +55,10 @@ export async function POST(request: NextRequest) {
     await persistWebhookEvent(supabase, payload.body)
 
     const parsed = parseMsg91Webhook(payload.body)
-    const parsedAction = parsed.messages[0] ? parseInboundAction(parsed.messages[0]) : null
+    let parsedAction = parsed.messages[0] ? parseInboundAction(parsed.messages[0]) : null
+    if (parsedAction?.type === "unknown" && parsed.messages[0]) {
+      parsedAction = (await resolveSelectVendorTap(supabase, parsed.messages[0])) ?? parsedAction
+    }
 
     const webhookUrl = new URL("/api/whatsapp/webhook", request.nextUrl.origin).toString()
     let webhookStatus = 0
@@ -77,7 +84,8 @@ export async function POST(request: NextRequest) {
     const shouldProcessJobs =
       parsedAction?.type === "book_token" ||
       parsedAction?.type === "token_pay" ||
-      parsed.payments.some((payment) => payment.paid)
+      parsed.payments.some((payment) => payment.paid) ||
+      kind === "button"
 
     let jobs: { claimed: number; succeeded: number; failed: number } | null = null
     if (webhookStatus < 400 && shouldProcessJobs) {
@@ -109,6 +117,7 @@ export async function POST(request: NextRequest) {
 function buildSimulatedPayload(
   raw: Record<string, unknown>,
   kind: string,
+  resolvedQuoteSnapshotId: string | null = null,
 ): { ok: true; body: Record<string, unknown> } | { ok: false; message: string } {
   if (kind === "raw") {
     const nested = asRecord(raw.payload)
@@ -192,25 +201,70 @@ function buildSimulatedPayload(
     readString(raw, ["buttonText", "button_text"]) ??
     readString(asRecord(raw.button) ?? {}, ["text"]) ??
     buttonPayload
-  if (!buttonPayload) {
+  const filled = fillSimulatedButtonPayload({
+    buttonPayload,
+    buttonText,
+    resolvedQuoteSnapshotId,
+  })
+  if (filled.payload) {
     return {
-      ok: false,
-      message: "kind=button requires buttonPayload (e.g. BOOK_TOKEN::<quote_snapshot_id>)",
+      ok: true,
+      body: buildInboundWebhookPayload({
+        customerNumber: stripPhone(customerNumber),
+        integratedNumber: stripPhone(integratedNumber),
+        uuid,
+        requestId,
+        button: { payload: filled.payload, text: filled.text ?? filled.payload },
+        contentType: "interactive",
+        ts,
+      }),
     }
   }
-
-  return {
-    ok: true,
-    body: buildInboundWebhookPayload({
-      customerNumber: stripPhone(customerNumber),
-      integratedNumber: stripPhone(integratedNumber),
-      uuid,
-      requestId,
-      button: { payload: buttonPayload, text: buttonText ?? buttonPayload },
-      contentType: "interactive",
-      ts,
-    }),
+  if (filled.text) {
+    return {
+      ok: true,
+      body: buildInboundWebhookPayload({
+        customerNumber: stripPhone(customerNumber),
+        integratedNumber: stripPhone(integratedNumber),
+        uuid,
+        requestId,
+        text: filled.text,
+        contentType: "text",
+        ts,
+      }),
+    }
   }
+  return {
+    ok: false,
+    message: "kind=button requires buttonPayload or buttonText (e.g. Select Aala Cabs)",
+  }
+}
+
+async function resolveSimulatedSelectSnapshot(
+  supabase: Parameters<typeof resolveSelectVendorTap>[0],
+  raw: Record<string, unknown>,
+): Promise<string | null> {
+  const buttonPayload =
+    readString(raw, ["buttonPayload", "button_payload", "payload"]) ??
+    readString(asRecord(raw.button) ?? {}, ["payload"])
+  if (buttonPayload) return null
+
+  const buttonText =
+    readString(raw, ["buttonText", "button_text"]) ??
+    readString(asRecord(raw.button) ?? {}, ["text"])
+  const customerNumber = readString(raw, ["customerNumber", "customer_number", "from"])
+  if (!buttonText || !customerNumber) return null
+
+  const resolved = await resolveSelectVendorTap(supabase, {
+    waMessageId: "sim-select",
+    fromPhone: stripPhone(customerNumber),
+    timestamp: new Date().toISOString(),
+    type: "text",
+    textBody: buttonText,
+    buttonPayload: null,
+    interactionType: "free_text",
+  })
+  return resolved?.type === "book_token" ? resolved.quoteSnapshotId ?? null : null
 }
 
 async function readResponseBody(response: Response): Promise<unknown> {

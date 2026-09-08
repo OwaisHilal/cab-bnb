@@ -2,6 +2,11 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { processDueJobs } from "@/lib/jobs/processDueJobs";
 import { SEND_QUOTES_JOB_TYPE } from "@/lib/jobs/localJobHandlerTypes";
+import {
+  QUOTE_SEND_ELIGIBLE_STATUSES,
+  SEND_QUOTES_ACTIVE_JOB_STATUSES,
+  shouldInsertSendQuotesJob,
+} from "@/lib/otp/sendQuotesEnqueue";
 
 /**
  * Both the OTP-code path (app/api/otp/verify/route.ts) and the Phone.Email
@@ -32,8 +37,6 @@ export type CompletePhoneVerificationResult =
  * duplicate verify submission racing a first successful one — skip the
  * enqueue rather than firing a second send_quotes job for the same trip.
  */
-const QUOTE_JOB_ELIGIBLE_STATUSES = new Set(["quotes_ready", "otp_pending"]);
-
 export async function completePhoneVerification(
   input: CompletePhoneVerificationInput,
 ): Promise<CompletePhoneVerificationResult> {
@@ -78,39 +81,66 @@ export async function completePhoneVerification(
   // trip_request) must never push status back to `otp_pending` once it
   // has moved on to quotes_sent/negotiating/booked/etc. Only advance the
   // status when it's still in a pre-send state; always link the tourist.
-  const shouldAdvanceToOtpPending = QUOTE_JOB_ELIGIBLE_STATUSES.has(tripRequest.status);
-
-  const { error: tripRequestUpdateError } = await supabase
+  const { error: touristLinkError } = await supabase
     .from("trip_requests")
-    .update(
-      shouldAdvanceToOtpPending
-        ? { tourist_id: tourist.id, status: "otp_pending" }
-        : { tourist_id: tourist.id },
-    )
+    .update({ tourist_id: tourist.id })
     .eq("id", tripRequestId);
 
-  if (tripRequestUpdateError) {
-    return { ok: false, status: 500, message: `Failed to link trip request: ${tripRequestUpdateError.message}` };
+  if (touristLinkError) {
+    return { ok: false, status: 500, message: `Failed to link trip request: ${touristLinkError.message}` };
   }
 
-  if (shouldAdvanceToOtpPending) {
-    const { error: jobEnqueueError } = await supabase.from("job_queue").insert({
-      job_type: "send_quotes",
-      payload: { trip_request_id: tripRequestId, verified_by: verifiedBy },
-    });
+  const { count: activeQuoteJobs, error: activeQuoteJobsError } = await supabase
+    .from("job_queue")
+    .select("id", { count: "exact", head: true })
+    .eq("job_type", SEND_QUOTES_JOB_TYPE)
+    .in("status", [...SEND_QUOTES_ACTIVE_JOB_STATUSES])
+    .filter("payload->>trip_request_id", "eq", tripRequestId);
 
-    if (jobEnqueueError) {
-      return { ok: false, status: 500, message: `Failed to enqueue send_quotes job: ${jobEnqueueError.message}` };
+  if (activeQuoteJobsError) {
+    return {
+      ok: false,
+      status: 500,
+      message: `Failed to check send_quotes jobs: ${activeQuoteJobsError.message}`,
+    };
+  }
+
+  if (
+    shouldInsertSendQuotesJob({
+      tripStatus: tripRequest.status,
+      queuedOrProcessingCount: activeQuoteJobs ?? 0,
+    })
+  ) {
+    const { data: claimed, error: claimError } = await supabase
+      .from("trip_requests")
+      .update({ status: "otp_pending" })
+      .eq("id", tripRequestId)
+      .in("status", [...QUOTE_SEND_ELIGIBLE_STATUSES])
+      .select("id");
+
+    if (claimError) {
+      return { ok: false, status: 500, message: `Failed to claim quote send: ${claimError.message}` };
     }
 
-    try {
-      const jobs = await processDueJobs(supabase, { jobTypes: [SEND_QUOTES_JOB_TYPE] });
-      console.info("[quotes send] jobs", jobs);
-    } catch (error) {
-      console.info(
-        "[quotes send] process failed",
-        error instanceof Error ? error.message : "unknown",
-      );
+    if ((claimed ?? []).length > 0) {
+      const { error: jobEnqueueError } = await supabase.from("job_queue").insert({
+        job_type: SEND_QUOTES_JOB_TYPE,
+        payload: { trip_request_id: tripRequestId, verified_by: verifiedBy },
+      });
+
+      if (jobEnqueueError) {
+        return { ok: false, status: 500, message: `Failed to enqueue send_quotes job: ${jobEnqueueError.message}` };
+      }
+
+      try {
+        const jobs = await processDueJobs(supabase, { jobTypes: [SEND_QUOTES_JOB_TYPE] });
+        console.info("[quotes send] jobs", jobs);
+      } catch (error) {
+        console.info(
+          "[quotes send] process failed",
+          error instanceof Error ? error.message : "unknown",
+        );
+      }
     }
   }
 

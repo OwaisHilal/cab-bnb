@@ -11,6 +11,11 @@ import type { QuoteDeliveryPayload, SendWhatsAppResult } from "@/lib/whatsapp/ty
 export type DeliverQuoteWhatsAppResult =
   | {
       ok: true
+      skipped: true
+    }
+  | {
+      ok: true
+      skipped?: false
       payload: QuoteDeliveryPayload
       send: SendWhatsAppResult
       channel: "whatsapp" | "demo_simulated"
@@ -84,6 +89,10 @@ export async function deliverQuoteWhatsApp(
 ): Promise<DeliverQuoteWhatsAppResult> {
   const built = await buildQuoteDeliveryPayload(supabase, tripRequestId)
   if ("error" in built) {
+    if (built.alreadySent) {
+      console.info("[quotes send] skipped already sent", { tripRequestId })
+      return { ok: true, skipped: true }
+    }
     return { ok: false, status: built.status, message: built.error }
   }
 

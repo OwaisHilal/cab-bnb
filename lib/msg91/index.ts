@@ -35,6 +35,7 @@ export {
   stripE164Plus,
 } from "./pure";
 export { sendMsg91TemplateMessage } from "./send";
+export { shouldUseMsg91ApprovedTemplates } from "./useApprovedTemplates";
 export {
   isMsg91WhatsAppConfigured,
   sendMsg91ImageMessage,

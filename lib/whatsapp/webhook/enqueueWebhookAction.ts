@@ -29,6 +29,21 @@ export async function enqueueWebhookAction(
         quote_snapshot_id: action.quoteSnapshotId,
         wa_message_id: waMessageId,
       });
+      // #region agent log
+      fetch("http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f4fe3a" },
+        body: JSON.stringify({
+          sessionId: "f4fe3a",
+          runId: "payment-tap",
+          hypothesisId: "D",
+          location: "lib/whatsapp/webhook/enqueueWebhookAction.ts:book_token",
+          message: "enqueued send_token_payment_link",
+          data: { hasQuoteSnapshotId: Boolean(action.quoteSnapshotId) },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       return;
 
     case "token_pay":

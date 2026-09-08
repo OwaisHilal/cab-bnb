@@ -19,6 +19,11 @@ export const handleSendQuotes = async (
     throw new Error(result.message)
   }
 
+  if (result.skipped) {
+    console.info("[quotes send] skipped already sent", { tripRequestId })
+    return
+  }
+
   const last4 = phoneLast4(result.payload.touristPhone)
   console.info("[quotes send] ok", {
     last4,

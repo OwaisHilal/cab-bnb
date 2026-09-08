@@ -52,6 +52,19 @@ describe("parseMsg91Webhook inbound buttons", () => {
     assert.equal(parseInboundAction(parsed.messages[0]!).quoteSnapshotId, QUOTE_ID);
   });
 
+  it("does not treat the visible Select {vendor} chat text as a tap", () => {
+    const action = parseInboundAction({
+      waMessageId: "wamid.SELECT_TEXT",
+      fromPhone: "919876543210",
+      timestamp: "2026-09-03T12:00:00+05:30",
+      type: "text",
+      textBody: "Select Aala Cabs",
+      buttonPayload: null,
+      interactionType: "free_text",
+    });
+    assert.equal(action.type, "unknown");
+  });
+
   it("reads session interactive button_reply.id from stringified messages", () => {
     const parsed = parseMsg91Webhook({
       customerNumber: "919876543210",

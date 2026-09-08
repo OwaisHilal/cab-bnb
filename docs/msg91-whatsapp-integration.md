@@ -287,6 +287,9 @@ Replace Meta send credentials with MSG91:
 | `MSG91_OTP_TEMPLATE_NAME` | Auth template name |
 | `MSG91_OTP_TEMPLATE_NAMESPACE` | Auth template namespace |
 | `MSG91_OTP_TEMPLATE_LANGUAGE` | e.g. `en_US` |
+| `MSG91_USE_APPROVED_TEMPLATES` | `true`/`yes`/`1` (default if unset): bulk Utility templates. `false`/`no`/`0`: session text / interactive. SMS OTP and Cashfree `payment_link` are never gated. |
+
+**Template vs session toggle** (`MSG91_USE_APPROVED_TEMPLATES`): This is not `DEMO_MODE`. Demo fakes OTP (`123456`). This flag still calls real MSG91; it only chooses [template-bulk](https://docs.msg91.com/whatsapp/template-bulk) vs [session text](https://docs.msg91.com/whatsapp/send-message-in-text) / [buttons](https://docs.msg91.com/whatsapp/interactive-whatsapp-buttons) / [list](https://docs.msg91.com/whatsapp/interactive-whatsapp-list). Session APIs use `content_type: "text"` or `"interactive"` — there is no session `type: "utility"` (Utility is a Meta template category). Session sends only work inside an open 24h window; SMS OTP does not open WhatsApp. Message the business number first, or use WhatsApp Auth OTP (`prefer=whatsapp`). Vendor notify in session mode fails if that vendor has never messaged the number.
 
 Per utility template (as you wire them):
 
@@ -321,7 +324,8 @@ Agent does not log into MSG91. You complete these before Phase 2/3 can send:
 - [ ] Integrate WhatsApp Business number on MSG91
 - [ ] Create templates from [`whatsapp-templates.md`](./whatsapp-templates.md) (Authentication OTP + Utility for the other 8)
 - [ ] After Green approval, copy `name`, `namespace`, language into `MSG91_OTP_*` (and later utility env vars)
-- [ ] Point MSG91 **Webhook (New)** at `POST https://<your-production-host>/api/whatsapp/webhook` with header `x-msg91-webhook-secret` = `MSG91_WEBHOOK_SECRET`
+- [ ] Point MSG91 **Webhook (New)** at `POST https://<your-public-host>/api/whatsapp/webhook` with header `x-msg91-webhook-secret` = `MSG91_WEBHOOK_SECRET` (must be set in `.env` / `.env.local` / Vercel).
+- [ ] Local `next dev` is not reachable from MSG91. Tunnel (e.g. `cloudflared tunnel --url http://localhost:3000`) or deploy, then put that HTTPS origin in Webhook (New) **On Inbound Request Received**. Or prove Pay without a live tap via the simulator in §6.3 (`BOOK_TOKEN::<quote_snapshot_id>`). Live webhook returns 200 then drains `send_token_payment_link` via `after()` + `processDueJobs`. Success logs: `[whatsapp webhook] inbound` (`book_token` or title fallback) then `[whatsapp webhook] jobs`. Chat text `Select Aala Cabs` with no payload is not a tap unless it uniquely matches a sent quote for that phone (§6.3a).
 
 The live webhook now accepts MSG91 Webhook (New) JSON. Do not point Meta's Cloud API webhook here — Meta posts to MSG91, MSG91 posts to us.
 
@@ -396,7 +400,7 @@ Create **two** WhatsApp webhooks (or one per event with the same URL). MSG91 doe
 3. Map `eventName: "read"` + `direction: "1"` + `uuid` → `quote_snapshots.viewed`
 4. **Dedupe by `uuid` (WAMID)** — MSG91 may retry / Meta may duplicate
 5. Auth via `x-msg91-webhook-secret` (not Meta `X-Hub-Signature-256`)
-6. Return 200 quickly; job enqueue only
+6. Return 200 quickly; job enqueue only. `after()` then runs `processDueJobs` so `send_token_payment_link` can send without waiting for cron.
 
 ### 6.3 Simulate without live WhatsApp
 
@@ -416,7 +420,30 @@ curl -sS -X POST http://localhost:3000/api/internal/msg91/simulate/webhook \
 
 Other `kind` values: `text` (requires `text`), `payment` (requires `crqid`, optional `paymentStatus`, default `paid`), `read` / `delivered` / `sent` / `failed`, `raw` (pass a full MSG91 object as `payload`).
 
-The simulator also runs local `processDueJobs` after a successful webhook (so `send_token_payment_link` can send without cron / an undeployed Edge worker).
+The simulator also runs local `processDueJobs` after a successful webhook (so `send_token_payment_link` can send without cron / an undeployed Edge worker). Live `POST /api/whatsapp/webhook` now does the same drain in `after()` after the 200 response.
+
+**Silent tap on localhost:** if `next dev` never logs `POST /api/whatsapp/webhook` after you tap a quote button, MSG91 did not reach this process. A public URL is required for real phone taps:
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+Then set Webhook (New) to `https://<tunnel>/api/whatsapp/webhook` + `x-msg91-webhook-secret`.
+
+Windows simulator (use the real `quote_snapshots.id`, not the button title):
+
+```bash
+curl -sS -X POST http://localhost:3000/api/internal/msg91/simulate/webhook ^
+  -H "authkey: YOUR_MSG91_AUTH_KEY" ^
+  -H "content-type: application/json" ^
+  -d "{\"kind\":\"button\",\"customerNumber\":\"91XXXXXXXXXX\",\"buttonPayload\":\"BOOK_TOKEN::<quote_snapshot_uuid>\",\"buttonText\":\"Select Aala Cabs\"}"
+```
+
+### 6.3a Title-only `Select {vendor}` fallback
+
+Utility template inbound sometimes has the button title and no `BOOK_TOKEN::` payload. After `parseInboundAction` returns `unknown`, if the text is `Select …` we uniquely match `vendors.business_name` on the latest trip with `sent`/`viewed` snapshots for that phone (same 20-character title truncation as send). Zero or two-plus matches stay `unknown` (no auto-reply). Other free text (e.g. `Need help?`) is still logged only.
+
+Paid-token simulator (after Pay succeeds, or to skip the tap):
 
 ```bash
 curl -sS -X POST http://localhost:3000/api/internal/msg91/simulate/webhook \
@@ -438,6 +465,7 @@ You can also POST the same JSON straight at `/api/whatsapp/webhook` with header 
 |---------------|-------------------------|
 | `button.payload` = `BOOK_FULL::…` | `book_full` |
 | `button.payload` = `BOOK_TOKEN::…` | `book_token` → job `send_token_payment_link` |
+| Title `Select {vendor}` with no payload, unique sent/viewed snapshot for that phone | `book_token` (fallback) |
 | `button.payload` = `TOKEN_PAY::…` | `token_pay` (demo / mock chat only) → `finalize_booking` |
 | MSG91 `paymentStatus` paid + `crqid` + intent `purpose=token_lock` | enqueue `finalize_booking` (`token_99`) |
 | MSG91 `paymentStatus` paid + `crqid` + intent `purpose=balance` | enqueue `complete_balance_payment` |

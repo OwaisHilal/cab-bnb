@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { sendMsg91TemplateMessage } from "../msg91WhatsApp.ts";
+import { shouldUseMsg91ApprovedTemplates } from "../useApprovedTemplates.ts";
 import { sendWhatsAppTextMessage } from "../whatsapp.ts";
 import { logOutboundWhatsAppMessage } from "../messageLog.ts";
 import { firstOrSelf } from "../relations.ts";
@@ -61,13 +62,15 @@ export async function handleNotifyVendorBooking(
   // Live assign-driver Utility. Do not read MSG91_VENDOR_BOOKING_NOTIFY_* here.
   const templateName = Deno.env.get("MSG91_VENDOR_NOTIFY_TEMPLATE_NAME")?.trim() || VENDOR_ASSIGN_DRIVER_TEMPLATE_KEY;
   const namespace = Deno.env.get("MSG91_VENDOR_NOTIFY_TEMPLATE_NAMESPACE")?.trim();
-  let sendResult = await sendMsg91TemplateMessage({
-    toE164: vendor.whatsapp_number,
-    templateName,
-    languageCode: Deno.env.get("MSG91_OTP_TEMPLATE_LANGUAGE")?.trim() || "en_US",
-    namespace: namespace || undefined,
-    components: message.msg91Components,
-  });
+  let sendResult = shouldUseMsg91ApprovedTemplates()
+    ? await sendMsg91TemplateMessage({
+        toE164: vendor.whatsapp_number,
+        templateName,
+        languageCode: Deno.env.get("MSG91_OTP_TEMPLATE_LANGUAGE")?.trim() || "en_US",
+        namespace: namespace || undefined,
+        components: message.msg91Components,
+      })
+    : { configured: true, success: false };
   if (!sendResult.success) {
     sendResult = await sendWhatsAppTextMessage(vendor.whatsapp_number, message.bodyText);
   }

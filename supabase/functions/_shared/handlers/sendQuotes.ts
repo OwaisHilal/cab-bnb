@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { sendSmsFallback, sendWhatsAppButtonMessage, sendWhatsAppListMessage } from "../whatsapp.ts";
 import { sendMsg91TemplateMessage } from "../msg91WhatsApp.ts";
+import { shouldUseMsg91ApprovedTemplates } from "../useApprovedTemplates.ts";
 import { ensureMessageTemplates } from "../messageTemplateStore.ts";
 import { buildQuoteChoiceMessage, buildQuoteMultiListMessage } from "../templateMessages.ts";
 
@@ -68,6 +69,7 @@ export async function handleSendQuotes(
     .order("current_quote", { ascending: true });
 
   if (snapshotsError) throw new Error(`Failed to fetch quote snapshots: ${snapshotsError.message}`);
+  // Already sent (or never matched) — no-op so a second worker cannot resend.
   if (!snapshots || snapshots.length === 0) return;
 
   const rows = snapshots as unknown as QuoteSnapshotRow[];
@@ -129,15 +131,17 @@ export async function handleSendQuotes(
     const namespace = Deno.env.get("MSG91_QUOTE_CHOICE_TEMPLATE_NAMESPACE")?.trim();
     const languageCode = Deno.env.get("MSG91_OTP_TEMPLATE_LANGUAGE")?.trim() || "en_US";
 
-    sendResult = await sendMsg91TemplateMessage({
-      toE164: touristPhone,
-      templateName: templateNameEnv,
-      languageCode,
-      namespace: namespace || undefined,
-      components: choice.msg91Components,
-    });
+    if (shouldUseMsg91ApprovedTemplates()) {
+      sendResult = await sendMsg91TemplateMessage({
+        toE164: touristPhone,
+        templateName: templateNameEnv,
+        languageCode,
+        namespace: namespace || undefined,
+        components: choice.msg91Components,
+      });
+    }
 
-    if (!sendResult.success) {
+    if (!sendResult?.success) {
       sendResult = await sendWhatsAppButtonMessage(touristPhone, choice.bodyText, choice.buttons, {
         footerText: choice.footerText,
       });

@@ -36,6 +36,10 @@ export async function POST(request: NextRequest) {
     return jsonError(result.status, result.message)
   }
 
+  if (result.skipped) {
+    return jsonOk({ skipped: true, channel: null })
+  }
+
   return jsonOk({
     channel: result.channel,
     simulated: Boolean(result.send.simulated),

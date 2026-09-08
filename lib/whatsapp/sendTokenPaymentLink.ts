@@ -131,13 +131,18 @@ export const handleSendTokenPaymentLink = async (
 
   const customerNumber = stripE164Plus(touristPhone)
   const headerImageUrl = process.env.MSG91_PAYMENT_LINK_HEADER_IMAGE_URL?.trim()
-  const { crqid, intentReady } = await upsertPaymentIntent(supabase, {
+  const { crqid, intentReady, alreadySent } = await upsertPaymentIntent(supabase, {
     quoteSnapshotId,
     tripRequestId: trip.id,
     touristId: trip.tourist_id,
     vendorId: row.vendor_id,
     customerNumber,
   })
+
+  if (alreadySent) {
+    console.info("[token pay] skipped already sent", { quoteSnapshotId })
+    return
+  }
 
   const sendResult = await sendWhatsAppPaymentLinkMessageWithHeaderRetry({
     toE164: touristPhone,
@@ -147,6 +152,29 @@ export const handleSendTokenPaymentLink = async (
     items: [{ name: copy.itemName, amount: copy.amountInr, quantity: copy.quantity }],
     crqid,
   })
+  // #region agent log
+  fetch("http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f4fe3a" },
+    body: JSON.stringify({
+      sessionId: "f4fe3a",
+      runId: "payment-tap",
+      hypothesisId: "D",
+      location: "lib/whatsapp/sendTokenPaymentLink.ts:send",
+      message: "payment_link send result",
+      data: {
+        alreadySent,
+        intentReady,
+        success: sendResult.success,
+        configured: sendResult.configured,
+        error: sendResult.error ?? null,
+        hasWaMessageId: Boolean(sendResult.waMessageId),
+        hasHeaderImage: Boolean(headerImageUrl),
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion
 
   if (!sendResult.success) {
     if (intentReady) {
@@ -209,7 +237,7 @@ const upsertPaymentIntent = async (
     vendorId: string
     customerNumber: string
   },
-): Promise<{ crqid: string; intentReady: boolean }> => {
+): Promise<{ crqid: string; intentReady: boolean; alreadySent: boolean }> => {
   const { data: existing, error: existingError } = await supabase
     .from("whatsapp_payment_intents")
     .select("id, status")
@@ -221,14 +249,18 @@ const upsertPaymentIntent = async (
 
   if (existingError) {
     if (isMissingRelation(existingError)) {
-      return { crqid: input.quoteSnapshotId, intentReady: false }
+      return { crqid: input.quoteSnapshotId, intentReady: false, alreadySent: false }
     }
     throw new Error(`Failed to load payment intent: ${existingError.message}`)
   }
 
   const existingRow = existing as PaymentIntentRow | null
   if (existingRow?.id) {
-    return { crqid: existingRow.id, intentReady: true }
+    return {
+      crqid: existingRow.id,
+      intentReady: true,
+      alreadySent: existingRow.status === "sent",
+    }
   }
 
   const intentId = randomUUID()
@@ -246,7 +278,7 @@ const upsertPaymentIntent = async (
 
   if (insertError) {
     if (isMissingRelation(insertError)) {
-      return { crqid: input.quoteSnapshotId, intentReady: false }
+      return { crqid: input.quoteSnapshotId, intentReady: false, alreadySent: false }
     }
     if (insertError.code === DUPLICATE_KEY_ERROR_CODE) {
       const { data: raced } = await supabase
@@ -258,11 +290,11 @@ const upsertPaymentIntent = async (
         .limit(1)
         .maybeSingle()
       if (raced?.id) {
-        return { crqid: raced.id as string, intentReady: true }
+        return { crqid: raced.id as string, intentReady: true, alreadySent: false }
       }
     }
     throw new Error(`Failed to create payment intent: ${insertError.message}`)
   }
 
-  return { crqid: intentId, intentReady: true }
+  return { crqid: intentId, intentReady: true, alreadySent: false }
 }

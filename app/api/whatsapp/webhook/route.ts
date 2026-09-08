@@ -46,17 +46,91 @@ export async function POST(request: NextRequest) {
   try {
     payload = JSON.parse(rawBody);
   } catch {
+    // #region agent log
+    fetch("http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f4fe3a" },
+      body: JSON.stringify({
+        sessionId: "f4fe3a",
+        runId: "payment-tap",
+        hypothesisId: "A",
+        location: "app/api/whatsapp/webhook/route.ts:json",
+        message: "webhook body not json",
+        data: { rawLength: rawBody.length },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     return jsonError(400, "Request body must be valid JSON");
   }
 
   const msg91Payload = isMsg91WebhookPayload(payload);
+  const payloadRecord =
+    payload !== null && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : null;
+  // #region agent log
+  fetch("http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f4fe3a" },
+    body: JSON.stringify({
+      sessionId: "f4fe3a",
+      runId: "payment-tap",
+      hypothesisId: "A",
+      location: "app/api/whatsapp/webhook/route.ts:entry",
+      message: "webhook POST received",
+      data: {
+        msg91Payload,
+        secretConfigured: Boolean(getMsg91WebhookSecret()),
+        headerPresent: Boolean(readMsg91WebhookSecretHeader(request.headers)),
+        keys: payloadRecord ? Object.keys(payloadRecord).slice(0, 20) : [],
+        contentType: typeof payloadRecord?.contentType === "string" ? payloadRecord.contentType : null,
+        eventName: typeof payloadRecord?.eventName === "string" ? payloadRecord.eventName : null,
+        hasButton: Boolean(payloadRecord?.button),
+        hasText: Boolean(payloadRecord?.text),
+        direction: payloadRecord?.direction ?? null,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   if (msg91Payload) {
     const expectedSecret = getMsg91WebhookSecret();
     if (!expectedSecret) {
+      // #region agent log
+      fetch("http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f4fe3a" },
+        body: JSON.stringify({
+          sessionId: "f4fe3a",
+          runId: "payment-tap",
+          hypothesisId: "B",
+          location: "app/api/whatsapp/webhook/route.ts:secret-missing",
+          message: "MSG91_WEBHOOK_SECRET missing",
+          data: {},
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       return jsonError(500, "Missing MSG91_WEBHOOK_SECRET. Copy .env.example to .env.local and fill it in.");
     }
     if (!verifyMsg91WebhookSecret(readMsg91WebhookSecretHeader(request.headers), expectedSecret)) {
+      // #region agent log
+      fetch("http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f4fe3a" },
+        body: JSON.stringify({
+          sessionId: "f4fe3a",
+          runId: "payment-tap",
+          hypothesisId: "B",
+          location: "app/api/whatsapp/webhook/route.ts:secret-mismatch",
+          message: "MSG91 webhook secret rejected",
+          data: { headerPresent: Boolean(readMsg91WebhookSecretHeader(request.headers)) },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       return jsonError(401, "Invalid MSG91 webhook secret");
     }
   } else {

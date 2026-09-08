@@ -1,7 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { after } from "next/server";
+import { processDueJobs } from "@/lib/jobs/processDueJobs";
+import { phoneLast4 } from "@/lib/utils/phone";
 import { stripE164Plus } from "@/lib/msg91/pure";
 import { enqueueWebhookAction } from "./enqueueWebhookAction";
 import { parseInboundAction } from "./parseInboundAction";
+import { resolveSelectVendorTap } from "./resolveSelectVendorTap";
 import { applyRideGroupWebhook } from "@/lib/whatsapp/applyRideGroupWebhook"
 import {
   resolvePaymentReportAction,
@@ -33,7 +37,44 @@ export async function processWhatsAppWebhook(
       if (isDuplicate) continue;
       if (message.groupId) continue;
 
-      const action = parseInboundAction(message);
+      let action = parseInboundAction(message);
+      if (action.type === "unknown") {
+        const resolved = await resolveSelectVendorTap(supabase, message);
+        if (resolved) {
+          action = resolved;
+        }
+      }
+      // #region agent log
+      fetch("http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f4fe3a" },
+        body: JSON.stringify({
+          sessionId: "f4fe3a",
+          runId: "payment-tap",
+          hypothesisId: "C",
+          location: "lib/whatsapp/webhook/processWhatsAppWebhook.ts:inbound",
+          message: "parsed inbound action",
+          data: {
+            last4: phoneLast4(message.fromPhone),
+            action: action.type,
+            hasButtonPayload: Boolean(message.buttonPayload),
+            buttonPayloadPrefix: message.buttonPayload?.split("::")[0] ?? null,
+            textLooksSelect: /^Select /i.test(message.textBody?.trim() ?? ""),
+            resolvedFromTitle: action.type === "book_token" && !message.buttonPayload,
+            isDuplicate,
+            hasGroupId: Boolean(message.groupId),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      console.info("[whatsapp webhook] inbound", {
+        last4: phoneLast4(message.fromPhone),
+        action: action.type,
+        hasButtonPayload: Boolean(message.buttonPayload),
+        resolvedFromTitle: action.type === "book_token" && !message.buttonPayload,
+        waMessageId: message.waMessageId,
+      });
       await enqueueWebhookAction(supabase, action, message);
     } catch (error) {
       console.error("[whatsapp webhook] failed to process inbound message", error);
@@ -55,6 +96,16 @@ export async function processWhatsAppWebhook(
       console.error("[whatsapp webhook] failed to process payment report", error);
     }
   }
+
+  after(() => {
+    void processDueJobs(supabase)
+      .then((jobs) => {
+        console.info("[whatsapp webhook] jobs", jobs);
+      })
+      .catch((error: unknown) => {
+        console.error("[whatsapp webhook] processDueJobs failed", error);
+      });
+  });
 }
 
 async function processPaymentReport(
