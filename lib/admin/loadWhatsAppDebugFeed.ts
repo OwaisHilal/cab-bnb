@@ -17,10 +17,12 @@ interface MessageRow {
   created_at: string
 }
 
+const WHATSAPP_DEBUG_JOB_TYPES = ["send_quotes", "send_token_payment_link"] as const
+
 interface JobRow {
   id: string
   job_type: string
-  payload: { trip_request_id?: string }
+  payload: { trip_request_id?: string; quote_snapshot_id?: string }
   status: string
   attempts: number
   last_error: string | null
@@ -39,7 +41,7 @@ export async function loadWhatsAppDebugFeed(supabase: SupabaseClient): Promise<A
     supabase
       .from("job_queue")
       .select("id, job_type, payload, status, attempts, last_error, created_at")
-      .eq("job_type", "send_quotes")
+      .in("job_type", WHATSAPP_DEBUG_JOB_TYPES)
       .in("status", ["queued", "processing", "failed"])
       .order("created_at", { ascending: false })
       .limit(20),
@@ -71,6 +73,7 @@ export async function loadWhatsAppDebugFeed(supabase: SupabaseClient): Promise<A
     pending_jobs: ((jobsResult.data ?? []) as JobRow[]).map((row) => ({
       id: row.id,
       trip_request_id: row.payload?.trip_request_id ?? null,
+      quote_snapshot_id: row.payload?.quote_snapshot_id ?? null,
       job_type: row.job_type,
       status: row.status,
       attempts: row.attempts,

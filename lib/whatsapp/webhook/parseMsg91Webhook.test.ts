@@ -52,6 +52,40 @@ describe("parseMsg91Webhook inbound buttons", () => {
     assert.equal(parseInboundAction(parsed.messages[0]!).quoteSnapshotId, QUOTE_ID);
   });
 
+  it("prefers button title over quoted template body when payload is missing", () => {
+    const parsed = parseMsg91Webhook({
+      customerNumber: "919876543210",
+      integratedNumber: "919999988888",
+      direction: "0",
+      contentType: "button",
+      uuid: "wamid.QR-TITLE",
+      ts: "2026-09-09T12:00:00+05:30",
+      text: "Your Kashmir cab quotes are in. -- Select Aala Cabs",
+      button: JSON.stringify({ text: "Select Aala Cabs" }),
+      messages: "",
+      interactive: "",
+    });
+
+    assert.equal(parsed.messages.length, 1);
+    assert.equal(parsed.messages[0]?.buttonPayload, null);
+    assert.equal(parsed.messages[0]?.textBody, "Select Aala Cabs");
+    assert.equal(parsed.messages[0]?.interactionType, "button_click");
+    assert.equal(parseInboundAction(parsed.messages[0]!).type, "unknown");
+  });
+
+  it("does not treat a frozen BOOK_TOKEN placeholder payload as a tap", () => {
+    const action = parseInboundAction({
+      waMessageId: "wamid.PLACEHOLDER",
+      fromPhone: "919876543210",
+      timestamp: "2026-09-09T12:00:00+05:30",
+      type: "button",
+      textBody: "Select Aala Cabs",
+      buttonPayload: "BOOK_TOKEN::{quote_snapshot_id}",
+      interactionType: "button_click",
+    });
+    assert.equal(action.type, "unknown");
+  });
+
   it("does not treat the visible Select {vendor} chat text as a tap", () => {
     const action = parseInboundAction({
       waMessageId: "wamid.SELECT_TEXT",

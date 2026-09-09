@@ -60,6 +60,7 @@ export interface AdminDebugWhatsAppMessage {
 export interface AdminDebugWhatsAppJob {
   id: string
   trip_request_id: string | null
+  quote_snapshot_id: string | null
   job_type: string
   status: string
   attempts: number

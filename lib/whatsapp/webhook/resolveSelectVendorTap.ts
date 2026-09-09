@@ -4,6 +4,7 @@ import { quoteChoiceSelectTitle } from "@/lib/whatsapp/quoteChoiceTemplate"
 import type { InboundWhatsAppMessage, ParsedAction } from "./types"
 
 const SELECT_VENDOR_TITLE_RE = /^Select .+$/
+const QUOTED_SELECT_TITLE_RE = /(?:^|\n|--\s*)(Select [^\n]+)$/
 const QUOTE_STATUSES_FOR_TAP = ["sent", "viewed"] as const
 
 export interface SelectVendorSnapshotRow {
@@ -18,8 +19,11 @@ const firstOrSelf = <T,>(value: T | T[] | null | undefined): T | null => {
 
 export function parseSelectVendorTapText(text: string | null | undefined): string | null {
   const trimmed = text?.trim() ?? ""
-  if (!SELECT_VENDOR_TITLE_RE.test(trimmed)) return null
-  return trimmed
+  if (!trimmed) return null
+  if (SELECT_VENDOR_TITLE_RE.test(trimmed)) return trimmed
+  const quoted = trimmed.match(QUOTED_SELECT_TITLE_RE)?.[1]?.trim() ?? ""
+  if (SELECT_VENDOR_TITLE_RE.test(quoted)) return quoted
+  return null
 }
 
 export function matchUniqueSelectVendorSnapshot(
@@ -47,7 +51,8 @@ export async function resolveSelectVendorTap(
   supabase: SupabaseClient,
   message: InboundWhatsAppMessage,
 ): Promise<ParsedAction | null> {
-  const inboundTitle = parseSelectVendorTapText(message.textBody)
+  const inboundTitle =
+    parseSelectVendorTapText(message.textBody) ?? parseSelectVendorTapText(message.buttonPayload)
   if (!inboundTitle) return null
 
   const last10 = phoneLast10(message.fromPhone)

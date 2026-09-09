@@ -97,6 +97,7 @@ export const handleSendTokenPaymentLink = async (
 
   const row = snapshot as unknown as QuoteSnapshotRow
   if (row.status === "finalized" || row.status === "lost" || row.status === "expired") {
+    console.info("[token pay] skipped closed quote", { quoteSnapshotId, quoteStatus: row.status })
     return
   }
 
@@ -152,31 +153,13 @@ export const handleSendTokenPaymentLink = async (
     items: [{ name: copy.itemName, amount: copy.amountInr, quantity: copy.quantity }],
     crqid,
   })
-  // #region agent log
-  fetch("http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f4fe3a" },
-    body: JSON.stringify({
-      sessionId: "f4fe3a",
-      runId: "payment-tap",
-      hypothesisId: "D",
-      location: "lib/whatsapp/sendTokenPaymentLink.ts:send",
-      message: "payment_link send result",
-      data: {
-        alreadySent,
-        intentReady,
-        success: sendResult.success,
-        configured: sendResult.configured,
-        error: sendResult.error ?? null,
-        hasWaMessageId: Boolean(sendResult.waMessageId),
-        hasHeaderImage: Boolean(headerImageUrl),
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {})
-  // #endregion
 
   if (!sendResult.success) {
+    console.error("[token pay] payment_link send failed", {
+      quoteSnapshotId,
+      configured: sendResult.configured,
+      error: sendResult.error ?? null,
+    })
     if (intentReady) {
       await supabase
         .from("whatsapp_payment_intents")

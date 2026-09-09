@@ -34,7 +34,7 @@ export function BookingStatusScreen({
           BOOKING #{booking.bookingRef}
         </span>
         <h1 className="font-archivo text-[30px] font-extrabold leading-[1.1] tracking-[-0.8px] text-kmr-ink">
-          Quotes incoming.
+          {hasQuotes ? "Quotes are in." : "Quotes incoming."}
         </h1>
         <p className="font-archivo text-[13.5px] font-bold leading-[1.4] tracking-[-0.2px] text-kmr-blue">
           {booking.summaryLabel}

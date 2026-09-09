@@ -55,12 +55,18 @@ export function WhatsAppDebugSection({ whatsapp }: { whatsapp: AdminDebugWhatsAp
       {whatsapp.pending_jobs.length > 0 && (
         <div className="mb-4 rounded-sm border border-kmr-orange/20 bg-kmr-orange/5 p-4">
           <span className="font-mono text-[8.5px] font-semibold tracking-[1.2px] text-kmr-orange-dark">
-            QUEUED SEND_QUOTES JOBS
+            QUEUED WHATSAPP JOBS
           </span>
           <ul className="mt-2 flex flex-col gap-1.5">
             {whatsapp.pending_jobs.map((job) => (
               <li key={job.id} className="font-mono text-[10px] text-kmr-muted-1">
-                {job.trip_request_id ? `REQ-${shortId(job.trip_request_id)}` : job.id} · {job.status}
+                {job.job_type} ·{" "}
+                {job.trip_request_id
+                  ? `REQ-${shortId(job.trip_request_id)}`
+                  : job.quote_snapshot_id
+                    ? `QUOTE-${shortId(job.quote_snapshot_id)}`
+                    : job.id}{" "}
+                · {job.status}
                 {job.attempts > 0 ? ` · ${job.attempts} attempts` : ""}
                 {job.last_error ? ` · ${job.last_error}` : ""}
               </li>

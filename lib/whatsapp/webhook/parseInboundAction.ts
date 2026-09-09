@@ -5,6 +5,8 @@ const DRIVER_DETAILS_REGEX =
   /^DRIVER:\s*([^|]+?)\s*\|\s*(\+?\d{10,13})\s*\|\s*([A-Z0-9\- ]+?)\s*\|\s*([^|]+?)(?:\s*\|\s*(.+))?$/i;
 const DRIVER_DETAILS_PREFIX_REGEX = /^DRIVER:/i;
 const RATE_ACTION_PREFIX = "RATE_";
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Plan §7.2 (button payload branching) / §7.3 (strict `DRIVER:` free-text
@@ -31,7 +33,7 @@ function parseButtonPayload(payload: string): ParsedAction {
     case "BOOK_FULL":
       return entityId ? { type: "book_full", quoteSnapshotId: entityId } : { type: "unknown" };
     case "BOOK_TOKEN":
-      return entityId ? { type: "book_token", quoteSnapshotId: entityId } : { type: "unknown" };
+      return isUsableEntityId(entityId) ? { type: "book_token", quoteSnapshotId: entityId } : { type: "unknown" };
     case "TOKEN_PAY":
       return entityId ? { type: "token_pay", quoteSnapshotId: entityId } : { type: "unknown" };
     case "NEGOTIATE":
@@ -47,6 +49,10 @@ function parseButtonPayload(payload: string): ParsedAction {
     default:
       return parseRatingAction(action, entityId);
   }
+}
+
+function isUsableEntityId(entityId: string | undefined): boolean {
+  return Boolean(entityId && UUID_RE.test(entityId));
 }
 
 function parseRatingAction(action: string | undefined, entityId: string | undefined): ParsedAction {

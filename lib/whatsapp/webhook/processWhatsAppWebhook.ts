@@ -44,30 +44,6 @@ export async function processWhatsAppWebhook(
           action = resolved;
         }
       }
-      // #region agent log
-      fetch("http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f4fe3a" },
-        body: JSON.stringify({
-          sessionId: "f4fe3a",
-          runId: "payment-tap",
-          hypothesisId: "C",
-          location: "lib/whatsapp/webhook/processWhatsAppWebhook.ts:inbound",
-          message: "parsed inbound action",
-          data: {
-            last4: phoneLast4(message.fromPhone),
-            action: action.type,
-            hasButtonPayload: Boolean(message.buttonPayload),
-            buttonPayloadPrefix: message.buttonPayload?.split("::")[0] ?? null,
-            textLooksSelect: /^Select /i.test(message.textBody?.trim() ?? ""),
-            resolvedFromTitle: action.type === "book_token" && !message.buttonPayload,
-            isDuplicate,
-            hasGroupId: Boolean(message.groupId),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       console.info("[whatsapp webhook] inbound", {
         last4: phoneLast4(message.fromPhone),
         action: action.type,
@@ -97,15 +73,23 @@ export async function processWhatsAppWebhook(
     }
   }
 
-  after(() => {
-    void processDueJobs(supabase)
-      .then((jobs) => {
-        console.info("[whatsapp webhook] jobs", jobs);
-      })
-      .catch((error: unknown) => {
-        console.error("[whatsapp webhook] processDueJobs failed", error);
-      });
-  });
+  after(() => drainWhatsAppWebhookJobs(supabase));
+}
+
+/**
+ * `after()` needs an awaitable promise so Vercel's `waitUntil` primitive
+ * keeps the serverless invocation alive until `send_token_payment_link`
+ * (and any other due job) finishes. A fire-and-forget `void promise.then()`
+ * inside `after()` does not extend the invocation lifetime, so a real tap
+ * can be parsed correctly and still never receive its payment_link reply.
+ */
+export async function drainWhatsAppWebhookJobs(supabase: SupabaseClient): Promise<void> {
+  try {
+    const jobs = await processDueJobs(supabase);
+    console.info("[whatsapp webhook] jobs", jobs);
+  } catch (error) {
+    console.error("[whatsapp webhook] processDueJobs failed", error);
+  }
 }
 
 async function processPaymentReport(

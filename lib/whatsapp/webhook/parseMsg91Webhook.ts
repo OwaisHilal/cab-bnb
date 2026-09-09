@@ -175,17 +175,14 @@ function parseInboundMessage(raw: Record<string, unknown>): InboundWhatsAppMessa
 
   const listReply =
     Boolean(asRecord(topInteractive?.list_reply)?.id) || Boolean(asRecord(nestedInteractive?.list_reply)?.id);
-  const buttonReply =
-    Boolean(buttonPayload) &&
-    !listReply &&
-    (Boolean(topButton) ||
-      Boolean(nestedButton) ||
-      Boolean(asRecord(topInteractive?.button_reply)) ||
-      Boolean(asRecord(nestedInteractive?.button_reply)));
+  const hasButtonChrome =
+    Boolean(topButton) ||
+    Boolean(nestedButton) ||
+    Boolean(asRecord(topInteractive?.button_reply)) ||
+    Boolean(asRecord(nestedInteractive?.button_reply));
+  const buttonReply = hasButtonChrome && !listReply;
 
-  const textBody =
-    readString(raw, ["text"]) ??
-    readNonEmpty(asRecord(nestedMessage?.text)?.body) ??
+  const buttonTitle =
     readNonEmpty(topButton?.text) ??
     readNonEmpty(nestedButton?.text) ??
     readNonEmpty(asRecord(topInteractive?.button_reply)?.title) ??
@@ -193,6 +190,9 @@ function parseInboundMessage(raw: Record<string, unknown>): InboundWhatsAppMessa
     readNonEmpty(asRecord(topInteractive?.list_reply)?.title) ??
     readNonEmpty(asRecord(nestedInteractive?.list_reply)?.title) ??
     null;
+  const rawText =
+    readString(raw, ["text"]) ?? readNonEmpty(asRecord(nestedMessage?.text)?.body) ?? null;
+  const textBody = buttonTitle ?? rawText;
 
   const contacts = asArray(parseJsonValue(raw.contacts));
   const contact = asRecord(contacts[0]);

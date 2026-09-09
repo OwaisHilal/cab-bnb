@@ -24,6 +24,13 @@ describe("parseSelectVendorTapText", () => {
     assert.equal(parseSelectVendorTapText("Select"), null)
     assert.equal(parseSelectVendorTapText(""), null)
   })
+
+  it("extracts Select {vendor} from WhatsApp quoted quick-reply text", () => {
+    assert.equal(
+      parseSelectVendorTapText("Your Kashmir cab quotes are in. -- Select Aala Cabs"),
+      "Select Aala Cabs",
+    )
+  })
 })
 
 describe("matchUniqueSelectVendorSnapshot", () => {
