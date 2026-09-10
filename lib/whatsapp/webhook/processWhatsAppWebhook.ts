@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { after } from "next/server";
-import { processDueJobs } from "@/lib/jobs/processDueJobs";
+import { drainDueJobs } from "@/lib/jobs/drainDueJobs";
 import { phoneLast4 } from "@/lib/utils/phone";
 import { stripE164Plus } from "@/lib/msg91/pure";
 import { enqueueWebhookAction } from "./enqueueWebhookAction";
@@ -85,10 +85,10 @@ export async function processWhatsAppWebhook(
  */
 export async function drainWhatsAppWebhookJobs(supabase: SupabaseClient): Promise<void> {
   try {
-    const jobs = await processDueJobs(supabase);
+    const jobs = await drainDueJobs(supabase);
     console.info("[whatsapp webhook] jobs", jobs);
   } catch (error) {
-    console.error("[whatsapp webhook] processDueJobs failed", error);
+    console.error("[whatsapp webhook] drainDueJobs failed", error);
   }
 }
 

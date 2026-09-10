@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "npx --yes tsx --test features/booking-request/resolveTripStartDate.test.ts lib/jobs/localJobHandlerTypes.test.ts lib/otp/sendQuotesEnqueue.test.ts lib/msg91-sim/*.test.ts lib/msg91/pure.test.ts lib/msg91/groupApi.test.ts lib/msg91/useApprovedTemplates.test.ts lib/sms/pure.test.ts lib/drivers/vendorPhone.test.ts lib/whatsapp/quoteChoiceTemplate.test.ts lib/whatsapp/tokenPaymentLink.test.ts lib/whatsapp/balancePaymentLink.test.ts lib/whatsapp/paymentReport.test.ts lib/whatsapp/rideGroup.test.ts lib/whatsapp/resolveWhatsAppSendPath.test.ts lib/whatsapp/webhook/parseMsg91Webhook.test.ts lib/whatsapp/webhook/resolveSelectVendorTap.test.ts",
+    "test": "npx --yes tsx --test features/booking-request/resolveTripStartDate.test.ts lib/jobs/localJobHandlerTypes.test.ts lib/jobs/hobbyCronSchedule.test.ts lib/jobs/drainDueJobs.test.ts lib/otp/sendQuotesEnqueue.test.ts lib/msg91-sim/*.test.ts lib/msg91/pure.test.ts lib/msg91/groupApi.test.ts lib/msg91/useApprovedTemplates.test.ts lib/sms/pure.test.ts lib/drivers/vendorPhone.test.ts lib/whatsapp/quoteChoiceTemplate.test.ts lib/whatsapp/tokenPaymentLink.test.ts lib/whatsapp/balancePaymentLink.test.ts lib/whatsapp/paymentReport.test.ts lib/whatsapp/rideGroup.test.ts lib/whatsapp/resolveWhatsAppSendPath.test.ts lib/whatsapp/webhook/parseMsg91Webhook.test.ts lib/whatsapp/webhook/resolveSelectVendorTap.test.ts",
     "db:reset": "supabase db reset",
     "db:seed": "node scripts/apply-seed.mjs",
     "db:templates": "node scripts/apply-whatsapp-templates-migration.mjs",

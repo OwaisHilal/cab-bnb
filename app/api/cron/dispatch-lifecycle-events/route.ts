@@ -3,11 +3,11 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk } from "@/lib/api/errors";
 
 /**
- * Checklist 3.8: worker endpoint invoked on a schedule by a cron scheduler,
- * secured via CRON_SECRET (same pattern as app/api/cron/dispatch-jobs/
- * route.ts). Invokes the `dispatch-lifecycle-events` Edge Function, which
- * sends any due `booking_lifecycle_events` row directly — this does not go
- * through `job_queue`.
+ * Checklist 3.8: worker endpoint invoked on a schedule by pg_cron (every
+ * 15 min) with a Hobby-safe daily Vercel Cron safety net. Secured via
+ * CRON_SECRET. Invokes `dispatch-lifecycle-events`, which sends any due
+ * `booking_lifecycle_events` row directly — this does not go through
+ * `job_queue`.
  */
 async function handleDispatch(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;

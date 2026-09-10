@@ -1,8 +1,9 @@
-import { NextRequest } from "next/server";
+import { after, NextRequest } from "next/server";
 import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { checkAdminAuth } from "@/lib/api/adminAuth";
 import { jsonError, jsonOk, jsonValidationError } from "@/lib/api/errors";
+import { drainDueJobs } from "@/lib/jobs/drainDueJobs";
 
 const correctSchema = z.object({
   parsed_driver_name: z.string().min(1),
@@ -79,5 +80,12 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<"/api/admin/
     return jsonError(500, `Failed to enqueue send_confirmation_card job: ${jobEnqueueError.message}`);
   }
 
+  after(async () => {
+    try {
+      await drainDueJobs(supabase);
+    } catch (error) {
+      console.error("[admin driver-details] drainDueJobs failed", error);
+    }
+  });
   return jsonOk({ driver_detail_submission: updated });
 }

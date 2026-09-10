@@ -3,11 +3,10 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk } from "@/lib/api/errors";
 
 /**
- * Plan §9 / Phase 3 final pass: worker endpoint invoked every 10 minutes by
- * a cron scheduler, secured via CRON_SECRET (same pattern as
- * app/api/cron/expire-stale-quotes/route.ts). Invokes the
- * `vendor-reply-timeouts` Edge Function, which escalates bookings still
- * waiting on a vendor's `DRIVER:` reply past SLA — this does not go
+ * Plan §9 / Phase 3 final pass: worker endpoint invoked every 10 minutes
+ * by pg_cron, with a Hobby-safe daily Vercel Cron safety net. Secured via
+ * CRON_SECRET. Invokes `vendor-reply-timeouts`, which escalates bookings
+ * still waiting on a vendor's `DRIVER:` reply past SLA — this does not go
  * through `job_queue`.
  */
 async function handleDispatch(request: NextRequest) {

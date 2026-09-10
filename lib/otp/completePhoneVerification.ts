@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { processDueJobs } from "@/lib/jobs/processDueJobs";
+import { drainDueJobs } from "@/lib/jobs/drainDueJobs";
 import { SEND_QUOTES_JOB_TYPE } from "@/lib/jobs/localJobHandlerTypes";
 import {
   QUOTE_SEND_ELIGIBLE_STATUSES,
@@ -133,7 +133,7 @@ export async function completePhoneVerification(
       }
 
       try {
-        const jobs = await processDueJobs(supabase, { jobTypes: [SEND_QUOTES_JOB_TYPE] });
+        const jobs = await drainDueJobs(supabase, { jobTypes: [SEND_QUOTES_JOB_TYPE] });
         console.info("[quotes send] jobs", jobs);
       } catch (error) {
         console.info(

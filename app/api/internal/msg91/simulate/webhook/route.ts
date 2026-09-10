@@ -9,7 +9,7 @@ import {
 } from "@/lib/msg91-sim/webhookPayload"
 import { persistWebhookEvent } from "@/lib/msg91-sim/webhooks"
 import { fillSimulatedButtonPayload } from "@/lib/msg91-sim/fillSimulatedButtonPayload"
-import { processDueJobs } from "@/lib/jobs/processDueJobs"
+import { drainDueJobs } from "@/lib/jobs/drainDueJobs"
 import { parseInboundAction } from "@/lib/whatsapp/webhook/parseInboundAction"
 import { parseMsg91Webhook } from "@/lib/whatsapp/webhook/parseMsg91Webhook"
 import { resolveSelectVendorTap } from "@/lib/whatsapp/webhook/resolveSelectVendorTap"
@@ -90,10 +90,10 @@ export async function POST(request: NextRequest) {
     let jobs: { claimed: number; succeeded: number; failed: number } | null = null
     if (webhookStatus < 400 && shouldProcessJobs) {
       try {
-        jobs = await processDueJobs(supabase)
+        jobs = await drainDueJobs(supabase)
       } catch (error) {
         jobs = { claimed: 0, succeeded: 0, failed: 0 }
-        console.error("[msg91 simulate] processDueJobs failed", error)
+        console.error("[msg91 simulate] drainDueJobs failed", error)
       }
     }
 

@@ -65,8 +65,10 @@ const backoffRunAfter = (attempts: number): string => {
 }
 
 /**
- * Next fallback when `job-queue-worker` is not deployed. Claims the same
- * `job_queue` rows the Edge worker would, then runs the local handlers.
+ * Next fallback when `job-queue-worker` is not deployed. Claims one batch
+ * of due `job_queue` rows (FIFO among `run_after <= now()`), then runs the
+ * local handlers. Callers that enqueue work should use `drainDueJobs`,
+ * which loops this until the queue is quiet.
  */
 export const processDueJobs = async (
   supabase: SupabaseClient,

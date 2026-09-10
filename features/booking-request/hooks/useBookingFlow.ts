@@ -37,9 +37,9 @@ import type { PhoneEmailResumePayload } from "@/lib/phone-email/resumeState";
 type PrimaryScreen = "home" | "booking" | "profile";
 type Overlay = "none" | "sheet" | "dispatch" | "otp" | "mock_chat";
 
-// Retries for ~90s: covers one app/api/cron/dispatch-jobs cycle (every 1
-// min, per vercel.json) plus buffer for send-quotes to actually deliver,
-// without polling indefinitely if something upstream is stuck.
+// Retries for ~90s: send_quotes drains on OTP verify; this buffer covers
+// MSG91 delivery + snapshot write, without polling indefinitely if
+// something upstream is stuck.
 const QUOTE_POLL_INTERVAL_MS = 3000;
 const QUOTE_POLL_MAX_ATTEMPTS = 30;
 

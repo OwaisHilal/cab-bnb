@@ -33,10 +33,11 @@ interface JobQueueRow {
 }
 
 /**
- * Checklist 3.10: central job_queue dispatcher, invoked every 1 min by
- * app/api/cron/dispatch-jobs/route.ts (Checklist 2.8). Registers a handler
- * for every job_type currently enqueued anywhere in the app (WhatsApp
- * webhook, `finalize_quote_booking` RPC, admin driver-details correction
+ * Checklist 3.10: central job_queue dispatcher. Invoked on demand from
+ * Next.js `drainDueJobs` (webhook/OTP/admin), by an INSERT trigger via
+ * pg_net, and every 1 min by pg_cron. Registers a handler for every
+ * job_type currently enqueued anywhere in the app (WhatsApp webhook,
+ * `finalize_quote_booking` RPC, admin driver-details correction
  * route) — anything with no registered handler is left `queued` untouched
  * rather than mis-marked as failed.
  *
@@ -51,8 +52,8 @@ interface JobQueueRow {
  * was needed there for this phase.
  *
  * `dispatch_lifecycle_events`/`expire_stale_quotes`/`vendor_reply_timeouts`
- * are cron-triggered directly (Checklist 3.8/3.9, Plan §9, via their own
- * Edge Function + Next cron route) rather than through `job_queue` —
+ * are scheduled by pg_cron (and a daily Vercel Cron safety net) via their
+ * own Edge Function + Next cron route rather than through `job_queue` —
  * they're still registered here so a manually-enqueued job of any of
  * those types is also handled.
  */
