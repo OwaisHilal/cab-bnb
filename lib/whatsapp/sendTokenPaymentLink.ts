@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { stripE164Plus } from "@/lib/msg91/pure"
 import { TOKEN_LOCK_AMOUNT } from "@/lib/whatsapp/formatInr"
 import { ensureMessageTemplates } from "@/lib/whatsapp/messageTemplateStore"
-import { sendWhatsAppPaymentLinkMessageWithHeaderRetry } from "@/lib/whatsapp/sendOutbound"
+import { sendWhatsAppPaymentLinkMessageWithHeaderRetry, sendWhatsAppTextMessage } from "@/lib/whatsapp/sendOutbound"
 import {
   TOKEN_LOCK_PAYMENT_TEMPLATE_KEY,
   buildTokenPaymentLinkCopy,
@@ -82,11 +82,16 @@ export const handleSendTokenPaymentLink = async (
     throw new Error("send_token_payment_link requires quote_snapshot_id")
   }
 
-  // DEBUG (session fdcd5f): one-line, unambiguous proof of what this exact
-  // running deployment sees for the diagnostic flag. Remove once the
-  // Vercel env/deploy timing question is resolved.
+  // DEBUG (session fdcd5f): confirmed via runtime log that this flag reads
+  // "1" correctly on Production. Re-enabling the swap branch below so the
+  // rest of the send pipeline (intent bookkeeping, message log insert,
+  // wa_message_id handling) can be exercised without going through the
+  // Cashfree-blocked payment_link call, to check for any other bugs.
+  // Remove this flag + branch once that check is done.
+  const DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK = process.env.DEBUG_TOKEN_PAY_SEND_TEXT_INSTEAD?.trim() === "1"
   console.info("[debug env check]", {
     debugFlagRaw: JSON.stringify(process.env.DEBUG_TOKEN_PAY_SEND_TEXT_INSTEAD ?? null),
+    diagnosticMode: DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK,
     vercelDeploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,
     vercelGitCommitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
   })
@@ -154,18 +159,33 @@ export const handleSendTokenPaymentLink = async (
     return
   }
 
-  const sendResult = await sendWhatsAppPaymentLinkMessageWithHeaderRetry({
-    toE164: touristPhone,
-    bodyText: copy.bodyText,
-    footerText: copy.footerText,
-    headerImageUrl: headerImageUrl || undefined,
-    items: [{ name: copy.itemName, amount: copy.amountInr, quantity: copy.quantity }],
-    crqid,
+  const sendResult = DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK
+    ? await sendWhatsAppTextMessage(
+        touristPhone,
+        `[DIAGNOSTIC] Pipeline reached send step for ${vendor?.business_name ?? "vendor"}. crqid: ${crqid}`,
+      )
+    : await sendWhatsAppPaymentLinkMessageWithHeaderRetry({
+        toE164: touristPhone,
+        bodyText: copy.bodyText,
+        footerText: copy.footerText,
+        headerImageUrl: headerImageUrl || undefined,
+        items: [{ name: copy.itemName, amount: copy.amountInr, quantity: copy.quantity }],
+        crqid,
+      })
+
+  console.info("[token pay] send result", {
+    quoteSnapshotId,
+    diagnosticMode: DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK,
+    success: sendResult.success,
+    configured: sendResult.configured,
+    error: sendResult.error ?? null,
+    waMessageId: sendResult.waMessageId ?? null,
   })
 
   if (!sendResult.success) {
-    console.error("[token pay] payment_link send failed", {
+    console.error("[token pay] send failed", {
       quoteSnapshotId,
+      diagnosticMode: DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK,
       configured: sendResult.configured,
       error: sendResult.error ?? null,
     })
@@ -176,7 +196,11 @@ export const handleSendTokenPaymentLink = async (
         .eq("id", crqid)
         .in("status", ["pending", "sent"])
     }
-    throw new Error(`Failed to send ₹99 payment link: ${sendResult.error}`)
+    throw new Error(
+      DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK
+        ? `Failed to send diagnostic text: ${sendResult.error}`
+        : `Failed to send ₹99 payment link: ${sendResult.error}`,
+    )
   }
 
   if (intentReady) {
