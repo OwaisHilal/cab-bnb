@@ -5,11 +5,22 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { stripE164Plus } from "@/lib/msg91/pure"
 import { TOKEN_LOCK_AMOUNT } from "@/lib/whatsapp/formatInr"
 import { ensureMessageTemplates } from "@/lib/whatsapp/messageTemplateStore"
-import { sendWhatsAppPaymentLinkMessageWithHeaderRetry } from "@/lib/whatsapp/sendOutbound"
+import {
+  sendWhatsAppPaymentLinkMessageWithHeaderRetry,
+  sendWhatsAppTextMessage,
+} from "@/lib/whatsapp/sendOutbound"
 import {
   TOKEN_LOCK_PAYMENT_TEMPLATE_KEY,
   buildTokenPaymentLinkCopy,
 } from "@/lib/whatsapp/tokenPaymentLink"
+
+// DEBUG (session fdcd5f): temporary diagnostic switch. When "1", the
+// ₹99 Cashfree payment_link send is swapped for a plain session text
+// message so we can tell whether the webhook → job pipeline reaches the
+// send step at all, independent of the payment_link/Cashfree API itself.
+// Remove this flag + branch once the payment-link silence bug is closed.
+const DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK =
+  process.env.DEBUG_TOKEN_PAY_SEND_TEXT_INSTEAD?.trim() === "1"
 
 export interface SendTokenPaymentLinkPayload {
   quote_snapshot_id: string
@@ -82,6 +93,10 @@ export const handleSendTokenPaymentLink = async (
     throw new Error("send_token_payment_link requires quote_snapshot_id")
   }
 
+  // #region agent log
+  fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fdcd5f'},body:JSON.stringify({sessionId:'fdcd5f',runId:'diagnostic-swap',hypothesisId:'H_job_start',location:'lib/whatsapp/sendTokenPaymentLink.ts:handleSendTokenPaymentLink:entry',message:'job handler started',data:{quoteSnapshotId,diagnosticMode:DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
+
   await ensureMessageTemplates(supabase)
 
   const { data: snapshot, error: snapshotError } = await supabase
@@ -96,6 +111,11 @@ export const handleSendTokenPaymentLink = async (
   if (!snapshot) throw new Error(`quote_snapshot ${quoteSnapshotId} not found`)
 
   const row = snapshot as unknown as QuoteSnapshotRow
+
+  // #region agent log
+  fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fdcd5f'},body:JSON.stringify({sessionId:'fdcd5f',runId:'diagnostic-swap',hypothesisId:'H_early_exit',location:'lib/whatsapp/sendTokenPaymentLink.ts:handleSendTokenPaymentLink:snapshot-loaded',message:'snapshot loaded',data:{quoteSnapshotId,quoteStatus:row.status},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
+
   if (row.status === "finalized" || row.status === "lost" || row.status === "expired") {
     console.info("[token pay] skipped closed quote", { quoteSnapshotId, quoteStatus: row.status })
     return
@@ -145,18 +165,32 @@ export const handleSendTokenPaymentLink = async (
     return
   }
 
-  const sendResult = await sendWhatsAppPaymentLinkMessageWithHeaderRetry({
-    toE164: touristPhone,
-    bodyText: copy.bodyText,
-    footerText: copy.footerText,
-    headerImageUrl: headerImageUrl || undefined,
-    items: [{ name: copy.itemName, amount: copy.amountInr, quantity: copy.quantity }],
-    crqid,
-  })
+  // #region agent log
+  fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fdcd5f'},body:JSON.stringify({sessionId:'fdcd5f',runId:'diagnostic-swap',hypothesisId:'H_pre_send',location:'lib/whatsapp/sendTokenPaymentLink.ts:handleSendTokenPaymentLink:pre-send',message:'about to send',data:{quoteSnapshotId,crqid,intentReady,diagnosticMode:DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
+
+  const sendResult = DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK
+    ? await sendWhatsAppTextMessage(
+        touristPhone,
+        `[DIAGNOSTIC] Pipeline reached send step for ${vendor?.business_name ?? "your vendor"}. crqid: ${crqid}`,
+      )
+    : await sendWhatsAppPaymentLinkMessageWithHeaderRetry({
+        toE164: touristPhone,
+        bodyText: copy.bodyText,
+        footerText: copy.footerText,
+        headerImageUrl: headerImageUrl || undefined,
+        items: [{ name: copy.itemName, amount: copy.amountInr, quantity: copy.quantity }],
+        crqid,
+      })
+
+  // #region agent log
+  fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fdcd5f'},body:JSON.stringify({sessionId:'fdcd5f',runId:'diagnostic-swap',hypothesisId:'H_send_result',location:'lib/whatsapp/sendTokenPaymentLink.ts:handleSendTokenPaymentLink:post-send',message:'send result',data:{quoteSnapshotId,diagnosticMode:DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK,success:sendResult.success,configured:sendResult.configured,error:sendResult.error??null,waMessageId:sendResult.waMessageId??null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
 
   if (!sendResult.success) {
     console.error("[token pay] payment_link send failed", {
       quoteSnapshotId,
+      diagnosticMode: DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK,
       configured: sendResult.configured,
       error: sendResult.error ?? null,
     })
