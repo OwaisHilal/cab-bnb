@@ -51,9 +51,6 @@ export async function processWhatsAppWebhook(
         resolvedFromTitle: action.type === "book_token" && !message.buttonPayload,
         waMessageId: message.waMessageId,
       });
-      // #region agent log
-      fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fdcd5f'},body:JSON.stringify({sessionId:'fdcd5f',runId:'diagnostic-swap',hypothesisId:'H_webhook_reached',location:'lib/whatsapp/webhook/processWhatsAppWebhook.ts:processWhatsAppWebhook:inbound',message:'inbound webhook message parsed',data:{last4:phoneLast4(message.fromPhone),actionType:action.type,hasButtonPayload:Boolean(message.buttonPayload),waMessageId:message.waMessageId??null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion agent log
       await enqueueWebhookAction(supabase, action, message);
     } catch (error) {
       console.error("[whatsapp webhook] failed to process inbound message", error);
@@ -90,9 +87,6 @@ export async function drainWhatsAppWebhookJobs(supabase: SupabaseClient): Promis
   try {
     const jobs = await drainDueJobs(supabase);
     console.info("[whatsapp webhook] jobs", jobs);
-    // #region agent log
-    fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fdcd5f'},body:JSON.stringify({sessionId:'fdcd5f',runId:'diagnostic-swap',hypothesisId:'H_job_drained',location:'lib/whatsapp/webhook/processWhatsAppWebhook.ts:drainWhatsAppWebhookJobs',message:'jobs drained',data:jobs,timestamp:Date.now()})}).catch(()=>{});
-    // #endregion agent log
   } catch (error) {
     console.error("[whatsapp webhook] drainDueJobs failed", error);
   }
