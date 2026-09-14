@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk } from "@/lib/api/errors";
-import { reconcilePendingCashfreePaymentLinks } from "@/lib/cashfree/reconcile";
 import { drainDueJobs } from "@/lib/jobs/drainDueJobs";
 
 /**
@@ -42,18 +41,7 @@ async function handleDispatch(request: NextRequest) {
     );
   }
 
-  // Best-effort missed-webhook catch-up for Cashfree Payment Links — see
-  // docs/cashfree-payment-links-workaround.md "Missed-webhook safety net".
-  // Never let a reconciliation failure fail the whole daily cron.
-  let cashfreeReconcile;
-  try {
-    cashfreeReconcile = await reconcilePendingCashfreePaymentLinks(supabase);
-  } catch (caught) {
-    console.error("[dispatch-jobs] cashfree reconcile failed", caught);
-    cashfreeReconcile = { checked: 0, confirmed: 0, errors: 1 };
-  }
-
-  return jsonOk({ ...jobs, cashfreeReconcile });
+  return jsonOk({ ...jobs });
 }
 
 export async function GET(request: NextRequest) {

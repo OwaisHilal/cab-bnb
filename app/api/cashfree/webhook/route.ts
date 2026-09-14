@@ -1,29 +1,27 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest } from "next/server";
-import { after } from "next/server";
 import { jsonError, jsonOk } from "@/lib/api/errors";
 import { CASHFREE_PAYMENT_LINK_EVENT_TYPE, parseCashfreePaymentLinkWebhook, verifyCashfreeWebhookSignature } from "@/lib/cashfree/pure";
 import type { CashfreePaymentLinkWebhookData } from "@/lib/cashfree/types";
-import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { confirmPaymentByCrqid, drainWhatsAppWebhookJobs } from "@/lib/whatsapp/webhook/processWhatsAppWebhook";
-import type { InboundWhatsAppPayment } from "@/lib/whatsapp/webhook/types";
+import { phoneLast4 } from "@/lib/utils/phone";
 
 // Signature verification uses node:crypto's timingSafeEqual, unavailable on the Edge runtime.
 export const runtime = "nodejs";
 
-const TERMINAL_UNPAID_LINK_STATUSES = new Set(["cancelled", "canceled", "expired"]);
-
 /**
- * Cashfree Payment Links webhook — confirms the ₹99 token payments created
- * by lib/whatsapp/sendTokenPaymentLink.ts via lib/cashfree/client.ts. This
- * is a separate provider/endpoint from MSG91's own "On Payment Report
- * Received" webhook (app/api/whatsapp/webhook), used because MSG91's
- * `payment_link` interactive type is blocked by Cashfree's
- * `s2s_enabled_not_approved`. See docs/cashfree-payment-links-workaround.md.
+ * Cashfree Payment Links webhook — audit logging only.
  *
- * Always ack 200 once the signature verifies — Cashfree retries on non-2xx,
- * and downstream failures are logged rather than turned into retriable 5xxs
- * once we've already recorded the event.
+ * lib/whatsapp/sendTokenPaymentLink.ts sends every ₹99 token payment as the
+ * same dashboard-created static Cashfree link (both MSG91's `payment_link`
+ * interactive type and Cashfree's own dynamic Payment Links create-API are
+ * blocked on this merchant account — see
+ * docs/cashfree-payment-links-workaround.md). Because the link is shared
+ * across every booking, a webhook event here cannot be safely mapped back to
+ * one specific quote/booking, so this route only verifies and logs events
+ * for manual/ops review — it does not call confirmPaymentByCrqid or enqueue
+ * any follow-up job. Payment confirmation for a booking must be done
+ * manually until a per-booking correlation mechanism exists again.
+ *
+ * Always ack 200 once the signature verifies — Cashfree retries on non-2xx.
  */
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
@@ -51,13 +49,6 @@ export async function POST(request: NextRequest) {
     return jsonError(400, "Request body must be valid JSON");
   }
 
-  let supabase;
-  try {
-    supabase = getSupabaseServiceRoleClient();
-  } catch (error) {
-    return jsonError(500, error instanceof Error ? error.message : "Supabase is not configured");
-  }
-
   const parsed = parseCashfreePaymentLinkWebhook(payload);
 
   if (!parsed) {
@@ -71,58 +62,21 @@ export async function POST(request: NextRequest) {
   }
 
   if (parsed.data) {
-    try {
-      await handlePaymentLinkEvent(supabase, parsed.data, parsed.eventTime);
-    } catch (error) {
-      console.error("[cashfree webhook] failed to process payment link event", error);
-    }
+    logPaymentLinkEvent(parsed.data, parsed.eventTime);
   } else {
     console.error("[cashfree webhook] PAYMENT_LINK_EVENT missing usable data", { rawBody });
   }
 
-  after(() => drainWhatsAppWebhookJobs(supabase));
-
-  return jsonOk({ received: true, provider: "cashfree" });
+  return jsonOk({ received: true, provider: "cashfree", audited: true });
 }
 
-async function handlePaymentLinkEvent(
-  supabase: SupabaseClient,
-  data: CashfreePaymentLinkWebhookData,
-  eventTime: string,
-): Promise<void> {
-  const status = data.linkStatus.trim().toUpperCase();
-
-  if (status === "PARTIALLY_PAID") {
-    // link_partial_payments is set to false when we create the link, so a
-    // partial payment here means a merchant-dashboard-level setting
-    // overrode it. Surface it, but don't finalize the booking on a partial.
-    console.error("[cashfree webhook] unexpected PARTIALLY_PAID despite link_partial_payments=false", {
-      linkId: data.linkId,
-      linkAmount: data.linkAmount ?? null,
-      linkAmountPaid: data.linkAmountPaid ?? null,
-    });
-    return;
-  }
-
-  // Deliberately omit customerNumber: Cashfree reports a bare 10-digit
-  // number while whatsapp_payment_intents.customer_number is stored without
-  // "+" but with the "91" country code, and confirmPaymentByCrqid's mismatch
-  // guard would otherwise reject a legitimate confirmation. `crqid` (the
-  // Cashfree link_id) is already the authoritative correlation key.
-  const payment: InboundWhatsAppPayment = {
-    crqid: data.linkId,
-    customerNumber: null,
-    paymentStatus: status,
-    paid: status === "PAID",
-    waMessageId: null,
-    timestamp: eventTime,
-    rawStatus: status,
-  };
-
-  if (!payment.paid && !TERMINAL_UNPAID_LINK_STATUSES.has(status.toLowerCase())) {
-    // Some other non-terminal, non-paid status (e.g. ACTIVE) — nothing to do yet.
-    return;
-  }
-
-  await confirmPaymentByCrqid(supabase, payment);
+function logPaymentLinkEvent(data: CashfreePaymentLinkWebhookData, eventTime: string): void {
+  console.info("[cashfree webhook] payment link event (audit only — manual confirmation required)", {
+    linkId: data.linkId,
+    status: data.linkStatus,
+    linkAmount: data.linkAmount ?? null,
+    linkAmountPaid: data.linkAmountPaid ?? null,
+    customerPhoneLast4: data.customerPhone ? phoneLast4(data.customerPhone) : null,
+    eventTime,
+  });
 }

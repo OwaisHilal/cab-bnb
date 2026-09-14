@@ -3,14 +3,23 @@ import { describe, it } from "node:test"
 
 import { TOKEN_LOCK_AMOUNT } from "./formatInr"
 import {
+  STATIC_TOKEN_PAYMENT_LINK_URL,
   TOKEN_LOCK_PAYMENT_FOOTER,
   TOKEN_LOCK_PAYMENT_MAX_DAY_LINES,
   TOKEN_LOCK_PAYMENT_TEMPLATE_KEY,
+  TOKEN_PAY_BUTTON_TITLE,
   WHATSAPP_INTERACTIVE_BODY_MAX,
   buildTokenLockItemName,
   buildTokenPaymentLinkCopy,
   formatTokenPaymentDayLines,
 } from "./tokenPaymentLink"
+
+describe("static Cashfree token payment link", () => {
+  it("points at the dashboard-created static link with the expected button text", () => {
+    assert.equal(STATIC_TOKEN_PAYMENT_LINK_URL, "https://payments.cashfree.com/links/Cb0o4hnupupg_AAAAAAAVUJE")
+    assert.equal(TOKEN_PAY_BUTTON_TITLE, "Pay 99")
+  })
+})
 
 describe("token_lock_payment_v1 copy", () => {
   it("keeps footer and item name within MSG91 limits and carts exactly ₹99", () => {

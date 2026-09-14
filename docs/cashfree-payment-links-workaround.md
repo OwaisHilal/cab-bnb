@@ -1,4 +1,4 @@
-# Cashfree Payment Links workaround for the ₹99 token payment
+# Cashfree static-link workaround for the ₹99 token payment
 
 Companion to [`whatsapp-select-no-payment-link.md`](./whatsapp-select-no-payment-link.md) (that doc covers the
 inbound-webhook reachability bug; this one covers what happens once the tap *does* reach
@@ -6,21 +6,48 @@ inbound-webhook reachability bug; this one covers what happens once the tap *doe
 
 ## Why this exists
 
-MSG91's session `payment_link` interactive type (used previously by
-`lib/whatsapp/sendTokenPaymentLink.ts`) creates a Cashfree **Order** under the hood through
-Cashfree's Server-to-Server (S2S) Orders API. That API is blocked on this merchant account —
-every attempt fails with Cashfree error `s2s_enabled_not_approved`, confirmed via MSG91's real
-delivery report API (`scripts/msg91-whatsapp-report-ping.ts`), not just a client-side guess.
+Two separate Cashfree approval gates block every automated, per-booking payment-link path on
+this merchant account:
 
-Cashfree's separate **Payment Links API** (`POST /pg/links`) is a different product and is not
-affected by that block. The workaround: create the Cashfree Payment Link ourselves and deliver
-its URL as a plain WhatsApp button (MSG91's `cta_url` interactive type — a send path already
-proven to work for quote cards, buttons, and lists), instead of routing through MSG91's
-Cashfree-managed `payment_link` type at all.
+1. **MSG91's session `payment_link` interactive type** creates a Cashfree **Order** under the
+   hood through Cashfree's Server-to-Server (S2S) Orders API. Every attempt fails with Cashfree
+   error `s2s_enabled_not_approved`, confirmed via MSG91's real delivery report API
+   (`scripts/msg91-whatsapp-report-ping.ts`), not just a client-side guess.
+2. **Cashfree's own dynamic Payment Links create-API** (`POST /pg/links`) was tried next as a
+   direct workaround for (1) — it's a different Cashfree product, unaffected by
+   `s2s_enabled_not_approved`. In production it also failed, with a different Cashfree error:
+   `link_creation_api is not enabled or approved. Please reach out to care@cashfree.com.`
+   (`feature_not_enabled`). Confirmed via Vercel runtime logs
+   (`[token pay] cashfree link result { configured: true, success: false, error: "... PaymentLink_link_creation_api_failed ..." }`)
+   during a real WhatsApp tap — credentials were loaded correctly, Cashfree's API itself rejected
+   the call.
+
+Both gates require Cashfree merchant-account approval; neither can be worked around in code.
+**Current workaround:** send one dashboard-created static Cashfree Payment Link
+(`https://payments.cashfree.com/links/Cb0o4hnupupg_AAAAAAAVUJE`, exported as
+`STATIC_TOKEN_PAYMENT_LINK_URL` in `lib/whatsapp/tokenPaymentLink.ts`) for **every** ₹99 token
+payment, delivered as a plain WhatsApp button (MSG91's `cta_url` interactive type — the same send
+path already proven to work for quote cards, buttons, and lists).
 
 The balance (dynamic-amount) payment in `lib/whatsapp/sendBalancePaymentLink.ts` is **not**
 changed by this workaround and still goes through the old MSG91 `payment_link` flow — that will
-need Cashfree S2S approval (or a similar direct-Payment-Links treatment) in a later iteration.
+need Cashfree S2S approval in a later iteration.
+
+## Trade-off: no automated per-booking confirmation
+
+Because the link is shared across every booking, a Cashfree webhook event for it carries no
+unique per-booking identifier we control (`link_id` is the same static value every time). So:
+
+- `app/api/cashfree/webhook/route.ts` still verifies the HMAC signature and **logs** each
+  `PAYMENT_LINK_EVENT` (status, amount, last-4 of customer phone, event time) for manual/ops
+  review, but it does **not** call `confirmPaymentByCrqid` or enqueue any follow-up job from a
+  Cashfree event anymore.
+- Marking a booking as paid/locked after a ₹99 token payment on the static link requires a manual
+  step until a per-booking correlation mechanism exists again (e.g. Cashfree approves the
+  dynamic create-API, or a different provider supports per-link metadata).
+- MSG91's own "On Payment Report Received" webhook (`app/api/whatsapp/webhook`,
+  `confirmPaymentByCrqid` in `lib/whatsapp/webhook/processWhatsAppWebhook.ts`) is unrelated to
+  this and unaffected — it still confirms `lib/whatsapp/sendBalancePaymentLink.ts` payments.
 
 ## Flow
 
@@ -28,78 +55,47 @@ need Cashfree S2S approval (or a similar direct-Payment-Links treatment) in a la
 sequenceDiagram
     participant Tourist
     participant App as Our Backend
-    participant Cashfree
     participant Msg91 as MSG91
+    participant Cashfree
 
     Tourist->>App: Taps "Select {vendor}"
-    App->>App: upsert whatsapp_payment_intents (crqid)
-    App->>Cashfree: POST /pg/links link_id=crqid, amount=99
-    Cashfree-->>App: link_url
-    App->>Msg91: cta_url message, button "Pay 99" -> link_url
+    App->>App: upsert whatsapp_payment_intents (audit only)
+    App->>Msg91: cta_url message, button "Pay 99" -> STATIC_TOKEN_PAYMENT_LINK_URL
     Msg91-->>Tourist: WhatsApp button message
-    Tourist->>Cashfree: Pays via hosted link page
-    Cashfree->>App: POST /api/cashfree/webhook (PAYMENT_LINK_EVENT, link_id=crqid)
-    App->>App: mark intent paid, enqueue finalize_booking
+    Tourist->>Cashfree: Pays via the shared hosted link page
+    Cashfree--)App: POST /api/cashfree/webhook (PAYMENT_LINK_EVENT) — logged for audit only
+    Note over App: No automatic booking finalization from this event
 ```
 
 ## Code map
 
 | Piece | File |
 |-------|------|
-| Cashfree API body/signature/webhook-parse (pure) | `lib/cashfree/pure.ts` |
-| Cashfree client (reads env credentials) | `lib/cashfree/client.ts` |
-| ₹99 token send (creates the link, sends the CTA button) | `lib/whatsapp/sendTokenPaymentLink.ts` |
+| Cashfree webhook signature verification + payload parsing (pure) | `lib/cashfree/pure.ts` |
+| ₹99 token send (sends the static-link CTA button) | `lib/whatsapp/sendTokenPaymentLink.ts` |
+| Static link URL + button text constants | `lib/whatsapp/tokenPaymentLink.ts` (`STATIC_TOKEN_PAYMENT_LINK_URL`, `TOKEN_PAY_BUTTON_TITLE`) |
 | WhatsApp CTA-URL send (already existed, unchanged) | `sendWhatsAppCtaUrlMessage` in `lib/whatsapp/sendOutbound.ts` |
-| Cashfree webhook route | `app/api/cashfree/webhook/route.ts` |
-| Shared payment-confirmation logic (source-agnostic) | `confirmPaymentByCrqid` in `lib/whatsapp/webhook/processWhatsAppWebhook.ts` |
-| Audit columns | `whatsapp_payment_intents.cf_link_id`, `.payment_link_url` (migration `0020`) |
+| Cashfree webhook route (audit-only logging) | `app/api/cashfree/webhook/route.ts` |
+| Shared payment-confirmation logic (used only by MSG91's own webhook now) | `confirmPaymentByCrqid` in `lib/whatsapp/webhook/processWhatsAppWebhook.ts` |
+| Audit columns (unused for correlation now, kept for history) | `whatsapp_payment_intents.cf_link_id`, `.payment_link_url` (migration `0020`, notes corrected in `0021`) |
 
-`whatsapp_payment_intents.crqid` (already the intent's own id) is reused as Cashfree's
-`link_id`, so both MSG91's own payment webhook and the new Cashfree webhook correlate through
-the same column without a schema change to the correlation key itself.
+`whatsapp_payment_intents` rows are still created/updated per tap for audit purposes
+(`status`, `payment_link_url`, `wa_message_id`), but `crqid` is no longer sent to Cashfree as a
+`link_id` — there is nothing to create anymore.
 
 ## Required environment variables
 
 | Var | Notes |
 |-----|-------|
-| `CASHFREE_APP_ID` | From the Cashfree merchant dashboard → Developers → API Keys. |
-| `CASHFREE_SECRET_KEY` | Same page. A `cfsk_ma_prod...` key is a **production** secret — every call moves real money. Also doubles as the webhook HMAC secret (Cashfree's documented scheme). |
-| `CASHFREE_API_VERSION` | Optional. Defaults to `2025-01-01` in code. |
-| `CASHFREE_WEBHOOK_NOTIFY_URL` | Full public HTTPS URL of `app/api/cashfree/webhook`. Passed per-link as `link_meta.notify_url` — **no separate dashboard registration is needed** for Payment Links webhooks (unlike MSG91's Webhook (New), which is dashboard-configured). Cashfree cannot reach `localhost`; use a tunnel or the deployed Vercel URL, same caveat as `MSG91_WEBHOOK_SECRET` in the companion doc. |
+| `CASHFREE_SECRET_KEY` | Only needed if `app/api/cashfree/webhook` stays deployed to verify + log events for the static link. Also the webhook HMAC secret (Cashfree's documented scheme). A `cfsk_ma_prod...` key is a **production** secret. |
 
-There is no sandbox toggle — only production Cashfree keys exist for this merchant, so
-`lib/cashfree/pure.ts` always targets `https://api.cashfree.com`.
+`CASHFREE_APP_ID`, `CASHFREE_API_VERSION`, and `CASHFREE_WEBHOOK_NOTIFY_URL` are **no longer
+used by any code** — they were only needed for the dynamic create/get API calls that are now
+removed. If the static link's Cashfree dashboard settings have webhook notifications configured
+(a dashboard-level setting, not something our code registers per-link), `app/api/cashfree/webhook`
+will still receive and log events using only `CASHFREE_SECRET_KEY`.
 
-## Cashfree API calls
-
-### Create a link — `POST https://api.cashfree.com/pg/links`
-
-Headers: `x-client-id`, `x-client-secret`, `x-api-version`, `content-type: application/json`.
-
-```json
-{
-  "link_id": "<whatsapp_payment_intents.id>",
-  "link_amount": 99,
-  "link_currency": "INR",
-  "link_purpose": "Token lock - <vendor name>",
-  "link_partial_payments": false,
-  "link_expiry_time": "2026-09-15T16:49:00+05:30",
-  "customer_details": { "customer_phone": "7889418789" },
-  "link_notify": { "send_sms": false, "send_email": false },
-  "link_notes": { "quote_snapshot_id": "...", "purpose": "token_lock" },
-  "link_meta": { "notify_url": "https://<host>/api/cashfree/webhook" }
-}
-```
-
-Response includes `link_url` (sent to the customer) and `cf_link_id` (Cashfree's own numeric id,
-stored for audit in `payment_link_url`/`cf_link_id`).
-
-### Get an existing link — `GET https://api.cashfree.com/pg/links/{link_id}`
-
-Same headers, no body. Used only as a fallback when create returns a duplicate-`link_id` error
-(see Edge cases below).
-
-### Webhook — `POST <CASHFREE_WEBHOOK_NOTIFY_URL>`
+## Cashfree webhook — audit logging only
 
 Headers: `x-webhook-signature`, `x-webhook-timestamp`.
 
@@ -107,7 +103,7 @@ Headers: `x-webhook-signature`, `x-webhook-timestamp`.
 {
   "data": {
     "cf_link_id": 14796319,
-    "link_id": "<intent id>",
+    "link_id": "<the static link's Cashfree id — same for every payment>",
     "link_status": "PAID",
     "link_amount": "99.00",
     "link_amount_paid": "99.00",
@@ -128,62 +124,20 @@ Signature verification (`verifyCashfreeWebhookSignature` in `lib/cashfree/pure.t
 Must run on the Node.js runtime (`export const runtime = "nodejs"`) — `timingSafeEqual` is not
 available on the Edge runtime.
 
-## Edge cases handled
+On a valid, parseable `PAYMENT_LINK_EVENT`, the route logs
+`[cashfree webhook] payment link event (audit only — manual confirmation required)` with the
+status, amounts, last-4 of the customer phone, and event time, then acks `200`. It does not write
+to `whatsapp_payment_intents`, does not call `confirmPaymentByCrqid`, and does not enqueue any
+job — see "Trade-off" above.
 
-- **Duplicate `link_id` on retry.** If a previous `send_token_payment_link` attempt crashed
-  after Cashfree accepted the create call but before we recorded the result, a retry reuses the
-  same `link_id` (= `crqid`) and Cashfree rejects the create with a duplicate error.
-  `createCashfreePaymentLinkWithConfig` detects this and falls back to `GET /pg/links/{link_id}`
-  to recover the existing `link_url` instead of failing the whole send.
-- **Partial payments.** `link_partial_payments: false` is always sent. If Cashfree still reports
-  `PARTIALLY_PAID` (e.g. a merchant-dashboard setting overrides the per-link flag), the webhook
-  route logs it as an error and does **not** finalize the booking — only `PAID` finalizes.
-- **Stale/expired links.** `link_expiry_time` defaults to now + 24h, matching the WhatsApp 24h
-  customer-care session window this message is already required to be sent inside. `CANCELLED`
-  and `EXPIRED` webhook events mark the intent terminal-unpaid via the same logic MSG91's own
-  payment webhook already used (`TERMINAL_UNPAID_STATUSES`).
-- **Duplicate/out-of-order webhook delivery.** Cashfree retries on non-2xx and can send more than
-  one `PAID` event. `confirmPaymentByCrqid` reuses the existing `markIntentPaid` (`already_paid`
-  short-circuit) and `shouldEnqueuePaidFollowup` guards, so a second `PAID` event never
-  double-enqueues `finalize_booking`.
-- **Invalid/missing signature.** Rejected with 401/400 before any DB write or job enqueue.
-- **Phone number format.** Cashfree's `customer_phone` must be a bare 10-digit number; our
-  storage is E.164 (or already `+`-stripped). `toCashfreeCustomerPhone` strips both the leading
-  `+` and a leading `91` country-code pair.
-- **Unknown future webhook `type` values.** Acked with 200 and ignored rather than erroring, in
-  case Cashfree adds new Payment Links event types later.
+## Known gaps / fast-follows
+
+- **No automated confirmation.** This is the main open item — see "Trade-off" above. Revisit once
+  Cashfree approves either gate, or another provider supports per-booking metadata.
+- **Deno Edge Function copy is stale.** `supabase/functions/_shared/handlers/sendTokenPaymentLink.ts`
+  still contains an older copy of this flow and was not updated in this pass — it's only relevant
+  if the `job-queue-worker` Edge Function is ever deployed and enabled (it currently fails to
+  invoke, so the Next.js in-process fallback in `lib/jobs/processDueJobs.ts` handles every job
+  today). Port the same static-link change there before relying on that Edge Function.
 - **Secret hygiene.** `CASHFREE_SECRET_KEY` is never logged or echoed in thrown errors or HTTP
   responses.
-
-## Missed-webhook safety net
-
-Webhook delivery is not 100% guaranteed. If Cashfree's webhook never arrives (network blip,
-`CASHFREE_WEBHOOK_NOTIFY_URL` briefly down, etc.), a paid intent can stay stuck in `sent`.
-`lib/cashfree/reconcile.ts` (`reconcilePendingCashfreePaymentLinks`) polls
-`GET /pg/links/{link_id}` for any `whatsapp_payment_intents` row with `purpose = 'token_lock'`,
-`status = 'sent'`, and `payment_link_url` set, whose `updated_at` is older than
-`CASHFREE_RECONCILE_STALE_MINUTES` (10), and reconciles it the same way the webhook route would.
-
-This is wired into the existing once-daily `dispatch-jobs` Vercel Cron
-(`app/api/cron/dispatch-jobs/route.ts`) rather than its own schedule — Vercel's Hobby plan caps
-cron frequency at once per day (see `lib/jobs/hobbyCronSchedule.ts`), so a tight 10-minute loop
-isn't deployable here without upgrading the plan. In practice this means the catch-up runs once a
-day as a backstop; real-time confirmation still comes from `app/api/cashfree/webhook`. If the
-project moves to a paid Vercel plan, point a more frequent cron at a route that calls
-`reconcilePendingCashfreePaymentLinks` directly for tighter recovery.
-
-There is also a Deno Edge Function copy of the old flow at
-`supabase/functions/_shared/handlers/sendTokenPaymentLink.ts` (used only if the `job-queue-worker`
-Edge Function is ever deployed and enabled — it currently fails to invoke, so the Next.js
-in-process fallback in `lib/jobs/processDueJobs.ts` handles every job today). That copy was
-**not** updated to the Cashfree Payment Links flow in this pass; if `job-queue-worker` is deployed
-later, port the same change there or the S2S-blocked bug will resurface for jobs claimed by that
-Edge Function.
-
-## Rollout notes
-
-There is no Cashfree sandbox for this merchant — only production keys. The very first real call
-to `createCashfreePaymentLink` (however it is triggered — a manual smoke test or the first real
-customer tap) moves real money. Before relying on this in front of customers, do one manual
-smoke test: create a link, pay it yourself, and confirm `app/api/cashfree/webhook` receives and
-signature-verifies the `PAID` event before trusting the automated path.

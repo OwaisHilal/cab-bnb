@@ -2,17 +2,16 @@ import "server-only"
 
 import { randomUUID } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { createCashfreePaymentLink, getCashfreeWebhookNotifyUrl } from "@/lib/cashfree/client"
 import { stripE164Plus } from "@/lib/msg91/pure"
 import { TOKEN_LOCK_AMOUNT } from "@/lib/whatsapp/formatInr"
 import { ensureMessageTemplates } from "@/lib/whatsapp/messageTemplateStore"
 import { sendWhatsAppCtaUrlMessage } from "@/lib/whatsapp/sendOutbound"
 import {
+  STATIC_TOKEN_PAYMENT_LINK_URL,
   TOKEN_LOCK_PAYMENT_TEMPLATE_KEY,
+  TOKEN_PAY_BUTTON_TITLE,
   buildTokenPaymentLinkCopy,
 } from "@/lib/whatsapp/tokenPaymentLink"
-
-const TOKEN_PAY_BUTTON_TITLE = "Pay 99"
 
 export interface SendTokenPaymentLinkPayload {
   quote_snapshot_id: string
@@ -72,11 +71,15 @@ const isMissingRelation = (error: { code?: string; message: string }): boolean =
 }
 
 /**
- * After the tourist taps Select {vendor} (`BOOK_TOKEN::`), create a
- * Cashfree Payment Link for the fixed ₹99 token directly (bypassing MSG91's
- * blocked `payment_link` interactive type — see
- * docs/cashfree-payment-links-workaround.md) and deliver it via a WhatsApp
- * CTA-URL button. Must stay inside the 24h session opened by quote_choice_v1.
+ * After the tourist taps Select {vendor} (`BOOK_TOKEN::`), send the fixed
+ * ₹99 token payment link as a WhatsApp CTA-URL button. Both of Cashfree's
+ * automated integration paths are blocked on this merchant account — MSG91's
+ * `payment_link` interactive type (`s2s_enabled_not_approved`) and Cashfree's
+ * own dynamic Payment Links create-API (`link_creation_api is not enabled or
+ * approved`) — so every token payment reuses one dashboard-created static
+ * link (STATIC_TOKEN_PAYMENT_LINK_URL) instead of a per-booking one. See
+ * docs/cashfree-payment-links-workaround.md. Must stay inside the 24h
+ * session opened by quote_choice_v1.
  */
 export const handleSendTokenPaymentLink = async (
   supabase: SupabaseClient,
@@ -136,7 +139,7 @@ export const handleSendTokenPaymentLink = async (
   })
 
   const customerNumber = stripE164Plus(touristPhone)
-  const { crqid, intentReady, alreadySent } = await upsertPaymentIntent(supabase, {
+  const { crqid, intentReady } = await upsertPaymentIntent(supabase, {
     quoteSnapshotId,
     tripRequestId: trip.id,
     touristId: trip.tourist_id,
@@ -144,52 +147,14 @@ export const handleSendTokenPaymentLink = async (
     customerNumber,
   })
 
-  if (alreadySent) {
-    console.info("[token pay] skipped already sent", { quoteSnapshotId })
-    return
-  }
-
-  // Cashfree's Orders/S2S API (which MSG91's `payment_link` interactive type
-  // uses) is blocked on this merchant account (`s2s_enabled_not_approved`).
-  // Workaround: create a Cashfree Payment Link directly (unaffected by that
-  // block) and deliver it as a plain WhatsApp CTA-URL button instead — see
-  // docs/cashfree-payment-links-workaround.md.
-  const linkResult = await createCashfreePaymentLink({
-    linkId: crqid,
-    amountInr: TOKEN_LOCK_AMOUNT,
-    customerPhoneE164: touristPhone,
-    purpose: `Token lock - ${vendor?.business_name ?? "Vendor"}`,
-    notifyUrl: getCashfreeWebhookNotifyUrl(),
-    notes: { quote_snapshot_id: quoteSnapshotId, purpose: "token_lock" },
-  })
-
-  console.info("[token pay] cashfree link result", {
-    quoteSnapshotId,
-    success: linkResult.success,
-    configured: linkResult.configured,
-    error: linkResult.error ?? null,
-  })
-
-  if (!linkResult.success || !linkResult.linkUrl) {
-    console.error("[token pay] cashfree link creation failed", {
-      quoteSnapshotId,
-      configured: linkResult.configured,
-      error: linkResult.error ?? null,
-    })
-    if (intentReady) {
-      await supabase
-        .from("whatsapp_payment_intents")
-        .update({ last_error: linkResult.error ?? "cashfree_link_create_failed" })
-        .eq("id", crqid)
-        .in("status", ["pending", "sent"])
-    }
-    throw new Error(`Failed to create ₹99 Cashfree payment link: ${linkResult.error}`)
-  }
-
+  // Every token payment reuses one dashboard-created static Cashfree link
+  // (see the doc comment above) — repeated taps on an open quote resend the
+  // same CTA rather than being skipped, since there is no per-booking link
+  // to create or reuse.
   const sendResult = await sendWhatsAppCtaUrlMessage(
     touristPhone,
     copy.bodyText,
-    { title: TOKEN_PAY_BUTTON_TITLE, url: linkResult.linkUrl },
+    { title: TOKEN_PAY_BUTTON_TITLE, url: STATIC_TOKEN_PAYMENT_LINK_URL },
     { footerText: copy.footerText },
   )
 
@@ -224,8 +189,7 @@ export const handleSendTokenPaymentLink = async (
         status: "sent",
         wa_message_id: sendResult.waMessageId ?? null,
         last_error: null,
-        cf_link_id: linkResult.cfLinkId != null ? String(linkResult.cfLinkId) : null,
-        payment_link_url: linkResult.linkUrl,
+        payment_link_url: STATIC_TOKEN_PAYMENT_LINK_URL,
       })
       .eq("id", crqid)
       .neq("status", "paid")
@@ -247,8 +211,7 @@ export const handleSendTokenPaymentLink = async (
       sendMethod: "session_cta_url",
       crqid,
       amountInr: TOKEN_LOCK_AMOUNT,
-      linkUrl: linkResult.linkUrl,
-      cfLinkId: linkResult.cfLinkId ?? null,
+      linkUrl: STATIC_TOKEN_PAYMENT_LINK_URL,
     }),
     wa_message_id: sendResult.waMessageId ?? null,
     wa_status: "sent",
@@ -270,7 +233,7 @@ const upsertPaymentIntent = async (
     vendorId: string
     customerNumber: string
   },
-): Promise<{ crqid: string; intentReady: boolean; alreadySent: boolean }> => {
+): Promise<{ crqid: string; intentReady: boolean }> => {
   const { data: existing, error: existingError } = await supabase
     .from("whatsapp_payment_intents")
     .select("id, status")
@@ -282,18 +245,14 @@ const upsertPaymentIntent = async (
 
   if (existingError) {
     if (isMissingRelation(existingError)) {
-      return { crqid: input.quoteSnapshotId, intentReady: false, alreadySent: false }
+      return { crqid: input.quoteSnapshotId, intentReady: false }
     }
     throw new Error(`Failed to load payment intent: ${existingError.message}`)
   }
 
   const existingRow = existing as PaymentIntentRow | null
   if (existingRow?.id) {
-    return {
-      crqid: existingRow.id,
-      intentReady: true,
-      alreadySent: existingRow.status === "sent",
-    }
+    return { crqid: existingRow.id, intentReady: true }
   }
 
   const intentId = randomUUID()
@@ -311,7 +270,7 @@ const upsertPaymentIntent = async (
 
   if (insertError) {
     if (isMissingRelation(insertError)) {
-      return { crqid: input.quoteSnapshotId, intentReady: false, alreadySent: false }
+      return { crqid: input.quoteSnapshotId, intentReady: false }
     }
     if (insertError.code === DUPLICATE_KEY_ERROR_CODE) {
       const { data: raced } = await supabase
@@ -323,11 +282,11 @@ const upsertPaymentIntent = async (
         .limit(1)
         .maybeSingle()
       if (raced?.id) {
-        return { crqid: raced.id as string, intentReady: true, alreadySent: false }
+        return { crqid: raced.id as string, intentReady: true }
       }
     }
     throw new Error(`Failed to create payment intent: ${insertError.message}`)
   }
 
-  return { crqid: intentId, intentReady: true, alreadySent: false }
+  return { crqid: intentId, intentReady: true }
 }

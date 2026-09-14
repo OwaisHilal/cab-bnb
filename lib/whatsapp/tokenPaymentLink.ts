@@ -8,6 +8,17 @@ export const TOKEN_PAY_PAYLOAD_PREFIX = "TOKEN_PAY::"
 export const WHATSAPP_INTERACTIVE_BODY_MAX = 1024
 export const TOKEN_LOCK_PAYMENT_MAX_DAY_LINES = 31
 
+// Cashfree's dynamic Payment Links create-API (`POST /pg/links`) returns
+// `link_creation_api is not enabled or approved` on this merchant account —
+// a separate approval gate from the `s2s_enabled_not_approved` block on
+// MSG91's `payment_link` interactive type. Neither is something our code can
+// fix. Until Cashfree approves one of those APIs, every ₹99 token payment
+// uses this single dashboard-created Payment Link, delivered as a plain
+// WhatsApp CTA-URL button. See docs/cashfree-payment-links-workaround.md.
+export const STATIC_TOKEN_PAYMENT_LINK_URL =
+  "https://payments.cashfree.com/links/Cb0o4hnupupg_AAAAAAAVUJE"
+export const TOKEN_PAY_BUTTON_TITLE = "Pay 99"
+
 export interface TokenPaymentLinkTrip {
   tripDays: number
   paxCount: number
