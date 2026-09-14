@@ -33,20 +33,16 @@ export const MSG91_WHATSAPP_OUTBOUND_URL =
   "https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/";
 
 /**
- * DEBUG (session fdcd5f): MSG91 support explicitly corrected us — for the
- * Cashfree-backed `payment_link` send specifically, `control.msg91.com` is
- * the wrong host and `api.msg91.com` is the correct one (confirmed via
- * WhatsApp support chat, 2026-09-14). `control.msg91.com` still accepts and
- * queues the message (hence our prior `success: true` logs), but the
- * Cashfree S2S order-creation step behind it fails with
- * `s2s_enabled_not_approved` — this appears to be a wrong-gateway issue,
- * not an actual Cashfree account permission gap. Every other MSG91
- * WhatsApp send (text/button/list/image/template) keeps using
- * `control.msg91.com` since those are independently confirmed working
- * (e.g. the diagnostic text send earlier in this debug session).
+ * DEBUG (session fdcd5f): REJECTED hypothesis, kept here only as a record.
+ * MSG91 support suggested `api.msg91.com` instead of `control.msg91.com`
+ * for `payment_link` sends. Tested 2026-09-14 16:15 — `[payment link] send
+ * url` log confirmed the request actually hit `api.msg91.com`, and MSG91's
+ * delivery report still showed the identical `s2s_enabled_not_approved`
+ * Cashfree failure 5s later. The host is not the cause; `api.msg91.com`
+ * and `control.msg91.com` behave identically here. Reverted to
+ * `MSG91_WHATSAPP_OUTBOUND_URL` for payment_link too.
  */
-export const MSG91_WHATSAPP_PAYMENT_LINK_URL =
-  "https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/";
+export const MSG91_WHATSAPP_PAYMENT_LINK_URL = MSG91_WHATSAPP_OUTBOUND_URL;
 
 export function stripE164Plus(phone: string): string {
   return phone.trim().replace(/^\+/, "");

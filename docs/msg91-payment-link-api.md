@@ -7,19 +7,21 @@ the ₹99 token-lock "Pay Now" WhatsApp message after a tourist taps
 ## API endpoint
 
 ```
-POST https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/
+POST https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/
 ```
 
-- **Updated 2026-09-14:** MSG91 support explicitly confirmed `api.msg91.com`
-  is the correct host for `payment_link` sends — `control.msg91.com` (used
-  for every other session/interactive send type below) accepts and queues
-  the message fine but does not correctly carry through the Cashfree S2S
-  order-creation step, producing `s2s_enabled_not_approved` even though the
-  message itself reports `success: true`. See `MSG91_WHATSAPP_PAYMENT_LINK_URL`
-  in [`lib/msg91/pure.ts`](../lib/msg91/pure.ts).
-- Every other message type on this generic outbound endpoint (buttons,
-  lists, CTA-URL messages, images, session text) still uses
-  `control.msg91.com` — those are independently confirmed working.
+- `control.msg91.com` is our chosen host; MSG91 docs also list `api.msg91.com`
+  as an alias for the same endpoint.
+- **Tested and ruled out (2026-09-14):** MSG91 support suggested
+  `api.msg91.com` might fix the `payment_link` failure below. We tried it —
+  confirmed via a `[payment link] send url` log that the request genuinely
+  hit `api.msg91.com` — but MSG91's delivery report still showed the
+  identical `s2s_enabled_not_approved` Cashfree error seconds later. The two
+  hosts behave identically for this endpoint; the host was never the cause.
+- This is MSG91's generic **session/interactive send** endpoint — the same
+  URL is reused for buttons, lists, CTA-URL messages, and images. The message
+  *type* is what changes (see `content_type` / `interactive.type` below), not
+  the URL.
 - Only usable inside the 24-hour WhatsApp customer-care session window (the
   window opened here by the `quote_choice_v2` template message).
 
