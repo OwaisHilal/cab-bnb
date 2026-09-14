@@ -154,9 +154,17 @@ export const handleSendTokenPaymentLink = async (
     customerNumber,
   })
 
-  if (alreadySent) {
+  // DEBUG (session fdcd5f): lets you re-test send_token_payment_link on a
+  // quote you've already tapped "Select" on, instead of requiring a brand
+  // new trip request each time. Remove this flag + branch once testing is
+  // done.
+  const DEBUG_ALLOW_RESEND = process.env.DEBUG_TOKEN_PAY_ALLOW_RESEND?.trim() === "1"
+  if (alreadySent && !DEBUG_ALLOW_RESEND) {
     console.info("[token pay] skipped already sent", { quoteSnapshotId })
     return
+  }
+  if (alreadySent && DEBUG_ALLOW_RESEND) {
+    console.info("[token pay] already sent, but DEBUG_TOKEN_PAY_ALLOW_RESEND=1 — resending", { quoteSnapshotId })
   }
 
   const sendResult = DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK
