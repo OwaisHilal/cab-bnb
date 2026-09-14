@@ -6,6 +6,7 @@ import {
   DEFAULT_MSG91_OTP_TEMPLATE_NAME,
   MSG91_WHATSAPP_BULK_URL,
   MSG91_WHATSAPP_OUTBOUND_URL,
+  MSG91_WHATSAPP_PAYMENT_LINK_URL,
   buildMsg91AuthOtpComponents,
   buildMsg91BulkTemplateBody,
   buildMsg91InteractiveButtonBody,
@@ -380,7 +381,7 @@ describe("sendMsg91PaymentLinkWithConfig", () => {
       },
       { authKey: "key", integratedNumber: "919111111111" },
       async (url, init) => {
-        assert.equal(url, MSG91_WHATSAPP_OUTBOUND_URL);
+        assert.equal(url, MSG91_WHATSAPP_PAYMENT_LINK_URL);
         const parsed = JSON.parse(String(init?.body)) as Record<string, unknown>;
         assert.equal(parsed.CRQID, "pay-1");
         const interactive = parsed.interactive as { type: string };

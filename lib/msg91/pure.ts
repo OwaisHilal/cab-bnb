@@ -32,6 +32,22 @@ export const MSG91_WHATSAPP_BULK_URL =
 export const MSG91_WHATSAPP_OUTBOUND_URL =
   "https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/";
 
+/**
+ * DEBUG (session fdcd5f): MSG91 support explicitly corrected us — for the
+ * Cashfree-backed `payment_link` send specifically, `control.msg91.com` is
+ * the wrong host and `api.msg91.com` is the correct one (confirmed via
+ * WhatsApp support chat, 2026-09-14). `control.msg91.com` still accepts and
+ * queues the message (hence our prior `success: true` logs), but the
+ * Cashfree S2S order-creation step behind it fails with
+ * `s2s_enabled_not_approved` — this appears to be a wrong-gateway issue,
+ * not an actual Cashfree account permission gap. Every other MSG91
+ * WhatsApp send (text/button/list/image/template) keeps using
+ * `control.msg91.com` since those are independently confirmed working
+ * (e.g. the diagnostic text send earlier in this debug session).
+ */
+export const MSG91_WHATSAPP_PAYMENT_LINK_URL =
+  "https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/";
+
 export function stripE164Plus(phone: string): string {
   return phone.trim().replace(/^\+/, "");
 }
@@ -413,9 +429,12 @@ export async function sendMsg91PaymentLinkWithConfig(
   fetchImpl: typeof fetch = fetch,
 ): Promise<Msg91SendResult> {
   const integratedNumber = credentials?.integratedNumber?.trim() ?? "";
+  // #region agent log
+  fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fdcd5f'},body:JSON.stringify({sessionId:'fdcd5f',runId:'api-host-fix',hypothesisId:'H1_wrong_gateway',location:'lib/msg91/pure.ts:sendMsg91PaymentLinkWithConfig',message:'payment_link send url',data:{url:MSG91_WHATSAPP_PAYMENT_LINK_URL,crqid:input.crqid??null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion agent log
   return postMsg91Request(
     credentials,
-    MSG91_WHATSAPP_OUTBOUND_URL,
+    MSG91_WHATSAPP_PAYMENT_LINK_URL,
     {
       body: JSON.stringify(buildMsg91PaymentLinkBody(input, integratedNumber)),
     },
