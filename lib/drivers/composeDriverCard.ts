@@ -18,8 +18,12 @@ const DEMO_DRIVER_PHOTOS: Record<string, string> = {
 }
 
 const loadLocalFile = async (relativePath: string): Promise<Buffer | null> => {
+  const scoped = relativePath.replace(/^[/\\]+/, "").replace(/^public[/\\]+/, "")
+  if (!scoped || scoped.includes("..") || path.isAbsolute(scoped)) {
+    return null
+  }
   try {
-    return await fs.readFile(path.join(process.cwd(), relativePath))
+    return await fs.readFile(path.join(process.cwd(), "public", scoped))
   } catch {
     return null
   }

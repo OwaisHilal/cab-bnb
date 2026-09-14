@@ -67,7 +67,7 @@ export async function processWhatsAppWebhook(
 
   for (const payment of payments) {
     try {
-      await processPaymentReport(supabase, payment);
+      await confirmPaymentByCrqid(supabase, payment);
     } catch (error) {
       console.error("[whatsapp webhook] failed to process payment report", error);
     }
@@ -92,7 +92,16 @@ export async function drainWhatsAppWebhookJobs(supabase: SupabaseClient): Promis
   }
 }
 
-async function processPaymentReport(
+/**
+ * Source-agnostic payment confirmation: looks up `whatsapp_payment_intents`
+ * by `crqid`, resolves token_lock vs balance, enqueues the matching
+ * follow-up job, and marks the intent paid/terminal. Both the MSG91
+ * "On Payment Report Received" webhook and the Cashfree Payment Links
+ * webhook (app/api/cashfree/webhook) call this with their own
+ * `InboundWhatsAppPayment`-shaped event so booking-finalization logic isn't
+ * duplicated between the two payment providers.
+ */
+export async function confirmPaymentByCrqid(
   supabase: SupabaseClient,
   payment: InboundWhatsAppPayment,
 ): Promise<void> {

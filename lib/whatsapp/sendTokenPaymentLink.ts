@@ -2,14 +2,17 @@ import "server-only"
 
 import { randomUUID } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { createCashfreePaymentLink, getCashfreeWebhookNotifyUrl } from "@/lib/cashfree/client"
 import { stripE164Plus } from "@/lib/msg91/pure"
 import { TOKEN_LOCK_AMOUNT } from "@/lib/whatsapp/formatInr"
 import { ensureMessageTemplates } from "@/lib/whatsapp/messageTemplateStore"
-import { sendWhatsAppPaymentLinkMessageWithHeaderRetry, sendWhatsAppTextMessage } from "@/lib/whatsapp/sendOutbound"
+import { sendWhatsAppCtaUrlMessage } from "@/lib/whatsapp/sendOutbound"
 import {
   TOKEN_LOCK_PAYMENT_TEMPLATE_KEY,
   buildTokenPaymentLinkCopy,
 } from "@/lib/whatsapp/tokenPaymentLink"
+
+const TOKEN_PAY_BUTTON_TITLE = "Pay 99"
 
 export interface SendTokenPaymentLinkPayload {
   quote_snapshot_id: string
@@ -69,9 +72,11 @@ const isMissingRelation = (error: { code?: string; message: string }): boolean =
 }
 
 /**
- * After the tourist taps Select {vendor} (`BOOK_TOKEN::`), send MSG91
- * WhatsApp Payments `payment_link` for a fixed ₹99 Cashfree cart.
- * Must stay inside the 24h session opened by quote_choice_v1.
+ * After the tourist taps Select {vendor} (`BOOK_TOKEN::`), create a
+ * Cashfree Payment Link for the fixed ₹99 token directly (bypassing MSG91's
+ * blocked `payment_link` interactive type — see
+ * docs/cashfree-payment-links-workaround.md) and deliver it via a WhatsApp
+ * CTA-URL button. Must stay inside the 24h session opened by quote_choice_v1.
  */
 export const handleSendTokenPaymentLink = async (
   supabase: SupabaseClient,
@@ -81,20 +86,6 @@ export const handleSendTokenPaymentLink = async (
   if (!quoteSnapshotId) {
     throw new Error("send_token_payment_link requires quote_snapshot_id")
   }
-
-  // DEBUG (session fdcd5f): confirmed via runtime log that this flag reads
-  // "1" correctly on Production. Re-enabling the swap branch below so the
-  // rest of the send pipeline (intent bookkeeping, message log insert,
-  // wa_message_id handling) can be exercised without going through the
-  // Cashfree-blocked payment_link call, to check for any other bugs.
-  // Remove this flag + branch once that check is done.
-  const DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK = process.env.DEBUG_TOKEN_PAY_SEND_TEXT_INSTEAD?.trim() === "1"
-  console.info("[debug env check]", {
-    debugFlagRaw: JSON.stringify(process.env.DEBUG_TOKEN_PAY_SEND_TEXT_INSTEAD ?? null),
-    diagnosticMode: DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK,
-    vercelDeploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,
-    vercelGitCommitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
-  })
 
   await ensureMessageTemplates(supabase)
 
@@ -145,7 +136,6 @@ export const handleSendTokenPaymentLink = async (
   })
 
   const customerNumber = stripE164Plus(touristPhone)
-  const headerImageUrl = process.env.MSG91_PAYMENT_LINK_HEADER_IMAGE_URL?.trim()
   const { crqid, intentReady, alreadySent } = await upsertPaymentIntent(supabase, {
     quoteSnapshotId,
     tripRequestId: trip.id,
@@ -154,36 +144,57 @@ export const handleSendTokenPaymentLink = async (
     customerNumber,
   })
 
-  // DEBUG (session fdcd5f): lets you re-test send_token_payment_link on a
-  // quote you've already tapped "Select" on, instead of requiring a brand
-  // new trip request each time. Remove this flag + branch once testing is
-  // done.
-  const DEBUG_ALLOW_RESEND = process.env.DEBUG_TOKEN_PAY_ALLOW_RESEND?.trim() === "1"
-  if (alreadySent && !DEBUG_ALLOW_RESEND) {
+  if (alreadySent) {
     console.info("[token pay] skipped already sent", { quoteSnapshotId })
     return
   }
-  if (alreadySent && DEBUG_ALLOW_RESEND) {
-    console.info("[token pay] already sent, but DEBUG_TOKEN_PAY_ALLOW_RESEND=1 — resending", { quoteSnapshotId })
+
+  // Cashfree's Orders/S2S API (which MSG91's `payment_link` interactive type
+  // uses) is blocked on this merchant account (`s2s_enabled_not_approved`).
+  // Workaround: create a Cashfree Payment Link directly (unaffected by that
+  // block) and deliver it as a plain WhatsApp CTA-URL button instead — see
+  // docs/cashfree-payment-links-workaround.md.
+  const linkResult = await createCashfreePaymentLink({
+    linkId: crqid,
+    amountInr: TOKEN_LOCK_AMOUNT,
+    customerPhoneE164: touristPhone,
+    purpose: `Token lock - ${vendor?.business_name ?? "Vendor"}`,
+    notifyUrl: getCashfreeWebhookNotifyUrl(),
+    notes: { quote_snapshot_id: quoteSnapshotId, purpose: "token_lock" },
+  })
+
+  console.info("[token pay] cashfree link result", {
+    quoteSnapshotId,
+    success: linkResult.success,
+    configured: linkResult.configured,
+    error: linkResult.error ?? null,
+  })
+
+  if (!linkResult.success || !linkResult.linkUrl) {
+    console.error("[token pay] cashfree link creation failed", {
+      quoteSnapshotId,
+      configured: linkResult.configured,
+      error: linkResult.error ?? null,
+    })
+    if (intentReady) {
+      await supabase
+        .from("whatsapp_payment_intents")
+        .update({ last_error: linkResult.error ?? "cashfree_link_create_failed" })
+        .eq("id", crqid)
+        .in("status", ["pending", "sent"])
+    }
+    throw new Error(`Failed to create ₹99 Cashfree payment link: ${linkResult.error}`)
   }
 
-  const sendResult = DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK
-    ? await sendWhatsAppTextMessage(
-        touristPhone,
-        `[DIAGNOSTIC] Pipeline reached send step for ${vendor?.business_name ?? "vendor"}. crqid: ${crqid}`,
-      )
-    : await sendWhatsAppPaymentLinkMessageWithHeaderRetry({
-        toE164: touristPhone,
-        bodyText: copy.bodyText,
-        footerText: copy.footerText,
-        headerImageUrl: headerImageUrl || undefined,
-        items: [{ name: copy.itemName, amount: copy.amountInr, quantity: copy.quantity }],
-        crqid,
-      })
+  const sendResult = await sendWhatsAppCtaUrlMessage(
+    touristPhone,
+    copy.bodyText,
+    { title: TOKEN_PAY_BUTTON_TITLE, url: linkResult.linkUrl },
+    { footerText: copy.footerText },
+  )
 
   console.info("[token pay] send result", {
     quoteSnapshotId,
-    diagnosticMode: DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK,
     success: sendResult.success,
     configured: sendResult.configured,
     error: sendResult.error ?? null,
@@ -193,22 +204,17 @@ export const handleSendTokenPaymentLink = async (
   if (!sendResult.success) {
     console.error("[token pay] send failed", {
       quoteSnapshotId,
-      diagnosticMode: DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK,
       configured: sendResult.configured,
       error: sendResult.error ?? null,
     })
     if (intentReady) {
       await supabase
         .from("whatsapp_payment_intents")
-        .update({ last_error: sendResult.error ?? "payment_link_send_failed" })
+        .update({ last_error: sendResult.error ?? "cta_url_send_failed" })
         .eq("id", crqid)
         .in("status", ["pending", "sent"])
     }
-    throw new Error(
-      DEBUG_SEND_TEXT_INSTEAD_OF_PAYMENT_LINK
-        ? `Failed to send diagnostic text: ${sendResult.error}`
-        : `Failed to send ₹99 payment link: ${sendResult.error}`,
-    )
+    throw new Error(`Failed to send ₹99 payment link: ${sendResult.error}`)
   }
 
   if (intentReady) {
@@ -218,6 +224,8 @@ export const handleSendTokenPaymentLink = async (
         status: "sent",
         wa_message_id: sendResult.waMessageId ?? null,
         last_error: null,
+        cf_link_id: linkResult.cfLinkId != null ? String(linkResult.cfLinkId) : null,
+        payment_link_url: linkResult.linkUrl,
       })
       .eq("id", crqid)
       .neq("status", "paid")
@@ -236,10 +244,11 @@ export const handleSendTokenPaymentLink = async (
     body_snapshot: copy.bodyText,
     button_payload: JSON.stringify({
       templateKey: TOKEN_LOCK_PAYMENT_TEMPLATE_KEY,
-      sendMethod: "session_payment_link",
+      sendMethod: "session_cta_url",
       crqid,
       amountInr: TOKEN_LOCK_AMOUNT,
-      items: [{ name: copy.itemName, amount: copy.amountInr, quantity: copy.quantity }],
+      linkUrl: linkResult.linkUrl,
+      cfLinkId: linkResult.cfLinkId ?? null,
     }),
     wa_message_id: sendResult.waMessageId ?? null,
     wa_status: "sent",

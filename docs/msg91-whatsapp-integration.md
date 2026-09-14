@@ -198,12 +198,18 @@ Rules we follow:
 Flow:
 
 1. `BOOK_TOKEN::{quote_snapshot_id}` → job `send_token_payment_link`
-2. Guest pays Cashfree Pay Now → MSG91 payment webhook → `finalize_booking` (`token_99`)
+2. Guest pays via a directly-created Cashfree Payment Link → **Cashfree's own** Payment Links webhook (`app/api/cashfree/webhook`, not MSG91) → `finalize_booking` (`token_99`)
 3. Demo mock chat cannot render Cashfree; it shows `TOKEN_PAY::{quote_snapshot_id}` instead
 
-Catalog key: `token_lock_payment_v1` (`SESSION` / `session_payment_link`). Optional header image: `MSG91_PAYMENT_LINK_HEADER_IMAGE_URL`.
+Catalog key: `token_lock_payment_v1` (`SESSION` / `session_cta_url` as of Sep 2026). MSG91's
+`payment_link` interactive type (Cashfree Orders/S2S) is blocked on this merchant account
+(`s2s_enabled_not_approved`) — the ₹99 token now goes out as a plain `cta_url` button ("Pay 99")
+linking to a Cashfree Payment Link created directly via `lib/cashfree/client.ts`. See
+[`cashfree-payment-links-workaround.md`](./cashfree-payment-links-workaround.md). `MSG91_PAYMENT_LINK_HEADER_IMAGE_URL` no longer applies to this send (`cta_url` has no header).
 
-**On Payment Report Received is still required** for both the ₹99 token and the remaining-balance Pay Now. `COMPLETE_PAYMENT` / `BALANCE_PAY` / `TOKEN_PAY` buttons are demo-only.
+**On Payment Report Received is still required for the remaining-balance Pay Now** (unchanged,
+still MSG91 `payment_link`). The ₹99 token's payment confirmation instead comes from Cashfree's
+own webhook. `COMPLETE_PAYMENT` / `BALANCE_PAY` / `TOKEN_PAY` buttons are demo-only.
 
 ### 3.6 After token: guest ack, vendor UTILITY, remaining payment_link
 

@@ -4,6 +4,12 @@ Local debugging note for Kashmir BnB Cabs. This is the inbound-webhook problem, 
 
 **Companion:** webhook setup, payload shape, and the simulator live in [`msg91-whatsapp-integration.md`](./msg91-whatsapp-integration.md) §5b and §6.
 
+**Update (Sep 2026):** once the inbound webhook reachability problem below is fixed, the ₹99 send
+itself no longer uses MSG91's `payment_link` interactive type — that type's underlying Cashfree
+Orders/S2S API is blocked on this merchant account (`s2s_enabled_not_approved`). See
+[`cashfree-payment-links-workaround.md`](./cashfree-payment-links-workaround.md) for the
+direct-Cashfree-Payment-Links replacement now used by `lib/whatsapp/sendTokenPaymentLink.ts`.
+
 ---
 
 ## Symptom
@@ -167,8 +173,8 @@ Then you are **past** this doc’s root cause. Check in order:
 | Auth | `401 Invalid MSG91 webhook secret` or `500 Missing MSG91_WEBHOOK_SECRET` — header/env mismatch. 401 can pause the MSG91 webhook. |
 | `action: "unknown"` | No `BOOK_TOKEN::` payload and title fallback did not uniquely match a `sent`/`viewed` snapshot for that phone. Frozen template titles (e.g. button **Select Valley Rides** while the body lists Uber) can fail unique match. |
 | Duplicate skip | Same WAMID (`uuid`) already logged; second tap is ignored. |
-| Job error | `send_token_payment_link` fails: snapshot missing/finalized, or MSG91 `payment_link` error. |
-| 24h window | `payment_link` is session-only. A successful quote template send usually opens the window; SMS OTP alone does not. |
+| Job error | `send_token_payment_link` fails: snapshot missing/finalized, Cashfree Payment Link create error, or the `cta_url` send error. See [`cashfree-payment-links-workaround.md`](./cashfree-payment-links-workaround.md). |
+| 24h window | The `cta_url` button is session-only, same as the old `payment_link` type. A successful quote template send usually opens the window; SMS OTP alone does not. |
 
 ---
 
@@ -201,7 +207,7 @@ curl -sS -X POST http://localhost:3000/api/internal/msg91/simulate/webhook \
   }'
 ```
 
-A successful simulate should log `POST /api/whatsapp/webhook` and send the payment_link to that WhatsApp number. That proves the **job + MSG91 Payments** path. It does **not** prove live MSG91 Webhook (New) is pointed at your machine — only the tunnel/dashboard steps above do that.
+A successful simulate should log `POST /api/whatsapp/webhook` and send the ₹99 `cta_url` button (linking to a freshly-created Cashfree Payment Link) to that WhatsApp number. That proves the **job + Cashfree Payment Links + MSG91 send** path — see [`cashfree-payment-links-workaround.md`](./cashfree-payment-links-workaround.md). It does **not** prove live MSG91 Webhook (New) is pointed at your machine — only the tunnel/dashboard steps above do that.
 
 ---
 
@@ -213,7 +219,7 @@ A successful simulate should log `POST /api/whatsapp/webhook` and send the payme
 | MSG91 parse | `lib/whatsapp/webhook/parseMsg91Webhook.ts` |
 | `BOOK_TOKEN` / title fallback | `parseInboundAction.ts`, `resolveSelectVendorTap.ts` |
 | Enqueue | `lib/whatsapp/webhook/enqueueWebhookAction.ts` |
-| ₹99 send | `lib/whatsapp/sendTokenPaymentLink.ts` |
+| ₹99 send (Cashfree Payment Link + WhatsApp `cta_url`) | `lib/whatsapp/sendTokenPaymentLink.ts`, [`cashfree-payment-links-workaround.md`](./cashfree-payment-links-workaround.md) |
 | Simulator | `app/api/internal/msg91/simulate/webhook/route.ts` |
 
 ---
