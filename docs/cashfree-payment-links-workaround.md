@@ -1,5 +1,13 @@
 # Cashfree static-link workaround for the ₹99 token payment
 
+> **Superseded 2026-09-17.** Everything below describes the temporary static-link workaround.
+> It has been replaced by Cashfree PG Orders (`POST /pg/orders`), which restores automated
+> per-booking payment confirmation — see
+> [`2026-09-17-cashfree-pg-orders-integration.md`](./2026-09-17-cashfree-pg-orders-integration.md)
+> for the current architecture. Kept here as a historical record of why the static link existed
+> and what it traded away; do not use `STATIC_TOKEN_PAYMENT_LINK_URL` as a reference for new work
+> — it no longer exists in code.
+
 Companion to [`whatsapp-select-no-payment-link.md`](./whatsapp-select-no-payment-link.md) (that doc covers the
 inbound-webhook reachability bug; this one covers what happens once the tap *does* reach
 `send_token_payment_link`).

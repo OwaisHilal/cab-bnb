@@ -198,25 +198,31 @@ Rules we follow:
 Flow:
 
 1. `BOOK_TOKEN::{quote_snapshot_id}` → job `send_token_payment_link`
-2. Guest pays via the shared static Cashfree Payment Link → `app/api/cashfree/webhook` verifies
-   and **logs** the event for manual review only (no automated `finalize_booking`, see
-   [`cashfree-payment-links-workaround.md`](./cashfree-payment-links-workaround.md))
+2. Guest taps "Pay 99" → our own `/pay/token/<crqid>` page → Cashfree Checkout for a per-booking
+   Cashfree PG Order → `app/webhooks/cashfree` verifies the signed `PAYMENT_SUCCESS_WEBHOOK`,
+   matches it back to `whatsapp_payment_intents.cf_order_id`, and calls `confirmPaymentByCrqid`
+   to auto-finalize the booking (see [`cashfree-payment-links-workaround.md`](./cashfree-payment-links-workaround.md))
 3. Demo mock chat cannot render Cashfree; it shows `TOKEN_PAY::{quote_snapshot_id}` instead
 
 Catalog key: `token_lock_payment_v1` (`SESSION` / `session_cta_url` as of Sep 2026). MSG91's
 `payment_link` interactive type (Cashfree Orders/S2S) is blocked on this merchant account
-(`s2s_enabled_not_approved`), and a follow-up attempt to create per-booking links directly via
-Cashfree's own Payment Links API was also blocked (`link_creation_api is not enabled or
-approved`) — the ₹99 token now goes out as a plain `cta_url` button ("Pay 99") linking to one
-dashboard-created static Cashfree link for every booking (`STATIC_TOKEN_PAYMENT_LINK_URL` in
-`lib/whatsapp/tokenPaymentLink.ts`). See
-[`cashfree-payment-links-workaround.md`](./cashfree-payment-links-workaround.md). `MSG91_PAYMENT_LINK_HEADER_IMAGE_URL` no longer applies to this send (`cta_url` has no header).
+(`s2s_enabled_not_approved`), so the ₹99 token still goes out as a plain `cta_url` button
+("Pay 99") rather than MSG91's own payment_link type — but as of Sep 17 2026 it links to our
+own app-hosted `/pay/token/<crqid>` page (`buildTokenPaymentPageUrl` in
+`lib/whatsapp/tokenPaymentLink.ts`), which opens Cashfree's PG Orders (`POST /pg/orders`)
+Checkout for that specific booking. PG Orders is a different Cashfree product from Payment
+Links, so it is not affected by the `link_creation_api is not enabled or approved` block that
+forced a brief same-link-for-everyone workaround (see
+[`cashfree-payment-links-workaround.md`](./cashfree-payment-links-workaround.md) and
+[`2026-09-14-static-cashfree-link-rollback.md`](./2026-09-14-static-cashfree-link-rollback.md)
+for that history). `MSG91_PAYMENT_LINK_HEADER_IMAGE_URL` still does not apply to this send
+(`cta_url` has no header).
 
 **On Payment Report Received is still required for the remaining-balance Pay Now** (unchanged,
-still MSG91 `payment_link`). The ₹99 token has **no automated payment confirmation** right now —
-Cashfree's webhook for the shared static link is audit-only (see the doc above); confirming a
-token payment and unlocking a specific booking is a manual step until a per-booking correlation
-mechanism exists again. `COMPLETE_PAYMENT` / `BALANCE_PAY` / `TOKEN_PAY` buttons are demo-only.
+still MSG91 `payment_link`). The ₹99 token is confirmed by `app/webhooks/cashfree`
+(Cashfree's own PG Orders webhook), not by MSG91's "On Payment Report Received" —
+`confirmPaymentByCrqid` in `lib/whatsapp/webhook/processWhatsAppWebhook.ts` is shared by both
+paths. `COMPLETE_PAYMENT` / `BALANCE_PAY` / `TOKEN_PAY` buttons are demo-only.
 
 ### 3.6 After token: guest ack, vendor UTILITY, remaining payment_link
 

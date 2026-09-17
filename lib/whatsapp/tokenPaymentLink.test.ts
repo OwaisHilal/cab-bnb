@@ -3,7 +3,6 @@ import { describe, it } from "node:test"
 
 import { TOKEN_LOCK_AMOUNT } from "./formatInr"
 import {
-  STATIC_TOKEN_PAYMENT_LINK_URL,
   TOKEN_LOCK_PAYMENT_FOOTER,
   TOKEN_LOCK_PAYMENT_MAX_DAY_LINES,
   TOKEN_LOCK_PAYMENT_TEMPLATE_KEY,
@@ -11,12 +10,20 @@ import {
   WHATSAPP_INTERACTIVE_BODY_MAX,
   buildTokenLockItemName,
   buildTokenPaymentLinkCopy,
+  buildTokenPaymentPageUrl,
   formatTokenPaymentDayLines,
 } from "./tokenPaymentLink"
 
-describe("static Cashfree token payment link", () => {
-  it("points at the dashboard-created static link with the expected button text", () => {
-    assert.equal(STATIC_TOKEN_PAYMENT_LINK_URL, "https://payments.cashfree.com/links/Cb0o4hnupupg_AAAAAAAVUJE")
+describe("app-hosted token payment page URL", () => {
+  it("builds /pay/token/<crqid> off the given app base URL, trimming a trailing slash", () => {
+    assert.equal(
+      buildTokenPaymentPageUrl("https://cab-bnb.vercel.app", "crqid-123"),
+      "https://cab-bnb.vercel.app/pay/token/crqid-123",
+    )
+    assert.equal(
+      buildTokenPaymentPageUrl("https://cab-bnb.vercel.app/", "crqid-123"),
+      "https://cab-bnb.vercel.app/pay/token/crqid-123",
+    )
     assert.equal(TOKEN_PAY_BUTTON_TITLE, "Pay 99")
   })
 })

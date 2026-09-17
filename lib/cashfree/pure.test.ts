@@ -5,6 +5,7 @@ import { createHmac } from "node:crypto";
 import {
   CASHFREE_PAYMENT_LINK_EVENT_TYPE,
   parseCashfreePaymentLinkWebhook,
+  parseCashfreePaymentWebhook,
   verifyCashfreeWebhookSignature,
 } from "./pure";
 
@@ -98,5 +99,70 @@ describe("parseCashfreePaymentLinkWebhook", () => {
   it("returns null for a non-object payload", () => {
     assert.equal(parseCashfreePaymentLinkWebhook("not an object"), null);
     assert.equal(parseCashfreePaymentLinkWebhook(null), null);
+  });
+});
+
+describe("parseCashfreePaymentWebhook", () => {
+  it("parses a PAYMENT_SUCCESS_WEBHOOK event", () => {
+    const parsed = parseCashfreePaymentWebhook({
+      type: "PAYMENT_SUCCESS_WEBHOOK",
+      event_time: "2026-09-17T12:00:00+05:30",
+      data: {
+        order: { order_id: "crqid-123", order_amount: 99, cf_order_id: 2149460581 },
+        payment: {
+          payment_status: "SUCCESS",
+          payment_amount: 99,
+          cf_payment_id: 987654321,
+          bank_reference: "REF123",
+          payment_time: "2026-09-17T12:00:05+05:30",
+        },
+        customer_details: { customer_phone: "+917889418789" },
+      },
+    });
+
+    assert.ok(parsed);
+    assert.equal(parsed?.type, "PAYMENT_SUCCESS_WEBHOOK");
+    assert.equal(parsed?.data?.orderId, "crqid-123");
+    assert.equal(parsed?.data?.cfOrderId, "2149460581");
+    assert.equal(parsed?.data?.orderAmount, 99);
+    assert.equal(parsed?.data?.paymentStatus, "SUCCESS");
+    assert.equal(parsed?.data?.paymentAmount, 99);
+    assert.equal(parsed?.data?.cfPaymentId, "987654321");
+    assert.equal(parsed?.data?.bankReference, "REF123");
+    assert.equal(parsed?.data?.customerPhone, "+917889418789");
+  });
+
+  it("parses a FAILED event with a string order_amount", () => {
+    const parsed = parseCashfreePaymentWebhook({
+      type: "PAYMENT_FAILED_WEBHOOK",
+      data: {
+        order: { order_id: "crqid-456", order_amount: "99.00" },
+        payment: { payment_status: "FAILED", payment_amount: "0.00" },
+      },
+    });
+
+    assert.equal(parsed?.data?.orderId, "crqid-456");
+    assert.equal(parsed?.data?.orderAmount, 99);
+    assert.equal(parsed?.data?.paymentStatus, "FAILED");
+    assert.equal(parsed?.data?.paymentAmount, 0);
+  });
+
+  it("returns null data when order_id or payment is missing", () => {
+    assert.equal(
+      parseCashfreePaymentWebhook({ type: "PAYMENT_SUCCESS_WEBHOOK", data: { order: {} } })?.data,
+      null,
+    );
+    assert.equal(
+      parseCashfreePaymentWebhook({
+        type: "PAYMENT_SUCCESS_WEBHOOK",
+        data: { order: { order_id: "crqid-789" } },
+      })?.data,
+      null,
+    );
+  });
+
+  it("returns null for a non-object payload", () => {
+    assert.equal(parseCashfreePaymentWebhook("not an object"), null);
+    assert.equal(parseCashfreePaymentWebhook(null), null);
   });
 });

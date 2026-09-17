@@ -4,7 +4,6 @@ import { verifyServiceRoleCaller } from "../_shared/verifyServiceRoleCaller.ts";
 import { handleSendQuotes } from "../_shared/handlers/sendQuotes.ts";
 import { handleComputeNegotiation } from "../_shared/handlers/computeNegotiation.ts";
 import { handleFinalizeBooking } from "../_shared/handlers/finalizeBooking.ts";
-import { handleSendTokenPaymentLink } from "../_shared/handlers/sendTokenPaymentLink.ts";
 import { handleSendTokenReceivedAck } from "../_shared/handlers/sendTokenReceivedAck.ts";
 import { handleNotifyVendorBooking } from "../_shared/handlers/notifyVendorBooking.ts";
 import { handleParseDriverDetails } from "../_shared/handlers/parseDriverDetails.ts";
@@ -64,8 +63,13 @@ const HANDLERS: Record<string, (supabase: SupabaseClient, payload: Record<string
     handleComputeNegotiation(supabase, payload as unknown as { quote_snapshot_id: string }),
   finalize_booking: (supabase, payload) =>
     handleFinalizeBooking(supabase, payload as unknown as { quote_snapshot_id: string; lock_type: "full_payment" | "token_99" }),
-  send_token_payment_link: (supabase, payload) =>
-    handleSendTokenPaymentLink(supabase, payload as unknown as { quote_snapshot_id: string }),
+  // send_token_payment_link is deliberately NOT registered here: it now
+  // creates a Cashfree PG Order (lib/cashfree/orders.ts, Next.js-only —
+  // "server-only" + fetch) and must run exactly once per job, so only the
+  // Next.js `processDueJobs` fallback (lib/jobs/localJobHandlerTypes.ts)
+  // handles this job_type. Leaving it out of HANDLERS means claim_due_jobs
+  // (called with Object.keys(HANDLERS)) never claims it here, so it's
+  // left `queued` for that fallback instead of racing/duplicating it.
   send_token_received_ack: (supabase, payload) =>
     handleSendTokenReceivedAck(supabase, payload as unknown as { booking_id: string }),
   notify_vendor_booking: (supabase, payload) =>

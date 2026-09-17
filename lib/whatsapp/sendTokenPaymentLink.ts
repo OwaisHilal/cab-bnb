@@ -2,15 +2,17 @@ import "server-only"
 
 import { randomUUID } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { createCashfreeOrder } from "@/lib/cashfree/orders"
 import { stripE164Plus } from "@/lib/msg91/pure"
+import { getAppBaseUrl } from "@/lib/utils/appUrl"
 import { TOKEN_LOCK_AMOUNT } from "@/lib/whatsapp/formatInr"
 import { ensureMessageTemplates } from "@/lib/whatsapp/messageTemplateStore"
 import { sendWhatsAppCtaUrlMessage } from "@/lib/whatsapp/sendOutbound"
 import {
-  STATIC_TOKEN_PAYMENT_LINK_URL,
   TOKEN_LOCK_PAYMENT_TEMPLATE_KEY,
   TOKEN_PAY_BUTTON_TITLE,
   buildTokenPaymentLinkCopy,
+  buildTokenPaymentPageUrl,
 } from "@/lib/whatsapp/tokenPaymentLink"
 
 export interface SendTokenPaymentLinkPayload {
@@ -52,6 +54,28 @@ interface PaymentIntentRow {
   status: string
 }
 
+interface CashfreeOrderStateRow {
+  cf_order_id: string | null
+  payment_session_id: string | null
+  cashfree_order_status: string | null
+  cashfree_order_expires_at: string | null
+}
+
+/** Don't hand out a Checkout session that is about to expire mid-payment. */
+const ORDER_EXPIRY_SAFETY_BUFFER_MS = 2 * 60 * 1000
+
+const isReusableCashfreeOrder = (row: CashfreeOrderStateRow): boolean => {
+  if (!row.cf_order_id || !row.payment_session_id) return false
+  if (row.cashfree_order_status && row.cashfree_order_status !== "ACTIVE") return false
+  if (row.cashfree_order_expires_at) {
+    const expiresAtMs = new Date(row.cashfree_order_expires_at).getTime()
+    if (Number.isFinite(expiresAtMs) && expiresAtMs - Date.now() <= ORDER_EXPIRY_SAFETY_BUFFER_MS) {
+      return false
+    }
+  }
+  return true
+}
+
 const firstOrSelf = <T,>(value: T | T[] | null | undefined): T | null => {
   if (!value) return null
   return Array.isArray(value) ? value[0] ?? null : value
@@ -71,15 +95,15 @@ const isMissingRelation = (error: { code?: string; message: string }): boolean =
 }
 
 /**
- * After the tourist taps Select {vendor} (`BOOK_TOKEN::`), send the fixed
- * ₹99 token payment link as a WhatsApp CTA-URL button. Both of Cashfree's
- * automated integration paths are blocked on this merchant account — MSG91's
- * `payment_link` interactive type (`s2s_enabled_not_approved`) and Cashfree's
- * own dynamic Payment Links create-API (`link_creation_api is not enabled or
- * approved`) — so every token payment reuses one dashboard-created static
- * link (STATIC_TOKEN_PAYMENT_LINK_URL) instead of a per-booking one. See
- * docs/cashfree-payment-links-workaround.md. Must stay inside the 24h
- * session opened by quote_choice_v1.
+ * After the tourist taps Select {vendor} (`BOOK_TOKEN::`), create (or reuse)
+ * a Cashfree PG Order for the ₹99 token and send a WhatsApp CTA-URL button
+ * to our own `/pay/token/<crqid>` page, which opens Cashfree Checkout for
+ * that order. Requires `whatsapp_payment_intents` (migration 0022) so the
+ * Cashfree order id can round-trip back to this booking when
+ * app/webhooks/cashfree receives the payment webhook. This replaces the
+ * 0020/0021 static-link workaround — see
+ * docs/cashfree-payment-links-workaround.md for that history. Must stay
+ * inside the 24h session opened by quote_choice_v1.
  */
 export const handleSendTokenPaymentLink = async (
   supabase: SupabaseClient,
@@ -147,14 +171,33 @@ export const handleSendTokenPaymentLink = async (
     customerNumber,
   })
 
-  // Every token payment reuses one dashboard-created static Cashfree link
-  // (see the doc comment above) — repeated taps on an open quote resend the
-  // same CTA rather than being skipped, since there is no per-booking link
-  // to create or reuse.
+  if (!intentReady) {
+    throw new Error(
+      "send_token_payment_link requires the whatsapp_payment_intents table (migration 0022) — Cashfree PG Orders needs a payment intent id to correlate the webhook back to this booking",
+    )
+  }
+
+  const orderResult = await ensureCashfreeOrderForIntent(supabase, {
+    crqid,
+    touristPhone,
+    customerNumber,
+  })
+
+  if (!orderResult.success) {
+    await supabase
+      .from("whatsapp_payment_intents")
+      .update({ last_error: orderResult.error ?? "cashfree_order_create_failed" })
+      .eq("id", crqid)
+      .in("status", ["pending", "sent"])
+    throw new Error(`Failed to create Cashfree order: ${orderResult.error}`)
+  }
+
+  const paymentPageUrl = buildTokenPaymentPageUrl(getAppBaseUrl(), crqid)
+
   const sendResult = await sendWhatsAppCtaUrlMessage(
     touristPhone,
     copy.bodyText,
-    { title: TOKEN_PAY_BUTTON_TITLE, url: STATIC_TOKEN_PAYMENT_LINK_URL },
+    { title: TOKEN_PAY_BUTTON_TITLE, url: paymentPageUrl },
     { footerText: copy.footerText },
   )
 
@@ -172,31 +215,27 @@ export const handleSendTokenPaymentLink = async (
       configured: sendResult.configured,
       error: sendResult.error ?? null,
     })
-    if (intentReady) {
-      await supabase
-        .from("whatsapp_payment_intents")
-        .update({ last_error: sendResult.error ?? "cta_url_send_failed" })
-        .eq("id", crqid)
-        .in("status", ["pending", "sent"])
-    }
+    await supabase
+      .from("whatsapp_payment_intents")
+      .update({ last_error: sendResult.error ?? "cta_url_send_failed" })
+      .eq("id", crqid)
+      .in("status", ["pending", "sent"])
     throw new Error(`Failed to send ₹99 payment link: ${sendResult.error}`)
   }
 
-  if (intentReady) {
-    const { error: intentUpdateError } = await supabase
-      .from("whatsapp_payment_intents")
-      .update({
-        status: "sent",
-        wa_message_id: sendResult.waMessageId ?? null,
-        last_error: null,
-        payment_link_url: STATIC_TOKEN_PAYMENT_LINK_URL,
-      })
-      .eq("id", crqid)
-      .neq("status", "paid")
+  const { error: intentUpdateError } = await supabase
+    .from("whatsapp_payment_intents")
+    .update({
+      status: "sent",
+      wa_message_id: sendResult.waMessageId ?? null,
+      last_error: null,
+      payment_link_url: paymentPageUrl,
+    })
+    .eq("id", crqid)
+    .neq("status", "paid")
 
-    if (intentUpdateError && !isMissingRelation(intentUpdateError)) {
-      throw new Error(`Failed to mark payment intent sent: ${intentUpdateError.message}`)
-    }
+  if (intentUpdateError && !isMissingRelation(intentUpdateError)) {
+    throw new Error(`Failed to mark payment intent sent: ${intentUpdateError.message}`)
   }
 
   const { error: logError } = await supabase.from("whatsapp_message_log").insert({
@@ -211,7 +250,7 @@ export const handleSendTokenPaymentLink = async (
       sendMethod: "session_cta_url",
       crqid,
       amountInr: TOKEN_LOCK_AMOUNT,
-      linkUrl: STATIC_TOKEN_PAYMENT_LINK_URL,
+      linkUrl: paymentPageUrl,
     }),
     wa_message_id: sendResult.waMessageId ?? null,
     wa_status: "sent",
@@ -289,4 +328,77 @@ const upsertPaymentIntent = async (
   }
 
   return { crqid: intentId, intentReady: true }
+}
+
+/**
+ * Create a Cashfree PG Order for this intent, or reuse its still-active one.
+ * The first order for an intent uses `order_id = crqid` (easy to read in
+ * logs/dashboard); if a prior order for the same intent expired/closed, a
+ * fresh order gets a short random suffix so Cashfree's own order_id
+ * uniqueness requirement never blocks a retry. Either way the resulting
+ * `cf_order_id` — not `crqid` — is what app/webhooks/cashfree matches
+ * against, so suffixed retries still resolve back to the right intent.
+ */
+const ensureCashfreeOrderForIntent = async (
+  supabase: SupabaseClient,
+  input: { crqid: string; touristPhone: string; customerNumber: string },
+): Promise<{ success: boolean; error?: string }> => {
+  const { data: existing, error: loadError } = await supabase
+    .from("whatsapp_payment_intents")
+    .select("cf_order_id, payment_session_id, cashfree_order_status, cashfree_order_expires_at")
+    .eq("id", input.crqid)
+    .maybeSingle()
+
+  if (loadError) {
+    return { success: false, error: `Failed to load Cashfree order state: ${loadError.message}` }
+  }
+
+  const existingRow = existing as CashfreeOrderStateRow | null
+  if (existingRow && isReusableCashfreeOrder(existingRow)) {
+    return { success: true }
+  }
+
+  const orderId = existingRow?.cf_order_id
+    ? `${input.crqid}-${randomUUID().slice(0, 8)}`
+    : input.crqid
+  const appBaseUrl = getAppBaseUrl()
+
+  const result = await createCashfreeOrder({
+    orderId,
+    orderAmount: TOKEN_LOCK_AMOUNT,
+    customer: {
+      customerId: input.customerNumber,
+      customerPhone: input.touristPhone,
+    },
+    returnUrl: `${appBaseUrl}/pay/token/${input.crqid}?order_id={order_id}`,
+    notifyUrl: `${appBaseUrl}/webhooks/cashfree`,
+  })
+
+  console.info("[token pay] cashfree order result", {
+    crqid: input.crqid,
+    orderId,
+    success: result.success,
+    configured: result.configured,
+    error: result.error ?? null,
+  })
+
+  if (!result.success) {
+    return { success: false, error: result.error ?? "cashfree_order_create_failed" }
+  }
+
+  const { error: updateError } = await supabase
+    .from("whatsapp_payment_intents")
+    .update({
+      cf_order_id: result.orderId ?? orderId,
+      payment_session_id: result.paymentSessionId ?? null,
+      cashfree_order_status: result.orderStatus ?? "ACTIVE",
+      cashfree_order_expires_at: result.orderExpiryTime ?? null,
+    })
+    .eq("id", input.crqid)
+
+  if (updateError) {
+    return { success: false, error: `Failed to persist Cashfree order: ${updateError.message}` }
+  }
+
+  return { success: true }
 }
