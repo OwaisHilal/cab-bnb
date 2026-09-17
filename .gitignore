@@ -30,6 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# scratch NDJSON logs written by Cursor debug-mode instrumentation
+.cursor/debug-*.log
+
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example

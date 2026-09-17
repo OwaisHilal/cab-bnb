@@ -18,13 +18,14 @@ interface TokenPaymentIntentRow {
   amount_inr: number
   payment_session_id: string | null
   cashfree_order_status: string | null
+  purpose: string | null
 }
 
 async function loadPaymentIntent(crqid: string): Promise<TokenPaymentIntentRow | null> {
   const supabase = getSupabaseServiceRoleClient()
   const { data, error } = await supabase
     .from("whatsapp_payment_intents")
-    .select("status, amount_inr, payment_session_id, cashfree_order_status")
+    .select("status, amount_inr, payment_session_id, cashfree_order_status, purpose")
     .eq("id", crqid)
     .maybeSingle()
 
@@ -44,10 +45,12 @@ function PaymentPageShell({ children }: { children: ReactNode }) {
   )
 }
 
-function BackToWhatsAppHint() {
+function BackToWhatsAppHint({ isBalance }: { isBalance: boolean }) {
   return (
     <p className="mt-2 font-archivo text-sm text-kmr-muted-1">
-      Please go back to WhatsApp and tap &ldquo;Select vendor&rdquo; again to get a fresh payment link.
+      {isBalance
+        ? "Please go back to WhatsApp — a fresh payment link will follow shortly."
+        : 'Please go back to WhatsApp and tap "Select vendor" again to get a fresh payment link.'}
     </p>
   )
 }
@@ -69,17 +72,21 @@ export default async function TokenPaymentPage({
     return (
       <PaymentPageShell>
         <h1 className="font-archivo text-lg font-bold text-kmr-ink">Payment link not found</h1>
-        <BackToWhatsAppHint />
+        <BackToWhatsAppHint isBalance={false} />
       </PaymentPageShell>
     )
   }
+
+  const isBalance = intent.purpose === "balance"
 
   if (intent.status === "paid") {
     return (
       <PaymentPageShell>
         <h1 className="font-archivo text-lg font-bold text-kmr-green">Payment received</h1>
         <p className="mt-2 font-archivo text-sm text-kmr-muted-1">
-          Your {formatInr(intent.amount_inr)} token is confirmed. Check WhatsApp for your booking details.
+          {isBalance
+            ? `Your ${formatInr(intent.amount_inr)} balance payment is confirmed. Check WhatsApp for your driver's contact details.`
+            : `Your ${formatInr(intent.amount_inr)} token is confirmed. Check WhatsApp for your booking details.`}
         </p>
       </PaymentPageShell>
     )
@@ -100,7 +107,7 @@ export default async function TokenPaymentPage({
         </p>
         <div className="mt-4 flex flex-col items-center gap-3">
           {returningFromCheckout && <RefreshStatusButton />}
-          <BackToWhatsAppHint />
+          <BackToWhatsAppHint isBalance={isBalance} />
         </div>
       </PaymentPageShell>
     )
@@ -113,7 +120,9 @@ export default async function TokenPaymentPage({
   return (
     <PaymentPageShell>
       <h1 className="font-archivo text-lg font-bold text-kmr-ink">
-        Pay {formatInr(intent.amount_inr)} to lock this cab
+        {isBalance
+          ? `Pay ${formatInr(intent.amount_inr)} to confirm your booking`
+          : `Pay ${formatInr(intent.amount_inr)} to lock this cab`}
       </h1>
       <p className="mt-2 font-archivo text-sm text-kmr-muted-1">Secure checkout powered by Cashfree.</p>
       <div className="mt-6">

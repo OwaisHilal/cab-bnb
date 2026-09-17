@@ -4,13 +4,18 @@ import { randomUUID } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { stripE164Plus } from "@/lib/msg91/pure"
 import { composeAndUploadDriverCard } from "@/lib/drivers/composeDriverCard"
+import { getAppBaseUrl } from "@/lib/utils/appUrl"
+import { ensureCashfreeOrderForIntent } from "@/lib/whatsapp/ensureCashfreeOrderForIntent"
 import { ensureMessageTemplates } from "@/lib/whatsapp/messageTemplateStore"
-import { sendWhatsAppPaymentLinkMessageWithHeaderRetry } from "@/lib/whatsapp/sendOutbound"
+import { sendWhatsAppCtaUrlMessage, sendWhatsAppImageMessage } from "@/lib/whatsapp/sendOutbound"
+import { buildTokenPaymentPageUrl } from "@/lib/whatsapp/tokenPaymentLink"
 import {
   DRIVER_ASSIGNED_PAYMENT_TEMPLATE_KEY,
   buildBalancePaymentLinkCopy,
   calculateBalanceDue,
 } from "@/lib/whatsapp/balancePaymentLink"
+
+const BALANCE_PAY_BUTTON_TITLE = "Pay Balance"
 
 const firstOrSelf = <T,>(value: T | T[] | null | undefined): T | null => {
   if (!value) return null
@@ -105,6 +110,11 @@ export const handleSendBalancePayment = async (
     amountInr: balanceDue,
   })
   if (alreadySent) return
+  if (!intentReady) {
+    throw new Error(
+      "send_balance_payment requires the whatsapp_payment_intents table (migration 0022) — Cashfree PG Orders needs a payment intent id to correlate the webhook back to this booking",
+    )
+  }
 
   const vendor = firstOrSelf(
     booking.vendors as
@@ -157,39 +167,74 @@ export const handleSendBalancePayment = async (
     vehicleCode: vehicleType?.code ?? null,
   })
 
-  const sendResult = await sendWhatsAppPaymentLinkMessageWithHeaderRetry({
-    toE164: touristPhone,
-    bodyText: copy.bodyText,
-    footerText: copy.footerText,
-    headerImageUrl: headerImageUrl || undefined,
-    items: [{ name: copy.itemName, amount: copy.amountInr, quantity: copy.quantity }],
+  // Best-effort driver/vehicle photo — sent as a plain image message ahead
+  // of the payment CTA. Never blocks the payment link on failure; this is
+  // decoration, not the thing the guest needs to actually pay.
+  if (headerImageUrl) {
+    try {
+      await sendWhatsAppImageMessage(touristPhone, headerImageUrl, `${driverName} · ${vehicleModel} (${vehicleNumber})`)
+    } catch (error) {
+      console.error("[balance pay] header image send failed", error)
+    }
+  }
+
+  const appBaseUrl = getAppBaseUrl()
+  const orderResult = await ensureCashfreeOrderForIntent(supabase, {
     crqid,
+    touristPhone,
+    customerNumber,
+    amountInr: balanceDue,
+    returnUrl: `${appBaseUrl}/pay/token/${crqid}?order_id={order_id}`,
+    notifyUrl: `${appBaseUrl}/webhooks/cashfree`,
+  })
+
+  if (!orderResult.success) {
+    await supabase
+      .from("whatsapp_payment_intents")
+      .update({ last_error: orderResult.error ?? "cashfree_order_create_failed" })
+      .eq("id", crqid)
+      .in("status", ["pending", "sent"])
+    throw new Error(`Failed to create Cashfree order: ${orderResult.error}`)
+  }
+
+  const paymentPageUrl = buildTokenPaymentPageUrl(appBaseUrl, crqid)
+
+  const sendResult = await sendWhatsAppCtaUrlMessage(
+    touristPhone,
+    copy.bodyText,
+    { title: BALANCE_PAY_BUTTON_TITLE, url: paymentPageUrl },
+    { footerText: copy.footerText },
+  )
+
+  console.info("[balance pay] send result", {
+    bookingId,
+    success: sendResult.success,
+    configured: sendResult.configured,
+    error: sendResult.error ?? null,
+    waMessageId: sendResult.waMessageId ?? null,
   })
 
   if (!sendResult.success) {
-    if (intentReady) {
-      await supabase
-        .from("whatsapp_payment_intents")
-        .update({ last_error: sendResult.error ?? "payment_link_send_failed" })
-        .eq("id", crqid)
-        .in("status", ["pending", "sent"])
-    }
+    await supabase
+      .from("whatsapp_payment_intents")
+      .update({ last_error: sendResult.error ?? "cta_url_send_failed" })
+      .eq("id", crqid)
+      .in("status", ["pending", "sent"])
     throw new Error(`Failed to send balance payment link: ${sendResult.error}`)
   }
 
-  if (intentReady) {
-    const { error: intentUpdateError } = await supabase
-      .from("whatsapp_payment_intents")
-      .update({
-        status: "sent",
-        wa_message_id: sendResult.waMessageId ?? null,
-        last_error: null,
-      })
-      .eq("id", crqid)
-      .neq("status", "paid")
-    if (intentUpdateError && !isMissingRelation(intentUpdateError)) {
-      throw new Error(`Failed to mark balance intent sent: ${intentUpdateError.message}`)
-    }
+  const { error: intentUpdateError } = await supabase
+    .from("whatsapp_payment_intents")
+    .update({
+      status: "sent",
+      wa_message_id: sendResult.waMessageId ?? null,
+      last_error: null,
+      payment_link_url: paymentPageUrl,
+    })
+    .eq("id", crqid)
+    .neq("status", "paid")
+  if (intentUpdateError && !isMissingRelation(intentUpdateError)) {
+    throw new Error(`Failed to mark balance intent sent: ${intentUpdateError.message}`)
   }
 
   const { error: logError } = await supabase.from("whatsapp_message_log").insert({
@@ -202,9 +247,10 @@ export const handleSendBalancePayment = async (
     body_snapshot: copy.bodyText,
     button_payload: JSON.stringify({
       templateKey: DRIVER_ASSIGNED_PAYMENT_TEMPLATE_KEY,
-      sendMethod: "session_payment_link",
+      sendMethod: "session_cta_url",
       crqid,
       amountInr: balanceDue,
+      linkUrl: paymentPageUrl,
     }),
     wa_message_id: sendResult.waMessageId ?? null,
     wa_status: "sent",

@@ -419,24 +419,25 @@ async function postMsg91Request(
   }
 }
 
+/**
+ * Retired 2026-09-17: MSG91's native `payment_link` interactive type
+ * depends on MSG91's own (unapproved) Cashfree integration and fails
+ * async with `s2s_enabled_not_approved` even on an HTTP 200 response —
+ * confirmed via MSG91's delivery report for the driver_assigned_payment_v1
+ * send. Both callers (token flow and balance flow) now use their own
+ * Cashfree PG Order + a `cta_url` message instead
+ * (lib/whatsapp/ensureCashfreeOrderForIntent.ts,
+ * lib/whatsapp/sendTokenPaymentLink.ts, lib/whatsapp/sendBalancePaymentLink.ts).
+ * Kept here (unused) only so `buildMsg91PaymentLinkBody`'s tests keep
+ * documenting the shape MSG91 expects, in case that type ever gets
+ * approved for this account.
+ */
 export async function sendMsg91PaymentLinkWithConfig(
   input: SendMsg91PaymentLinkInput,
   credentials: { authKey?: string; integratedNumber?: string } | null,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Msg91SendResult> {
   const integratedNumber = credentials?.integratedNumber?.trim() ?? "";
-  // #region agent log
-  fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fdcd5f'},body:JSON.stringify({sessionId:'fdcd5f',runId:'api-host-fix',hypothesisId:'H1_wrong_gateway',location:'lib/msg91/pure.ts:sendMsg91PaymentLinkWithConfig',message:'payment_link send url',data:{url:MSG91_WHATSAPP_PAYMENT_LINK_URL,crqid:input.crqid??null},timestamp:Date.now()})}).catch(()=>{});
-  // DEBUG (session fdcd5f): the fetch() above only reaches a local dev
-  // machine and is unreachable from Vercel's serverless runtime — use
-  // console.info (visible in Vercel logs) as the real confirmation channel
-  // for production.
-  console.info("[payment link] send url", {
-    url: MSG91_WHATSAPP_PAYMENT_LINK_URL,
-    crqid: input.crqid ?? null,
-    vercelGitCommitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
-  });
-  // #endregion agent log
   return postMsg91Request(
     credentials,
     MSG91_WHATSAPP_PAYMENT_LINK_URL,

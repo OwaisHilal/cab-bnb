@@ -12,7 +12,8 @@
     "db:seed": "node scripts/apply-seed.mjs",
     "db:templates": "node scripts/apply-whatsapp-templates-migration.mjs",
     "msg91:templates": "node scripts/msg91-whatsapp-templates.mjs",
-    "msg91:templates:create": "node scripts/msg91-create-dashboard-templates.mjs"
+    "msg91:templates:create": "node scripts/msg91-create-dashboard-templates.mjs",
+    "simulate:vendor-reply": "npx tsx scripts/simulate-vendor-driver-reply.ts"
   },
   "dependencies": {
     "@cashfreepayments/cashfree-js": "^1.0.7",

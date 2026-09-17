@@ -7,7 +7,6 @@ import { handleFinalizeBooking } from "../_shared/handlers/finalizeBooking.ts";
 import { handleSendTokenReceivedAck } from "../_shared/handlers/sendTokenReceivedAck.ts";
 import { handleNotifyVendorBooking } from "../_shared/handlers/notifyVendorBooking.ts";
 import { handleParseDriverDetails } from "../_shared/handlers/parseDriverDetails.ts";
-import { handleSendBalancePayment } from "../_shared/handlers/sendBalancePayment.ts";
 import { handleCompleteBalancePayment } from "../_shared/handlers/completeBalancePayment.ts";
 import { handleSendConfirmationCard } from "../_shared/handlers/sendConfirmationCard.ts";
 import { handleCreateRideGroup } from "../_shared/handlers/createRideGroup.ts";
@@ -81,8 +80,13 @@ const HANDLERS: Record<string, (supabase: SupabaseClient, payload: Record<string
     ),
   send_confirmation_card: (supabase, payload) =>
     handleSendConfirmationCard(supabase, payload as unknown as { booking_id: string }),
-  send_balance_payment: (supabase, payload) =>
-    handleSendBalancePayment(supabase, payload as unknown as { booking_id: string }),
+  // send_balance_payment is deliberately NOT registered here, for the same
+  // reason as send_token_payment_link above: it creates a Cashfree PG
+  // Order (lib/cashfree/orders.ts, Next.js-only) and must run exactly once
+  // per job, so only the Next.js `processDueJobs` fallback
+  // (lib/jobs/localJobHandlerTypes.ts) handles this job_type. The old
+  // handlers/sendBalancePayment.ts (MSG91 native `payment_link` type) is
+  // retired — see docs/2026-09-17-cashfree-pg-orders-integration.md.
   complete_balance_payment: (supabase, payload) =>
     handleCompleteBalancePayment(
       supabase,
