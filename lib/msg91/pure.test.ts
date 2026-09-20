@@ -9,6 +9,7 @@ import {
   MSG91_WHATSAPP_PAYMENT_LINK_URL,
   buildMsg91AuthOtpComponents,
   buildMsg91BulkTemplateBody,
+  buildMsg91ImageMessageBody,
   buildMsg91InteractiveButtonBody,
   buildMsg91InteractiveListBody,
   buildMsg91PaymentLinkBody,
@@ -16,6 +17,7 @@ import {
   mapMsg91ResponseToWaMessageId,
   resolveMsg91OtpTemplateConfig,
   resolveMsg91SendCredentials,
+  sendMsg91ImageWithConfig,
   sendMsg91InteractiveButtonWithConfig,
   sendMsg91PaymentLinkWithConfig,
   sendMsg91TemplateWithConfig,
@@ -367,6 +369,84 @@ describe("sendMsg91InteractiveButtonWithConfig", () => {
       success: true,
       waMessageId: "wamid.BUTTON",
     });
+  });
+});
+
+describe("buildMsg91ImageMessageBody", () => {
+  it("maps recipient, integrated number, and caption to the MSG91 image message shape", () => {
+    const body = buildMsg91ImageMessageBody(
+      {
+        toE164: "+919876543210",
+        imageUrl: "https://example.com/driver-card.jpg",
+        caption: "Imran Dar · Swift Dzire (JK01AB1234)",
+      },
+      "+919111111111",
+    );
+
+    assert.equal(body.to_whatsapp_id, "919876543210");
+    assert.equal(body.from_whatsapp_id, "919111111111");
+    const message = body.message as { type: string; image: { link: string; caption: string } };
+    assert.equal(message.type, "image");
+    assert.equal(message.image.link, "https://example.com/driver-card.jpg");
+    assert.equal(message.image.caption, "Imran Dar · Swift Dzire (JK01AB1234)");
+  });
+});
+
+describe("sendMsg91ImageWithConfig", () => {
+  it("returns configured: false and does not fetch when credentials are missing", async () => {
+    let fetchCalls = 0;
+    const result = await sendMsg91ImageWithConfig(
+      { toE164: "+919876543210", imageUrl: "https://example.com/card.jpg", caption: "Driver card" },
+      null,
+      async () => {
+        fetchCalls += 1;
+        return new Response("{}", { status: 200 });
+      },
+    );
+
+    assert.equal(fetchCalls, 0);
+    assert.deepEqual(result, {
+      configured: false,
+      success: false,
+      error: "MSG91 WhatsApp credentials are not configured",
+    });
+  });
+
+  it("posts the image JSON to the session outbound endpoint", async () => {
+    const result = await sendMsg91ImageWithConfig(
+      { toE164: "+919876543210", imageUrl: "https://example.com/card.jpg", caption: "Driver card" },
+      { authKey: "key", integratedNumber: "919111111111" },
+      async (url, init) => {
+        assert.equal(url, MSG91_WHATSAPP_OUTBOUND_URL);
+        assert.equal(String(url).includes("graph.facebook.com"), false);
+        const headers = init?.headers as Record<string, string>;
+        assert.equal(headers.authkey, "key");
+        const parsed = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const message = parsed.message as { type: string; image: { link: string } };
+        assert.equal(message.type, "image");
+        assert.equal(message.image.link, "https://example.com/card.jpg");
+        return new Response(JSON.stringify({ uuid: "wamid.IMAGE" }), { status: 200 });
+      },
+    );
+
+    assert.deepEqual(result, {
+      configured: true,
+      success: true,
+      waMessageId: "wamid.IMAGE",
+    });
+  });
+
+  it("surfaces MSG91 error bodies as a failed send", async () => {
+    const result = await sendMsg91ImageWithConfig(
+      { toE164: "+919876543210", imageUrl: "https://example.com/card.jpg", caption: "Driver card" },
+      { authKey: "key", integratedNumber: "919111111111" },
+      async () =>
+        new Response(JSON.stringify({ hasError: true, message: "invalid image url" }), { status: 200 }),
+    );
+
+    assert.equal(result.configured, true);
+    assert.equal(result.success, false);
+    assert.match(result.error ?? "", /invalid image url/);
   });
 });
 

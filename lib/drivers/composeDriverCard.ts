@@ -7,8 +7,13 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import sharp from "sharp"
 
 const DRIVER_CARD_BUCKET = "driver-cards"
-const CARD_WIDTH = 800
-const CARD_HEIGHT = 418
+export const CARD_WIDTH = 800
+export const CARD_HEIGHT = 418
+const PORTRAIT_SIZE = 220
+const PORTRAIT_MARGIN_RIGHT = 236
+const PORTRAIT_MARGIN_TOP = 99
+const JPEG_QUALITY = 82
+const PLACEHOLDER_BACKGROUND = { r: 232, g: 220, b: 196 }
 
 const DEMO_DRIVER_PHOTOS: Record<string, string> = {
   "bilal ahmed": "bilal-ahmed.png",
@@ -17,7 +22,15 @@ const DEMO_DRIVER_PHOTOS: Record<string, string> = {
   "adil mir": "adil-mir.png",
 }
 
-const loadLocalFile = async (relativePath: string): Promise<Buffer | null> => {
+/**
+ * Resolves a path against `public/`, accepting it with or without a
+ * leading slash or a `public/` prefix (so `drivers.photo_url` /
+ * `vehicles.stock_photo_url` values written either way both resolve —
+ * see docs/msg91-whatsapp-integration.md §3.6). Rejects `..` traversal
+ * and OS-absolute paths (e.g. a Windows drive letter) so a bad DB value
+ * can never read outside `public/`.
+ */
+export const loadLocalFile = async (relativePath: string): Promise<Buffer | null> => {
   const scoped = relativePath.replace(/^[/\\]+/, "").replace(/^public[/\\]+/, "")
   if (!scoped || scoped.includes("..") || path.isAbsolute(scoped)) {
     return null
@@ -29,9 +42,9 @@ const loadLocalFile = async (relativePath: string): Promise<Buffer | null> => {
   }
 }
 
-const loadRemoteBuffer = async (url: string): Promise<Buffer | null> => {
+const loadRemoteBuffer = async (url: string, fetchImpl: typeof fetch): Promise<Buffer | null> => {
   try {
-    const response = await fetch(url)
+    const response = await fetchImpl(url)
     if (!response.ok) return null
     return Buffer.from(await response.arrayBuffer())
   } catch {
@@ -39,78 +52,104 @@ const loadRemoteBuffer = async (url: string): Promise<Buffer | null> => {
   }
 }
 
-const resolveDriverPhoto = async (input: {
-  photoUrl?: string | null
-  driverName: string
-}): Promise<Buffer | null> => {
+/**
+ * Confirms a buffer actually decodes as an image before it's handed to a
+ * `sharp()` pipeline. A remote URL can return an HTML error page (or a
+ * local file can be truncated/corrupt) — without this check that garbage
+ * would throw deep inside `composeDriverCardJpeg` and abort the whole
+ * card instead of falling back gracefully.
+ */
+const isDecodableImage = async (buffer: Buffer): Promise<boolean> => {
+  try {
+    await sharp(buffer).metadata()
+    return true
+  } catch {
+    return false
+  }
+}
+
+const resolveDriverPhoto = async (
+  input: { photoUrl?: string | null; driverName: string },
+  fetchImpl: typeof fetch,
+): Promise<Buffer | null> => {
   const url = input.photoUrl?.trim()
   if (url?.startsWith("http://") || url?.startsWith("https://")) {
-    const remote = await loadRemoteBuffer(url)
-    if (remote) return remote
+    const remote = await loadRemoteBuffer(url, fetchImpl)
+    if (remote && (await isDecodableImage(remote))) return remote
+  } else if (url) {
+    const local = await loadLocalFile(url)
+    if (local && (await isDecodableImage(local))) return local
   }
-  if (url && !url.startsWith("http")) {
-    const local = await loadLocalFile(url.replace(/^\//, ""))
-    if (local) return local
-  }
+
   const fileName = DEMO_DRIVER_PHOTOS[input.driverName.trim().toLowerCase()]
   if (fileName) {
-    return loadLocalFile(path.join("public/demo/drivers", fileName))
+    const demo = await loadLocalFile(path.posix.join("demo/drivers", fileName))
+    if (demo && (await isDecodableImage(demo))) return demo
   }
   return null
 }
 
-const resolveCarStock = async (input: {
-  stockPhotoUrl?: string | null
-  vehicleCode?: string | null
-}): Promise<Buffer> => {
+const resolveCarStock = async (
+  input: { stockPhotoUrl?: string | null; vehicleCode?: string | null },
+  fetchImpl: typeof fetch,
+): Promise<Buffer> => {
   const url = input.stockPhotoUrl?.trim()
   if (url?.startsWith("http://") || url?.startsWith("https://")) {
-    const remote = await loadRemoteBuffer(url)
-    if (remote) return remote
+    const remote = await loadRemoteBuffer(url, fetchImpl)
+    if (remote && (await isDecodableImage(remote))) return remote
+  } else if (url) {
+    const local = await loadLocalFile(url)
+    if (local && (await isDecodableImage(local))) return local
   }
-  const code = (input.vehicleCode ?? "sedan").toLowerCase()
-  const local = await loadLocalFile(path.join("public/fleet", `${code}.png`))
-  if (local) return local
+
+  const code = (input.vehicleCode?.trim() || "sedan").toLowerCase()
+  const local = await loadLocalFile(path.posix.join("fleet", `${code}.png`))
+  if (local && (await isDecodableImage(local))) return local
+
   return sharp({
     create: {
       width: CARD_WIDTH,
       height: CARD_HEIGHT,
       channels: 3,
-      background: { r: 232, g: 220, b: 196 },
+      background: PLACEHOLDER_BACKGROUND,
     },
   })
     .jpeg()
     .toBuffer()
 }
 
-export const composeDriverCardJpeg = async (input: {
-  driverName: string
-  photoUrl?: string | null
-  stockPhotoUrl?: string | null
-  vehicleCode?: string | null
-}): Promise<Buffer> => {
-  const car = await resolveCarStock({
-    stockPhotoUrl: input.stockPhotoUrl,
-    vehicleCode: input.vehicleCode,
-  })
-  const driver = await resolveDriverPhoto({
-    photoUrl: input.photoUrl,
-    driverName: input.driverName,
-  })
+export const composeDriverCardJpeg = async (
+  input: {
+    driverName: string
+    photoUrl?: string | null
+    stockPhotoUrl?: string | null
+    vehicleCode?: string | null
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<Buffer> => {
+  const car = await resolveCarStock(
+    { stockPhotoUrl: input.stockPhotoUrl, vehicleCode: input.vehicleCode },
+    fetchImpl,
+  )
+  const driver = await resolveDriverPhoto(
+    { photoUrl: input.photoUrl, driverName: input.driverName },
+    fetchImpl,
+  )
 
-  const base = sharp(car).resize(CARD_WIDTH, CARD_HEIGHT, { fit: "cover" })
+  const base = sharp(car).autoOrient().resize(CARD_WIDTH, CARD_HEIGHT, { fit: "cover" })
   if (!driver) {
-    return base.jpeg({ quality: 82 }).toBuffer()
+    return base.jpeg({ quality: JPEG_QUALITY }).toBuffer()
   }
 
   const portrait = await sharp(driver)
-    .resize(220, 220, { fit: "cover" })
-    .jpeg({ quality: 82 })
+    .autoOrient()
+    .resize(PORTRAIT_SIZE, PORTRAIT_SIZE, { fit: "cover" })
+    .jpeg({ quality: JPEG_QUALITY })
     .toBuffer()
 
   return base
-    .composite([{ input: portrait, left: CARD_WIDTH - 236, top: 99 }])
-    .jpeg({ quality: 82 })
+    .composite([{ input: portrait, left: CARD_WIDTH - PORTRAIT_MARGIN_RIGHT, top: PORTRAIT_MARGIN_TOP }])
+    .jpeg({ quality: JPEG_QUALITY })
     .toBuffer()
 }
 

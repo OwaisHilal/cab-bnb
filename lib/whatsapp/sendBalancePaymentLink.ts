@@ -169,11 +169,31 @@ export const handleSendBalancePayment = async (
 
   // Best-effort driver/vehicle photo — sent as a plain image message ahead
   // of the payment CTA. Never blocks the payment link on failure; this is
-  // decoration, not the thing the guest needs to actually pay.
+  // decoration, not the thing the guest needs to actually pay. Outcome is
+  // still recorded on the eventual whatsapp_message_log row (media field)
+  // so admin/debug replay can show whether the card was attempted and sent.
+  const mediaCardResult: { attempted: boolean; sent: boolean; waMessageId: string | null; error: string | null } = {
+    attempted: false,
+    sent: false,
+    waMessageId: null,
+    error: null,
+  }
   if (headerImageUrl) {
+    mediaCardResult.attempted = true
     try {
-      await sendWhatsAppImageMessage(touristPhone, headerImageUrl, `${driverName} · ${vehicleModel} (${vehicleNumber})`)
+      const imageSend = await sendWhatsAppImageMessage(
+        touristPhone,
+        headerImageUrl,
+        `${driverName} · ${vehicleModel} (${vehicleNumber})`,
+      )
+      mediaCardResult.sent = imageSend.success
+      mediaCardResult.waMessageId = imageSend.waMessageId ?? null
+      mediaCardResult.error = imageSend.error ?? null
+      if (!imageSend.success) {
+        console.error("[balance pay] header image send failed", { bookingId, error: imageSend.error })
+      }
     } catch (error) {
+      mediaCardResult.error = error instanceof Error ? error.message : "Unknown media send error"
       console.error("[balance pay] header image send failed", error)
     }
   }
@@ -251,6 +271,13 @@ export const handleSendBalancePayment = async (
       crqid,
       amountInr: balanceDue,
       linkUrl: paymentPageUrl,
+      media: {
+        cardImageUrl: headerImageUrl,
+        attempted: mediaCardResult.attempted,
+        sent: mediaCardResult.sent,
+        waMessageId: mediaCardResult.waMessageId,
+        error: mediaCardResult.error,
+      },
     }),
     wa_message_id: sendResult.waMessageId ?? null,
     wa_status: "sent",
