@@ -9,8 +9,10 @@ const tinyPng = (color: { r: number; g: number; b: number }): Promise<Buffer> =>
     .png()
     .toBuffer()
 
+const toResponseBody = (body: Buffer | string): BodyInit => (typeof body === "string" ? body : new Uint8Array(body))
+
 const fetchReturning = (body: Buffer | string, status = 200): typeof fetch =>
-  (async () => new Response(body, { status })) as unknown as typeof fetch
+  (async () => new Response(toResponseBody(body), { status })) as unknown as typeof fetch
 
 describe("loadLocalFile", () => {
   it("reads an existing public asset regardless of leading slash or public/ prefix", async () => {
@@ -42,7 +44,7 @@ describe("composeDriverCardJpeg", () => {
     const fetchImpl = (async (input: string | URL) => {
       const url = String(input)
       requestedUrls.push(url)
-      return new Response(url.includes("driver") ? driverPng : carPng, { status: 200 })
+      return new Response(toResponseBody(url.includes("driver") ? driverPng : carPng), { status: 200 })
     }) as unknown as typeof fetch
 
     const jpeg = await composeDriverCardJpeg(
