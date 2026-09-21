@@ -9,7 +9,7 @@ import {
   buildDriverAssignmentMessage,
   buildDriverContactMessage,
 } from "@/lib/whatsapp/templateCatalog"
-import { buildVendorAssignDriverMessage } from "@/lib/whatsapp/notifyVendorBooking"
+import { buildVendorAssignDriverMessage, buildVendorAssignUrl } from "@/lib/whatsapp/notifyVendorBooking"
 import {
   BALANCE_PAY_PAYLOAD_PREFIX,
   buildBalancePaymentLinkCopy,
@@ -255,6 +255,7 @@ export async function runDemoPostTokenBookingFlow(
 
   const tripRequest = firstOrSelf(booking.trip_requests)
   const vehicleLabel = firstOrSelf(booking.vehicle_types)?.label ?? "Vehicle"
+  const assignUrl = buildVendorAssignUrl({ bookingId: booking.id, vendorId: booking.vendor_id })
   const vendorSpec = buildVendorAssignDriverMessage({
     guestName: tourist?.full_name?.trim() || "Guest",
     pickupLocation: tripRequest?.pickup_location ?? "Pickup",
@@ -264,6 +265,7 @@ export async function runDemoPostTokenBookingFlow(
     paxCount: booking.pax_count,
     vehicleLabel,
     tripTotal: calculateDemoTripTotal(booking.final_quote ?? 0, booking.trip_days),
+    assignUrl,
   })
   if (vendor?.whatsapp_number) {
     await deliverAndLogWhatsAppSpec(supabase, {

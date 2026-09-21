@@ -1,11 +1,12 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { sendMsg91TemplateMessage } from "../msg91WhatsApp.ts";
 import { shouldUseMsg91ApprovedTemplates } from "../useApprovedTemplates.ts";
-import { sendWhatsAppTextMessage } from "../whatsapp.ts";
+import { sendWhatsAppCtaUrlMessage, sendWhatsAppTextMessage } from "../whatsapp.ts";
 import { logOutboundWhatsAppMessage } from "../messageLog.ts";
 import { firstOrSelf } from "../relations.ts";
 import { ensureMessageTemplates } from "../messageTemplateStore.ts";
 import { VENDOR_ASSIGN_DRIVER_TEMPLATE_KEY, buildVendorAssignDriverMessage } from "../templateMessages.ts";
+import { buildVendorAssignUrl } from "../vendorAssignToken.ts";
 
 interface BookingRow {
   id: string;
@@ -48,6 +49,7 @@ export async function handleNotifyVendorBooking(
 
   const tripRequest = firstOrSelf(row.trip_requests);
   const guestName = firstOrSelf(row.tourists)?.full_name?.trim() || "Guest";
+  const assignUrl = await buildVendorAssignUrl({ bookingId: booking_id, vendorId: row.vendor_id });
   const message = buildVendorAssignDriverMessage({
     guestName,
     pickupLocation: tripRequest?.pickup_location ?? "Pickup",
@@ -57,6 +59,7 @@ export async function handleNotifyVendorBooking(
     paxCount: row.pax_count,
     vehicleLabel: firstOrSelf(row.vehicle_types)?.label ?? "Vehicle",
     tripTotal: (row.final_quote ?? 0) * row.trip_days,
+    assignUrl,
   });
 
   // Live assign-driver Utility. Do not read MSG91_VENDOR_BOOKING_NOTIFY_* here.
@@ -71,6 +74,17 @@ export async function handleNotifyVendorBooking(
         components: message.msg91Components,
       })
     : { configured: true, success: false };
+  // Bulk Utility template is Meta-approved with fixed wording and no
+  // button — a URL button would need a fresh Meta review cycle, so the
+  // interactive "Assign driver" CTA below only appears on the session
+  // fallback (flag off, template send fails, or MSG91 isn't configured),
+  // same pattern as deliverRideGroupInvite in handlers/createRideGroup.ts.
+  if (!sendResult.success) {
+    sendResult = await sendWhatsAppCtaUrlMessage(vendor.whatsapp_number, message.bodyText, {
+      title: message.ctaTitle,
+      url: message.assignUrl,
+    });
+  }
   if (!sendResult.success) {
     sendResult = await sendWhatsAppTextMessage(vendor.whatsapp_number, message.bodyText);
   }

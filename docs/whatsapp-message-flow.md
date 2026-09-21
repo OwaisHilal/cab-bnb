@@ -36,8 +36,9 @@ Guest submits phone
         ├──────────────────────────────► 4. Token received  (guest)
         └──────────────────────────────► 5. Assign driver   (vendor)
                                                     │
-                                    vendor replies a 10-digit phone
-                                    or DRIVER: name | phone | number | model
+                                    vendor taps "Assign driver" (web form)
+                                    or replies a 10-digit phone /
+                                    DRIVER: name | phone | number | model
                                                     │
                                                     ▼
                                          6. Balance pay  (guest)
@@ -184,9 +185,12 @@ Same payment also starts **vendor notify** (next).
 ## 5. Assign driver — `vendor_assign_driver_v1`
 
 **To:** Vendor (Aala Cabs) · **Trigger:** Token or full lock → `notify_vendor_booking`  
-Bulk Utility, session text fallback.
+Bulk Utility (unchanged wire format — Meta already approved this exact
+body, no button); session **`cta_url`** fallback ("Assign driver" button)
+whenever the bulk send is skipped or fails (`MSG91_USE_APPROVED_TEMPLATES`
+off, MSG91 not configured, or the template send itself fails).
 
-**Filled example**
+**Filled example — bulk Utility (cold start, no button)**
 
 ```
 New booking confirmed.
@@ -205,9 +209,27 @@ Optional: DRIVER: <name> | <phone> | <vehicle_number> | <vehicle_model>
 |---|---|
 | Fixed | “New booking confirmed.”, reply instructions |
 | Variables | Guest, pickup, drop, date, days, day/days, pax, cab type, total (`body_1`…`body_9`) |
-| Buttons / media | None |
+| Buttons / media | None — Meta template has no button; adding one needs a fresh review cycle |
 
-**Inbound (not a template we send):** vendor texts `9876500001` or  
+**Filled example — session fallback (interactive)**
+
+Same body as above, plus an appended line and a real `cta_url` button:
+
+```
+… (same body as above) …
+
+Fastest way: tap "Assign driver" below to submit details from your phone.
+```
+
+`[Assign driver]` → `app/vendor/assign-driver?token=<signed, expiring HMAC token>`
+(`lib/whatsapp/vendorAssignToken.ts`, 72h TTL) — a mobile form for driver
+name, phone, vehicle number, vehicle model. Submits to
+`POST /api/vendor/assign-driver`, which calls the same
+`assignDriverToBooking` helper as the free-text path below, so either way
+produces an identical booking/job outcome.
+
+**Inbound free-text (still supported as a fallback):** vendor texts
+`9876500001` or  
 `DRIVER: Irfan Bhat | 9876500001 | JK01AA1111 | Toyota Innova`  
 → `parse_driver_details` → balance pay to guest.
 
@@ -423,7 +445,7 @@ Need help? Reply to this message and our support team will assist.
 |---|---|---|
 | Guest | Quote button / list row | Token payment link |
 | Guest | Pay ₹99 | Token ack + vendor notify |
-| Vendor | `9876500001` or `DRIVER: …` | Parse driver → balance link |
+| Vendor | Tap **Assign driver** (form) or reply `9876500001` / `DRIVER: …` | Parse driver → balance link |
 | Guest | Pay remaining | Driver contact + driver assign + ride group |
 | Guest / driver | **Join ride group** | Group join webhook (no extra WA) |
 | Guest | Check-in / rating buttons | Logged; help path can alert ops |

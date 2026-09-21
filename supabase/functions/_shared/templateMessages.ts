@@ -33,6 +33,7 @@ export function calculateBalanceDue(finalQuote: number, tripDays: number): numbe
 
 export const TOKEN_RECEIVED_TEMPLATE_KEY = "token_received_v1";
 export const VENDOR_ASSIGN_DRIVER_TEMPLATE_KEY = "vendor_assign_driver_v1";
+export const VENDOR_ASSIGN_DRIVER_CTA_TITLE = "Assign driver";
 export const DRIVER_ASSIGNED_PAYMENT_TEMPLATE_KEY = "driver_assigned_payment_v1";
 export const DRIVER_ASSIGNED_PAYMENT_FOOTER = "Pay remaining balance to confirm.";
 
@@ -79,14 +80,17 @@ export function buildVendorAssignDriverMessage(input: {
   paxCount: number;
   vehicleLabel: string;
   tripTotal: number;
+  assignUrl: string;
 }): {
   bodyText: string;
+  ctaTitle: string;
+  assignUrl: string;
   msg91Components: Record<string, { type: string; value: string }>;
 } {
   const dates = tripDateVariables(input.pickupAt, input.tripDays);
   const tripTotal = formatInr(input.tripTotal);
   const template = getMessageTemplate(VENDOR_ASSIGN_DRIVER_TEMPLATE_KEY);
-  const bodyText = renderMessageTemplate(
+  const renderedBody = renderMessageTemplate(
     template?.body_template ??
       "New booking confirmed.\n\nGuest: {{guest_name}}\nRoute: {{pickup}} → {{drop}}\nDate: {{pickup_date}}, {{trip_days}} {{day_label}}\nPax: {{pax_count}} | Cab: {{vehicle_label}}\nTotal: {{trip_total}}\n\nReply with the driver's 10-digit mobile to assign.\nOptional: DRIVER: <name> | <phone> | <vehicle_number> | <vehicle_model>",
     {
@@ -99,8 +103,16 @@ export function buildVendorAssignDriverMessage(input: {
       ...dates,
     },
   );
+  // Same rationale as the Next.js twin in lib/whatsapp/notifyVendorBooking.ts:
+  // appended (not baked into the Meta-approved body above) so the bulk
+  // Utility send — which only ever wires msg91Components onto the wire —
+  // is byte-identical to before. Only the session/cta_url fallback path
+  // (see handlers/notifyVendorBooking.ts) shows this line + the real button.
+  const bodyText = `${renderedBody}\n\nFastest way: tap "${VENDOR_ASSIGN_DRIVER_CTA_TITLE}" below to submit details from your phone.`;
   return {
     bodyText,
+    ctaTitle: VENDOR_ASSIGN_DRIVER_CTA_TITLE,
+    assignUrl: input.assignUrl,
     msg91Components: {
       body_1: { type: "text", value: input.guestName },
       body_2: { type: "text", value: input.pickupLocation },
