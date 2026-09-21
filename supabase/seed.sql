@@ -28,7 +28,7 @@
 
 insert into public.vendors (id, business_name, slug, onboarding_stage, status, primary_city, coverage_cities, whatsapp_number)
 values
-  ('11111111-1111-1111-1111-111111111101', 'Nova Cabs', 'nova-cabs', 'whatsapp_only', 'active', 'Srinagar', array['Srinagar','Gulmarg','Pahalgam'], '+919999900001'),
+  ('11111111-1111-1111-1111-111111111101', 'Nova Cabs', 'nova-cabs', 'whatsapp_only', 'active', 'Srinagar', array['Srinagar','Gulmarg','Pahalgam'], '+917006574150'),
   ('11111111-1111-1111-1111-111111111102', 'Ola Cabs', 'ola-cabs', 'whatsapp_only', 'active', 'Srinagar', array['Srinagar','Sonamarg'], '+919999900002'),
   ('11111111-1111-1111-1111-111111111103', 'Aala Cabs', 'aala-cabs', 'whatsapp_only', 'active', 'Srinagar', array['Gulmarg','Srinagar','Yusmarg'], '+919999900003'),
   ('11111111-1111-1111-1111-111111111104', 'Uber', 'uber', 'whatsapp_only', 'active', 'Srinagar', array['Srinagar','Gulmarg','Pahalgam','Sonamarg'], '+919999900004')
