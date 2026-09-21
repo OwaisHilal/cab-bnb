@@ -3,11 +3,13 @@
 import { useState } from "react"
 import { load } from "@cashfreepayments/cashfree-js"
 import { Button } from "@/components/ui/Button"
+import { formatInr } from "@/lib/whatsapp/formatInr"
 
 export interface CashfreeCheckoutButtonProps {
   paymentSessionId: string
   returnUrl: string
   environment: "sandbox" | "production"
+  amountInr: number
 }
 
 /**
@@ -23,6 +25,7 @@ export function CashfreeCheckoutButton({
   paymentSessionId,
   returnUrl,
   environment,
+  amountInr,
 }: CashfreeCheckoutButtonProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -61,7 +64,7 @@ export function CashfreeCheckoutButton({
   return (
     <div className="flex flex-col gap-3">
       <Button type="button" onClick={handlePayNow} loading={loading} loadingLabel="Opening secure checkout…">
-        Pay ₹99 now
+        Pay {formatInr(amountInr)} now
       </Button>
       {error && (
         <p role="alert" className="font-archivo text-sm text-kmr-orange">

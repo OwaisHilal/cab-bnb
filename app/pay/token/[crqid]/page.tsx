@@ -130,6 +130,7 @@ export default async function TokenPaymentPage({
           paymentSessionId={intent.payment_session_id as string}
           returnUrl={`${appBaseUrl}/pay/token/${crqid}?order_id={order_id}`}
           environment={environment}
+          amountInr={intent.amount_inr}
         />
       </div>
     </PaymentPageShell>
