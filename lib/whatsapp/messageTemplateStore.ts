@@ -325,7 +325,7 @@ const FALLBACK_TEMPLATES: WhatsAppMessageTemplateRow[] = [
   },
   {
     template_key: "vendor_assign_driver_v1",
-    msg91_template_name: "vendor_assign_driver_v1",
+    msg91_template_name: "vendor_assign_driver_v2",
     category: "UTILITY",
     send_method: "bulk_template",
     language_code: "en_US",
@@ -334,14 +334,15 @@ const FALLBACK_TEMPLATES: WhatsAppMessageTemplateRow[] = [
     dashboard_body: null,
     header_template: null,
     footer_template: null,
-    buttons: [],
+    buttons: [{ type: "url", label: "Assign driver" }],
     list_config: null,
     variable_schema: {},
     env_name_key: "MSG91_VENDOR_NOTIFY_TEMPLATE_NAME",
     env_namespace_key: "MSG91_VENDOR_NOTIFY_TEMPLATE_NAMESPACE",
     requires_dashboard_create: true,
     wired_in_code: "lib/whatsapp/notifyVendorBooking.ts",
-    notes: null,
+    notes:
+      "MSG91 name is vendor_assign_driver_v2 (UTILITY, one dynamic URL button). v1 stays live/Green with no button until v2 is approved.",
     active: true,
   },
   {
