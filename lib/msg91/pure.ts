@@ -350,20 +350,29 @@ export function buildMsg91TextOutboundUrl(
   return url.toString();
 }
 
+/**
+ * Fixed 2026-09-21: the previous shape (`to_whatsapp_id`/`from_whatsapp_id`/
+ * `message.image`) was never a real MSG91 request format — it made up field
+ * names that don't match any other builder in this file, so MSG91 rejected
+ * every send with HTTP 400 `"integrated number not found in request"` (see
+ * whatsapp_message_log rows for driver_assigned_payment_v1: `media.error`).
+ * The real "Send Image (once the Session starts)" shape — same
+ * MSG91_WHATSAPP_OUTBOUND_URL endpoint as every other session send in this
+ * file — is documented in MSG91's linked reference doc from
+ * https://docs.msg91.com/whatsapp/send-message-in-text ("If your content
+ * type is other than text... refer to this Document"):
+ * https://docs.google.com/document/d/e/2PACX-1vQzQJHlla6g-HLWE1XKuYFEgmTbPvN-xp_U_21UTOEIxMn1aYAxt5eJQuWuMHx9x3ik2DVTO35Fhtol/pub
+ */
 export function buildMsg91ImageMessageBody(
   input: SendMsg91ImageInput,
   integratedNumber: string,
 ): Record<string, unknown> {
   return {
-    to_whatsapp_id: stripE164Plus(input.toE164),
-    from_whatsapp_id: stripE164Plus(integratedNumber),
-    message: {
-      type: "image",
-      image: {
-        link: input.imageUrl,
-        caption: input.caption,
-      },
-    },
+    integrated_number: stripE164Plus(integratedNumber),
+    recipient_number: stripE164Plus(input.toE164),
+    content_type: "image",
+    attachment_url: input.imageUrl,
+    caption: input.caption,
   };
 }
 

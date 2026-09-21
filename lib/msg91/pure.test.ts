@@ -383,12 +383,13 @@ describe("buildMsg91ImageMessageBody", () => {
       "+919111111111",
     );
 
-    assert.equal(body.to_whatsapp_id, "919876543210");
-    assert.equal(body.from_whatsapp_id, "919111111111");
-    const message = body.message as { type: string; image: { link: string; caption: string } };
-    assert.equal(message.type, "image");
-    assert.equal(message.image.link, "https://example.com/driver-card.jpg");
-    assert.equal(message.image.caption, "Imran Dar · Swift Dzire (JK01AB1234)");
+    assert.deepEqual(body, {
+      integrated_number: "919111111111",
+      recipient_number: "919876543210",
+      content_type: "image",
+      attachment_url: "https://example.com/driver-card.jpg",
+      caption: "Imran Dar · Swift Dzire (JK01AB1234)",
+    });
   });
 });
 
@@ -422,9 +423,11 @@ describe("sendMsg91ImageWithConfig", () => {
         const headers = init?.headers as Record<string, string>;
         assert.equal(headers.authkey, "key");
         const parsed = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        const message = parsed.message as { type: string; image: { link: string } };
-        assert.equal(message.type, "image");
-        assert.equal(message.image.link, "https://example.com/card.jpg");
+        assert.equal(parsed.integrated_number, "919111111111");
+        assert.equal(parsed.recipient_number, "919876543210");
+        assert.equal(parsed.content_type, "image");
+        assert.equal(parsed.attachment_url, "https://example.com/card.jpg");
+        assert.equal(parsed.caption, "Driver card");
         return new Response(JSON.stringify({ uuid: "wamid.IMAGE" }), { status: 200 });
       },
     );
