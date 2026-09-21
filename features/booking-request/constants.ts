@@ -1,4 +1,5 @@
 import type { DateOption, TripPreset, VehicleTypeOption, VehicleTypeCode } from "./types";
+import { getUpcomingDates } from "./upcomingDates";
 
 export const VEHICLE_TYPES: VehicleTypeOption[] = [
   { code: "sedan", label: "Sedan", seatCapacity: 4, who: "Couples & small families" },
@@ -26,12 +27,10 @@ export const TRIP_PRESETS: TripPreset[] = [
   { id: "gurez", name: "Srinagar - Gurez", days: 6, meta: "Offbeat border valley" },
 ];
 
-export const UPCOMING_DATES: DateOption[] = [
-  { id: "d1", shortLabel: "Sat 15 Aug", isoDate: "2026-08-15" },
-  { id: "d2", shortLabel: "Sun 16 Aug", isoDate: "2026-08-16" },
-  { id: "d3", shortLabel: "Mon 17 Aug", isoDate: "2026-08-17" },
-  { id: "d4", shortLabel: "Wed 19 Aug", isoDate: "2026-08-19" },
-];
+// Was a hardcoded Aug 2026 array that silently went stale once "today"
+// passed those dates — quick-pick chips kept offering days in the past.
+// Computed fresh (from the real clock) every time this module loads.
+export const UPCOMING_DATES: DateOption[] = getUpcomingDates();
 
 export const MIN_TRIP_DAYS = 1;
 export const MAX_TRIP_DAYS = 14;
