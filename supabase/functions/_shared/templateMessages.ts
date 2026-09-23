@@ -33,6 +33,10 @@ export function calculateBalanceDue(finalQuote: number, tripDays: number): numbe
 
 export const TOKEN_RECEIVED_TEMPLATE_KEY = "token_received_v1";
 export const VENDOR_ASSIGN_DRIVER_TEMPLATE_KEY = "vendor_assign_driver_v1";
+// MSG91-facing name, approved 2026-09-23 (one URL button) — see
+// docs/2026-09-21-vendor-assign-driver-v2-template.md. Fallback only when
+// MSG91_VENDOR_NOTIFY_TEMPLATE_NAME isn't set; template_key above stays v1.
+export const MSG91_VENDOR_ASSIGN_DRIVER_TEMPLATE_NAME = "vendor_assign_driver_v2";
 export const VENDOR_ASSIGN_DRIVER_CTA_TITLE = "Assign driver";
 export const DRIVER_ASSIGNED_PAYMENT_TEMPLATE_KEY = "driver_assigned_payment_v1";
 export const DRIVER_ASSIGNED_PAYMENT_FOOTER = "Pay remaining balance to confirm.";
@@ -81,11 +85,12 @@ export function buildVendorAssignDriverMessage(input: {
   vehicleLabel: string;
   tripTotal: number;
   assignUrl: string;
+  assignToken: string;
 }): {
   bodyText: string;
   ctaTitle: string;
   assignUrl: string;
-  msg91Components: Record<string, { type: string; value: string }>;
+  msg91Components: Record<string, { type: string; value: string; subtype?: string }>;
 } {
   const dates = tripDateVariables(input.pickupAt, input.tripDays);
   const tripTotal = formatInr(input.tripTotal);
@@ -123,6 +128,10 @@ export function buildVendorAssignDriverMessage(input: {
       body_7: { type: "text", value: String(input.paxCount) },
       body_8: { type: "text", value: input.vehicleLabel },
       body_9: { type: "text", value: tripTotal },
+      // vendor_assign_driver_v2 (Meta-approved) has one URL button whose
+      // template url is fixed as .../vendor/assign-driver?token={{1}} —
+      // MSG91 only needs the dynamic suffix here, not the full URL.
+      button_1: { type: "text", subtype: "url", value: input.assignToken },
     },
   };
 }

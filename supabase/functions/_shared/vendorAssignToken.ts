@@ -61,7 +61,20 @@ export async function signVendorAssignToken(input: {
   return `${payloadB64}.${signature}`;
 }
 
-export async function buildVendorAssignUrl(input: { bookingId: string; vendorId: string }): Promise<string> {
+/**
+ * Signs once and derives both the raw token (needed as the `button_1`
+ * value on the now-approved vendor_assign_driver_v2 bulk template — its
+ * URL button is fixed as `.../vendor/assign-driver?token={{1}}`) and the
+ * full URL (session `cta_url` fallback + the web form link).
+ */
+export async function buildVendorAssignTokenAndUrl(
+  input: { bookingId: string; vendorId: string },
+): Promise<{ token: string; url: string }> {
   const token = await signVendorAssignToken(input);
-  return `${getAppBaseUrl()}/vendor/assign-driver?token=${encodeURIComponent(token)}`;
+  const url = `${getAppBaseUrl()}/vendor/assign-driver?token=${encodeURIComponent(token)}`;
+  return { token, url };
+}
+
+export async function buildVendorAssignUrl(input: { bookingId: string; vendorId: string }): Promise<string> {
+  return (await buildVendorAssignTokenAndUrl(input)).url;
 }

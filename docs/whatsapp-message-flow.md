@@ -182,15 +182,21 @@ Same payment also starts **vendor notify** (next).
 
 ---
 
-## 5. Assign driver — `vendor_assign_driver_v1`
+## 5. Assign driver — `vendor_assign_driver_v1` (MSG91 name `vendor_assign_driver_v2`)
 
 **To:** Vendor (Aala Cabs) · **Trigger:** Token or full lock → `notify_vendor_booking`  
-Bulk Utility (unchanged wire format — Meta already approved this exact
-body, no button); session **`cta_url`** fallback ("Assign driver" button)
-whenever the bulk send is skipped or fails (`MSG91_USE_APPROVED_TEMPLATES`
-off, MSG91 not configured, or the template send itself fails).
+Bulk Utility body is unchanged from v1 (same wording), but the MSG91-side
+template is now `vendor_assign_driver_v2` (approved 2026-09-23), which
+adds a real **"Assign driver" URL button** — `button_1` carries the
+signed vendor-assign token as the button's dynamic suffix. Session
+**`cta_url`** ("Assign driver" button, same web form) remains the
+fallback whenever the bulk send is skipped or fails
+(`MSG91_USE_APPROVED_TEMPLATES` off, MSG91 not configured, or the
+template send itself fails). See
+`docs/2026-09-21-vendor-assign-driver-v2-template.md` for how v2 was
+created, approved, and wired.
 
-**Filled example — bulk Utility (cold start, no button)**
+**Filled example — bulk Utility (cold start, now with an "Assign driver" button)**
 
 ```
 New booking confirmed.
@@ -209,7 +215,7 @@ Optional: DRIVER: <name> | <phone> | <vehicle_number> | <vehicle_model>
 |---|---|
 | Fixed | “New booking confirmed.”, reply instructions |
 | Variables | Guest, pickup, drop, date, days, day/days, pax, cab type, total (`body_1`…`body_9`) |
-| Buttons / media | None — Meta template has no button; adding one needs a fresh review cycle |
+| Buttons / media | One URL button, "Assign driver" (`button_1` = signed token, template URL fixed as `.../vendor/assign-driver?token={{1}}`) |
 
 **Filled example — session fallback (interactive)**
 

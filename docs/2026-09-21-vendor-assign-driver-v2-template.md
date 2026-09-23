@@ -1,6 +1,22 @@
 # `vendor_assign_driver_v2` — add an "Assign driver" button
 
-**Status:** ☑ Created via MSG91's API on 2026-09-21 (`template_id 1399713785695491`) → ☐ waiting on Meta/WhatsApp review (Green) → tell the assistant once it's Green to wire up code.
+**Status:** ☑ Created via MSG91's API on 2026-09-21 (`template_id 1399713785695491`) → ☑ Approved by Meta/WhatsApp on 2026-09-23 (`status: approved`) → ☑ Code wired on 2026-09-23 → ☐ needs `MSG91_VENDOR_NOTIFY_TEMPLATE_NAME=vendor_assign_driver_v2` set on Vercel + redeploy before it's live in production.
+
+---
+
+## Update 2026-09-23 — approved, code wired
+
+`vendor_assign_driver_v2` is `status: approved` (checked with `node scripts/msg91-check-template-status.mjs vendor_assign_driver_v2`). Code changes to actually use it:
+
+- `lib/whatsapp/templateEnv.ts` — `vendor_assign_driver_v1`'s `defaultName` now `vendor_assign_driver_v2` (fallback when the env var is unset). `template_key` stays `vendor_assign_driver_v1`.
+- `lib/whatsapp/notifyVendorBooking.ts` / `supabase/functions/_shared/handlers/notifyVendorBooking.ts` — new `buildVendorAssignTokenAndUrl()` signs the token once and derives both the raw token (for the button) and the full URL (for the session `cta_url` fallback + web form link). `buildVendorAssignDriverMessage()` now requires `assignToken` and adds `button_1: { type: "text", subtype: "url", value: assignToken }` to `msg91Components` — the template's URL button is fixed as `.../vendor/assign-driver?token={{1}}`, so only the dynamic token suffix is sent, never the full URL.
+- `supabase/functions/_shared/templateMessages.ts` — same `assignToken` → `button_1` wiring for the Deno/Edge-worker copy, plus a new `MSG91_VENDOR_ASSIGN_DRIVER_TEMPLATE_NAME = "vendor_assign_driver_v2"` fallback constant for when the Edge Function secret is unset.
+- `lib/demo/postTokenBookingFlow.ts` — updated to the new `buildVendorAssignTokenAndUrl` call shape (demo bookings don't hit MSG91, but the shared builder signature changed).
+- Both in-memory fallback catalogs (`lib/whatsapp/messageTemplateStore.ts`, `supabase/functions/_shared/messageTemplateStore.ts`) updated to `msg91_template_name: "vendor_assign_driver_v2"` + the button spec, matching the DB migration.
+- New test: `lib/whatsapp/notifyVendorBooking.test.ts` — asserts `button_1` carries the signed token with `subtype: "url"`.
+- `npm test` (201/201) and `npm run build` both pass after these changes.
+
+**Still needed before this is live:** `.env.local` already has `MSG91_VENDOR_NOTIFY_TEMPLATE_NAME=vendor_assign_driver_v2`. Vercel's environment variables still need the same update (all environments you test in), then redeploy — production reads this env var, not the code default, whenever it's set.
 
 ---
 
