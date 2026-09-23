@@ -1,9 +1,14 @@
 import type { ReactNode } from "react"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server"
 import { formatInr } from "@/lib/whatsapp/formatInr"
 import { verifyVendorAssignToken } from "@/lib/whatsapp/vendorAssignToken"
 import { isBookingAssignable, type ResolvedVendorBooking } from "@/lib/whatsapp/assignDriverToBooking"
-import { AssignDriverForm } from "@/features/vendor-assign/components/AssignDriverForm"
+import {
+  loadVendorDriverOptions,
+  sortVendorDriverOptionsByPreferredVehicleType,
+} from "@/lib/vendor-assign/vendorDriverOptions"
+import { AssignDriverForm, type BookingSummaryForForm } from "@/features/vendor-assign/components/AssignDriverForm"
 
 export const metadata = {
   title: "Assign driver — KMR Cabs",
@@ -32,8 +37,7 @@ const formatPickupDate = (pickupAt: string): string => {
   return new Date(pickupAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
 }
 
-async function loadBookingSummary(bookingId: string): Promise<VendorBookingSummary | null> {
-  const supabase = getSupabaseServiceRoleClient()
+async function loadBookingSummary(supabase: SupabaseClient, bookingId: string): Promise<VendorBookingSummary | null> {
   const { data: booking, error } = await supabase
     .from("bookings")
     .select(
@@ -126,7 +130,23 @@ export default async function AssignDriverPage({
     return <ErrorMessage title="Link no longer valid" body={body} />
   }
 
-  const booking = await loadBookingSummary(verified.payload.bookingId)
+  let supabase: SupabaseClient
+  try {
+    supabase = getSupabaseServiceRoleClient()
+  } catch (error) {
+    console.error("[vendor/assign-driver] supabase client failed", error)
+    return <ErrorMessage title="This page isn't available right now" body="Please try again in a moment." />
+  }
+
+  // Booking summary and the vendor's saved-driver roster are independent
+  // reads — load them together so the roster query isn't an extra
+  // sequential round-trip before this (WhatsApp in-app browser) page can
+  // render.
+  const [booking, driverOptions] = await Promise.all([
+    loadBookingSummary(supabase, verified.payload.bookingId),
+    loadVendorDriverOptions(supabase, verified.payload.vendorId),
+  ])
+
   if (!booking || booking.vendorId !== verified.payload.vendorId) {
     return (
       <ErrorMessage title="Link no longer valid" body="This booking couldn't be found for this link." />
@@ -143,28 +163,21 @@ export default async function AssignDriverPage({
   }
 
   const dayLabel = booking.tripDays > 1 ? "days" : "day"
+  const sortedDriverOptions = sortVendorDriverOptionsByPreferredVehicleType(driverOptions, booking.vehicleTypeId)
+
+  const bookingSummary: BookingSummaryForForm = {
+    guestName: booking.guestName,
+    routeLabel: `${booking.pickupLocation} → ${booking.dropLocation}`,
+    dateLabel: `${formatPickupDate(booking.pickupAt)}, ${booking.tripDays} ${dayLabel}`,
+    paxAndVehicleLabel: `Pax: ${booking.paxCount} · Cab: ${booking.vehicleLabel}`,
+    totalLabel: formatInr(booking.tripTotal),
+  }
 
   return (
     <PageShell>
       <h1 className="font-archivo text-lg font-bold text-kmr-ink">Assign a driver</h1>
-      <div className="mt-3 flex flex-col gap-1 rounded-sm bg-kmr-surface p-3 font-archivo text-sm text-kmr-ink">
-        <span className="font-semibold">Guest: {booking.guestName}</span>
-        <span>
-          Route: {booking.pickupLocation} → {booking.dropLocation}
-        </span>
-        <span>
-          Date: {formatPickupDate(booking.pickupAt)}, {booking.tripDays} {dayLabel}
-        </span>
-        <span>
-          Pax: {booking.paxCount} · Cab: {booking.vehicleLabel}
-        </span>
-        <span>Total: {formatInr(booking.tripTotal)}</span>
-      </div>
-      <p className="mt-4 font-archivo text-sm text-kmr-muted-1">
-        Enter the driver and vehicle details below to assign this ride.
-      </p>
       <div className="mt-4">
-        <AssignDriverForm token={token} />
+        <AssignDriverForm token={token} booking={bookingSummary} driverOptions={sortedDriverOptions} />
       </div>
     </PageShell>
   )

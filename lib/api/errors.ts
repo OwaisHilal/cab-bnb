@@ -14,6 +14,17 @@ export function jsonError(status: number, message: string) {
   return NextResponse.json({ error: message }, { status });
 }
 
+/**
+ * Same envelope as jsonError, plus a stable machine-readable `code` (and
+ * optional extra fields) so a client can branch on known error states
+ * (e.g. "existing_driver_name_mismatch") instead of string-matching the
+ * human-readable message. Additive — existing jsonError callers are
+ * unaffected. See app/api/vendor/assign-driver/route.ts.
+ */
+export function jsonErrorCode(status: number, code: string, message: string, extra?: Record<string, unknown>) {
+  return NextResponse.json({ error: message, code, ...extra }, { status });
+}
+
 export function jsonValidationError(error: ZodError) {
   return NextResponse.json(
     { error: "Invalid request body", details: error.issues },

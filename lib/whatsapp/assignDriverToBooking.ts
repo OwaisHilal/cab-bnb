@@ -2,6 +2,7 @@ import "server-only"
 
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { phoneLast10, toDriverPhoneE164 } from "@/lib/drivers/phone"
+import { normalizeDriverName, normalizeVehicleRegistration } from "@/lib/drivers/vehicle"
 import {
   ACTIVE_VENDOR_BOOKING_STATUSES,
   ATTACHED_OR_LATER_BOOKING_STATUSES,
@@ -17,6 +18,17 @@ import {
  * apart. parseDriverDetails.ts still owns vendor/booking *resolution* from
  * an inbound phone number — that step doesn't apply to the form, which
  * already knows its bookingId/vendorId from a signed token.
+ *
+ * Two assignment modes (both funnel through `assignDriverToBooking`):
+ * - `existing`: the vendor picked a saved driver from their roster. Only
+ *   IDs are trusted from the caller — name/phone/vehicle are re-read from
+ *   the DB here so a compromised/stale client can't spoof driver details
+ *   or corrupt someone else's fleet record.
+ * - `manual`: the vendor typed driver/vehicle details by hand (new driver,
+ *   or no saved roster). If the typed phone already belongs to a saved
+ *   active driver whose name doesn't match (normalized), this returns
+ *   `existing_driver_name_mismatch` instead of silently renaming that
+ *   driver — see docs/2026-09-23-vendor-assign-ux.md.
  */
 
 export interface ResolvedVendorBooking {
@@ -28,14 +40,41 @@ export interface ResolvedVendorBooking {
   vehicleTypeId: number | null
 }
 
-export interface AssignDriverInput {
+export interface ExistingDriverAssignInput {
+  mode: "existing"
+  driverId: string
+  /** Omit to use the driver's current primary vehicle. */
+  vehicleId?: string | null
+}
+
+export interface ManualDriverAssignInput {
+  mode: "manual"
   driverName: string
   driverPhone: string
   vehicleNumber: string
   vehicleModel: string
 }
 
-export type AssignDriverToBookingResult = { ok: true } | { ok: false; reason: "booking_not_assignable" }
+export type AssignDriverInput = ExistingDriverAssignInput | ManualDriverAssignInput
+
+export interface ExistingDriverConflictSummary {
+  driverId: string
+  fullName: string
+  phoneE164: string
+}
+
+export type AssignDriverToBookingResult =
+  | { ok: true }
+  | { ok: false; reason: "booking_not_assignable" }
+  | { ok: false; reason: "existing_driver_name_mismatch"; existingDriver: ExistingDriverConflictSummary }
+  | { ok: false; reason: "driver_not_found" }
+  | { ok: false; reason: "inactive_driver" }
+  | { ok: false; reason: "vehicle_required" }
+
+const firstOrSelf = <T,>(value: T | T[] | null | undefined): T | null => {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] ?? null : value
+}
 
 const enqueueJob = async (
   supabase: SupabaseClient,
@@ -62,7 +101,9 @@ const mapBookingRow = (booking: {
   vehicleTypeId: booking.vehicle_type_id,
 })
 
-const isMissingFleet = (error: { code?: string; message: string }): boolean => {
+/** Exported so lib/vendor-assign/vendorDriverOptions.ts can treat a not-yet-migrated
+ * fleet schema (missing drivers/vehicles/driver_vehicle_links tables) the same way. */
+export const isMissingFleet = (error: { code?: string; message: string }): boolean => {
   const code = error.code ?? ""
   const message = error.message.toLowerCase()
   return (
@@ -178,6 +219,18 @@ const setPrimaryDriverVehicle = async (
   }
 }
 
+type ManualUpsertResult =
+  | { ok: true; driverId: string; vehicleId: string }
+  | { ok: false; reason: "existing_driver_name_mismatch"; existingDriver: ExistingDriverConflictSummary }
+
+/**
+ * Upserts a driver + vehicle by (vendor, phone) / (vendor, registration)
+ * for the *manual* assignment mode. Never silently renames a driver that
+ * already exists at this phone number for this vendor — if the typed name
+ * doesn't match (case/whitespace-insensitive), this returns a structured
+ * conflict instead so the caller can ask the vendor to confirm/choose the
+ * saved driver rather than corrupting the fleet record.
+ */
 const upsertDriverAndVehicle = async (
   supabase: SupabaseClient,
   input: {
@@ -188,13 +241,14 @@ const upsertDriverAndVehicle = async (
     vehicleModel: string
     vehicleTypeId: number | null
   },
-): Promise<{ driverId: string; vehicleId: string }> => {
+): Promise<ManualUpsertResult> => {
   const phoneE164 = toDriverPhoneE164(input.phone)
   const last10 = phoneLast10(phoneE164)
+  const registrationNumber = normalizeVehicleRegistration(input.vehicleNumber)
 
   const { data: existingDriver, error: driverLookupError } = await supabase
     .from("drivers")
-    .select("id")
+    .select("id, full_name, phone_e164")
     .eq("vendor_id", input.vendorId)
     .eq("phone_last10", last10)
     .maybeSingle()
@@ -203,8 +257,8 @@ const upsertDriverAndVehicle = async (
     throw new Error(`Failed to look up driver: ${driverLookupError.message}`)
   }
 
-  let driverId = existingDriver?.id as string | undefined
-  if (!driverId) {
+  let driverId: string | undefined
+  if (!existingDriver) {
     const { data: inserted, error: insertDriverError } = await supabase
       .from("drivers")
       .insert({
@@ -217,20 +271,34 @@ const upsertDriverAndVehicle = async (
       .maybeSingle()
     if (insertDriverError) {
       if (isMissingFleet(insertDriverError)) {
-        return { driverId: "", vehicleId: "" }
+        return { ok: true, driverId: "", vehicleId: "" }
       }
       throw new Error(`Failed to insert driver: ${insertDriverError.message}`)
     }
     driverId = inserted?.id as string
   } else {
-    await supabase.from("drivers").update({ full_name: input.name, status: "active" }).eq("id", driverId)
+    driverId = existingDriver.id as string
+    const existingName = (existingDriver.full_name as string) ?? ""
+    if (normalizeDriverName(existingName) !== normalizeDriverName(input.name)) {
+      return {
+        ok: false,
+        reason: "existing_driver_name_mismatch",
+        existingDriver: {
+          driverId,
+          fullName: existingName,
+          phoneE164: (existingDriver.phone_e164 as string) ?? phoneE164,
+        },
+      }
+    }
+    // Same name (formatting differences aside) — safe to reactivate, never renames.
+    await supabase.from("drivers").update({ status: "active" }).eq("id", driverId)
   }
 
   const { data: existingVehicle, error: vehicleLookupError } = await supabase
     .from("vehicles")
     .select("id")
     .eq("vendor_id", input.vendorId)
-    .eq("registration_number", input.vehicleNumber)
+    .eq("registration_number", registrationNumber)
     .maybeSingle()
 
   if (vehicleLookupError && !isMissingFleet(vehicleLookupError)) {
@@ -244,14 +312,14 @@ const upsertDriverAndVehicle = async (
       .insert({
         vendor_id: input.vendorId,
         vehicle_type_id: input.vehicleTypeId,
-        registration_number: input.vehicleNumber,
+        registration_number: registrationNumber,
         model: input.vehicleModel,
       })
       .select("id")
       .maybeSingle()
     if (insertVehicleError) {
       if (isMissingFleet(insertVehicleError)) {
-        return { driverId: driverId ?? "", vehicleId: "" }
+        return { ok: true, driverId: driverId ?? "", vehicleId: "" }
       }
       throw new Error(`Failed to insert vehicle: ${insertVehicleError.message}`)
     }
@@ -267,7 +335,7 @@ const upsertDriverAndVehicle = async (
     await setPrimaryDriverVehicle(supabase, driverId, vehicleId)
   }
 
-  return { driverId: driverId ?? "", vehicleId: vehicleId ?? "" }
+  return { ok: true, driverId: driverId ?? "", vehicleId: vehicleId ?? "" }
 }
 
 export const lookupDriverByPhone = async (
@@ -304,7 +372,7 @@ export const lookupDriverByPhone = async (
     .eq("is_primary", true)
     .maybeSingle()
 
-  const vehicle = Array.isArray(link?.vehicles) ? link?.vehicles[0] : link?.vehicles
+  const vehicle = firstOrSelf(link?.vehicles ?? null)
 
   return {
     driverId: driver.id as string,
@@ -374,11 +442,130 @@ export const isBookingAssignable = (booking: ResolvedVendorBooking): boolean => 
 }
 
 /**
- * Shared attach entrypoint: upserts the driver/vehicle, links them as
- * primary, records a `driver_detail_submissions` row, moves the booking to
- * `driver_attached`, and enqueues the balance-payment or confirmation-card
- * follow-up. Used by both the free-text `DRIVER: ...` reply and the
- * "Assign driver" web form.
+ * `mode: "existing"` path: re-reads the driver (and its requested or
+ * primary vehicle) by ID, scoped to this booking's vendor, so a stale or
+ * tampered client can never attach a driver/vehicle belonging to a
+ * different operator. Preserves the existing `driver_id`/`vehicle_id`
+ * (and therefore `photo_url`/`stock_photo_url`) instead of re-typing
+ * details that could drift from the saved fleet record.
+ */
+const assignExistingDriverToBooking = async (
+  supabase: SupabaseClient,
+  booking: ResolvedVendorBooking,
+  driver: ExistingDriverAssignInput,
+  meta: { rawMessageText: string; waMessageId?: string },
+): Promise<AssignDriverToBookingResult> => {
+  const { data: driverRow, error: driverError } = await supabase
+    .from("drivers")
+    .select("id, full_name, phone_e164, status")
+    .eq("id", driver.driverId)
+    .eq("vendor_id", booking.vendorId)
+    .maybeSingle()
+  if (driverError) {
+    if (isMissingFleet(driverError)) return { ok: false, reason: "driver_not_found" }
+    throw new Error(`Failed to load driver: ${driverError.message}`)
+  }
+  if (!driverRow) return { ok: false, reason: "driver_not_found" }
+  if (driverRow.status !== "active") return { ok: false, reason: "inactive_driver" }
+
+  let vehicleId: string | null = null
+  let vehicleRow: { registration_number: string | null; model: string | null } | null = null
+
+  if (driver.vehicleId) {
+    const { data: link, error: linkError } = await supabase
+      .from("driver_vehicle_links")
+      .select("vehicle_id, vehicles(registration_number, model)")
+      .eq("driver_id", driverRow.id)
+      .eq("vehicle_id", driver.vehicleId)
+      .maybeSingle()
+    if (linkError && !isMissingFleet(linkError)) {
+      throw new Error(`Failed to load driver's vehicle: ${linkError.message}`)
+    }
+    const vehicle = firstOrSelf(link?.vehicles ?? null) as { registration_number: string | null; model: string | null } | null
+    if (!link || !vehicle) {
+      return { ok: false, reason: "vehicle_required" }
+    }
+    vehicleId = link.vehicle_id as string
+    vehicleRow = vehicle
+  } else {
+    const { data: primaryLink, error: primaryError } = await supabase
+      .from("driver_vehicle_links")
+      .select("vehicle_id, vehicles(registration_number, model)")
+      .eq("driver_id", driverRow.id)
+      .eq("is_primary", true)
+      .maybeSingle()
+    if (primaryError && !isMissingFleet(primaryError)) {
+      throw new Error(`Failed to load driver's primary vehicle: ${primaryError.message}`)
+    }
+    const vehicle = firstOrSelf(primaryLink?.vehicles ?? null) as
+      | { registration_number: string | null; model: string | null }
+      | null
+    if (!primaryLink || !vehicle) {
+      return { ok: false, reason: "vehicle_required" }
+    }
+    vehicleId = primaryLink.vehicle_id as string
+    vehicleRow = vehicle
+  }
+
+  await attachBooking(
+    supabase,
+    booking,
+    {
+      driverId: driverRow.id as string,
+      vehicleId,
+      fullName: driverRow.full_name as string,
+      phoneE164: driverRow.phone_e164 as string,
+      vehicleNumber: vehicleRow?.registration_number ?? "TBD",
+      vehicleModel: vehicleRow?.model ?? "Vehicle",
+    },
+    meta.rawMessageText,
+    meta.waMessageId,
+  )
+  return { ok: true }
+}
+
+const assignManualDriverToBooking = async (
+  supabase: SupabaseClient,
+  booking: ResolvedVendorBooking,
+  driver: ManualDriverAssignInput,
+  meta: { rawMessageText: string; waMessageId?: string },
+): Promise<AssignDriverToBookingResult> => {
+  const upserted = await upsertDriverAndVehicle(supabase, {
+    vendorId: booking.vendorId,
+    name: driver.driverName,
+    phone: driver.driverPhone,
+    vehicleNumber: driver.vehicleNumber,
+    vehicleModel: driver.vehicleModel,
+    vehicleTypeId: booking.vehicleTypeId,
+  })
+
+  if (!upserted.ok) {
+    return upserted
+  }
+
+  await attachBooking(
+    supabase,
+    booking,
+    {
+      driverId: upserted.driverId,
+      vehicleId: upserted.vehicleId || null,
+      fullName: driver.driverName,
+      phoneE164: toDriverPhoneE164(driver.driverPhone),
+      vehicleNumber: normalizeVehicleRegistration(driver.vehicleNumber),
+      vehicleModel: driver.vehicleModel,
+    },
+    meta.rawMessageText,
+    meta.waMessageId,
+  )
+  return { ok: true }
+}
+
+/**
+ * Shared attach entrypoint: upserts/re-reads the driver/vehicle, links them
+ * as primary (manual mode only), records a `driver_detail_submissions`
+ * row, moves the booking to `driver_attached`, and enqueues the
+ * balance-payment or confirmation-card follow-up. Used by both the
+ * free-text `DRIVER: ...` reply and the "Assign driver" web form.
  */
 export const assignDriverToBooking = async (
   supabase: SupabaseClient,
@@ -390,28 +577,9 @@ export const assignDriverToBooking = async (
     return { ok: false, reason: "booking_not_assignable" }
   }
 
-  const upserted = await upsertDriverAndVehicle(supabase, {
-    vendorId: booking.vendorId,
-    name: driver.driverName,
-    phone: driver.driverPhone,
-    vehicleNumber: driver.vehicleNumber,
-    vehicleModel: driver.vehicleModel,
-    vehicleTypeId: booking.vehicleTypeId,
-  })
+  if (driver.mode === "existing") {
+    return assignExistingDriverToBooking(supabase, booking, driver, meta)
+  }
 
-  await attachBooking(
-    supabase,
-    booking,
-    {
-      driverId: upserted.driverId,
-      vehicleId: upserted.vehicleId || null,
-      fullName: driver.driverName,
-      phoneE164: toDriverPhoneE164(driver.driverPhone),
-      vehicleNumber: driver.vehicleNumber,
-      vehicleModel: driver.vehicleModel,
-    },
-    meta.rawMessageText,
-    meta.waMessageId,
-  )
-  return { ok: true }
+  return assignManualDriverToBooking(supabase, booking, driver, meta)
 }

@@ -64,10 +64,11 @@ export const handleParseDriverDetails = async (
   const match = raw.match(DRIVER_DETAILS_REGEX)
   if (match) {
     const [, name, phone, vehicleNumber, vehicleModel] = match
-    await assignDriverToBooking(
+    const result = await assignDriverToBooking(
       supabase,
       resolved,
       {
+        mode: "manual",
         driverName: name.trim(),
         driverPhone: phone.trim(),
         vehicleNumber: vehicleNumber.trim(),
@@ -75,6 +76,28 @@ export const handleParseDriverDetails = async (
       },
       { rawMessageText: raw, waMessageId: payload.wa_message_id },
     )
+    // A DRIVER: line whose phone already belongs to a different saved
+    // driver at this vendor is ambiguous over free text — same as
+    // "unmatched_driver" below, this asks ops to confirm/correct rather
+    // than silently renaming the saved driver record.
+    if (!result.ok && result.reason === "existing_driver_name_mismatch") {
+      const { error: insertError } = await supabase.from("driver_detail_submissions").insert({
+        booking_id: resolved.bookingId,
+        vendor_id: resolved.vendorId,
+        raw_message_text: raw,
+        parse_status: "parse_failed",
+        wa_message_id: payload.wa_message_id,
+      })
+      if (insertError) throw new Error(`Failed to record parse_failed submission: ${insertError.message}`)
+      await enqueueJob(supabase, "ops_alert", {
+        reason: "driver_name_mismatch",
+        booking_id: resolved.bookingId,
+        vendor_id: resolved.vendorId,
+        raw_message_text: raw,
+        existing_driver_name: result.existingDriver.fullName,
+        wa_message_id: payload.wa_message_id,
+      })
+    }
     return
   }
 
@@ -100,10 +123,18 @@ export const handleParseDriverDetails = async (
       })
       return
     }
+    // The looked-up driver's own name/phone are re-sent through "manual"
+    // mode (not "existing"): this preserves the pre-existing lenient
+    // behavior of still attaching the booking (with placeholder
+    // "TBD"/"Vehicle" vehicle fields) when the driver has no primary
+    // vehicle on file yet, which "existing" mode intentionally refuses
+    // (see assignExistingDriverToBooking's vehicle_required check) since
+    // the web form can show a proper "add vehicle" prompt instead.
     await assignDriverToBooking(
       supabase,
       resolved,
       {
+        mode: "manual",
         driverName: driver.fullName,
         driverPhone: driver.phoneE164,
         vehicleNumber: driver.vehicleNumber,
