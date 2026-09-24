@@ -63,7 +63,7 @@ export async function signVendorAssignToken(input: {
 
 /**
  * Signs once and derives both the raw token (needed as the `button_1`
- * value on the now-approved vendor_assign_driver_v2 bulk template — its
+ * value on the now-approved vendor_assign_driver_v3 bulk template — its
  * URL button is fixed as `.../vendor/assign-driver?token={{1}}`) and the
  * full URL (session `cta_url` fallback + the web form link).
  */

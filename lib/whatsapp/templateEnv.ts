@@ -41,13 +41,14 @@ const TEMPLATE_ENV_MAP: Record<
   },
   vendor_assign_driver_v1: {
     // Live vendor-assign path. Do not point these env vars at vendor_booking_notify_*.
-    // MSG91 name is vendor_assign_driver_v2 (approved 2026-09-23, one URL
-    // button — see docs/2026-09-21-vendor-assign-driver-v2-template.md).
-    // Internal template_key stays v1 (same pattern as quote_choice_v1 ->
-    // MSG91 quote_choice_v2).
+    // MSG91 name is vendor_assign_driver_v3 (approved 2026-09-24, same 9
+    // body variables + one URL button as v2, simplified CTA copy — see
+    // docs/2026-09-24-vendor-assign-driver-v3-template.md). Internal
+    // template_key stays v1 (same pattern as quote_choice_v1 -> MSG91
+    // quote_choice_v2).
     nameKey: "MSG91_VENDOR_NOTIFY_TEMPLATE_NAME",
     namespaceKey: "MSG91_VENDOR_NOTIFY_TEMPLATE_NAMESPACE",
-    defaultName: "vendor_assign_driver_v2",
+    defaultName: "vendor_assign_driver_v3",
   },
   driver_assigned_payment_v1: {
     nameKey: "MSG91_DRIVER_ASSIGNED_PAYMENT_TEMPLATE_NAME",

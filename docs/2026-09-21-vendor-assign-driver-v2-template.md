@@ -2,6 +2,11 @@
 
 **Status:** ☑ Created via MSG91's API on 2026-09-21 (`template_id 1399713785695491`) → ☑ Approved by Meta/WhatsApp on 2026-09-23 (`status: approved`) → ☑ Code wired on 2026-09-23 → ☐ needs `MSG91_VENDOR_NOTIFY_TEMPLATE_NAME=vendor_assign_driver_v2` set on Vercel + redeploy before it's live in production.
 
+**Superseded 2026-09-24:** code defaults and the DB catalog now point at
+`vendor_assign_driver_v3` (simplified CTA copy, same variables/button) —
+see `docs/2026-09-24-vendor-assign-driver-v3-template.md`. This doc is kept
+for history; v2 remains on MSG91 but is no longer sent to.
+
 ---
 
 ## Update 2026-09-23 — approved, code wired

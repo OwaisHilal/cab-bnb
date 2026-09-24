@@ -13,7 +13,7 @@ const ASSIGN_DRIVER_CTA_TITLE = "Assign driver"
 
 /**
  * Signs once and derives both the raw token (needed as the `button_1`
- * value on the now-approved vendor_assign_driver_v2 bulk template — its
+ * value on the now-approved vendor_assign_driver_v3 bulk template — its
  * URL button is fixed as `.../vendor/assign-driver?token={{1}}`, so
  * MSG91/Meta only ever receive the dynamic suffix, never the full URL)
  * and the full URL (session `cta_url` fallback + the web form link).
@@ -56,9 +56,9 @@ export const buildVendorAssignDriverMessage = (input: {
   const dayLabel = input.tripDays > 1 ? "days" : "day"
   const tripTotal = formatInr(input.tripTotal)
   const template = getMessageTemplate(WHATSAPP_TEMPLATE_KEYS.VENDOR_ASSIGN_DRIVER)
-  const renderedBody = renderMessageTemplate(
+  const bodyText = renderMessageTemplate(
     template?.body_template ??
-      "New booking confirmed.\n\nGuest: {{guest_name}}\nRoute: {{pickup}} → {{drop}}\nDate: {{pickup_date}}, {{trip_days}} {{day_label}}\nPax: {{pax_count}} | Cab: {{vehicle_label}}\nTotal: {{trip_total}}\n\nReply with the driver's 10-digit mobile to assign.\nOptional: DRIVER: <name> | <phone> | <vehicle_number> | <vehicle_model>",
+      "New booking confirmed.\n\nGuest: {{guest_name}}\nRoute: {{pickup}} → {{drop}}\nDate: {{pickup_date}}, {{trip_days}} {{day_label}}\nPax: {{pax_count}} | Cab: {{vehicle_label}}\nTotal: {{trip_total}}\n\nReply with the driver's 10-digit mobile number, or tap Assign driver below.",
     {
       guest_name: input.guestName,
       pickup: input.pickupLocation,
@@ -71,16 +71,16 @@ export const buildVendorAssignDriverMessage = (input: {
       trip_total: tripTotal,
     },
   )
-  // Appended, not baked into the Meta-approved template body above: the
-  // bulk Utility send (msg91SendMode "template" below) only ever wires
-  // msg91Components onto the wire, so this extra line has zero effect on
-  // that already-Green cold-start path (no re-approval risk). It only
-  // shows up — alongside the session `ctaUrl` below — when this spec is
-  // sent over the session/interactive path (MSG91_USE_APPROVED_TEMPLATES
-  // off, template send fails, or MSG91 isn't configured). The bulk path's
-  // real "Assign driver" button now comes from vendor_assign_driver_v2's
-  // approved BUTTONS component, filled via button_1 below.
-  const bodyText = `${renderedBody}\n\nFastest way: tap "${ASSIGN_DRIVER_CTA_TITLE}" below to submit details from your phone.`
+  // Unlike v2 (whose body never mentioned a button), vendor_assign_driver_v3's
+  // approved body already ends with "...or tap Assign driver below." — so no
+  // extra line needs to be appended here for the session/cta_url fallback
+  // path (MSG91_USE_APPROVED_TEMPLATES off, template send fails, or MSG91
+  // isn't configured). The bulk Utility send (msg91SendMode "template") only
+  // ever wires msg91Components onto the wire and reads its literal copy from
+  // the Meta-approved template on MSG91's side, so this rendered bodyText is
+  // purely the fallback/logging copy — never sent verbatim on that path.
+  // The real "Assign driver" button comes from v3's approved BUTTONS
+  // component, filled via button_1 below.
 
   return {
     templateKey: WHATSAPP_TEMPLATE_KEYS.VENDOR_ASSIGN_DRIVER,
@@ -97,7 +97,7 @@ export const buildVendorAssignDriverMessage = (input: {
       body_7: { type: "text", value: String(input.paxCount) },
       body_8: { type: "text", value: input.vehicleLabel },
       body_9: { type: "text", value: tripTotal },
-      // vendor_assign_driver_v2 (Meta-approved) has one URL button whose
+      // vendor_assign_driver_v3 (Meta-approved) has one URL button whose
       // template url is fixed as .../vendor/assign-driver?token={{1}} —
       // MSG91 only needs the dynamic suffix here, not the full URL. Same
       // subtype: "url" shape already proven by rideGroup.ts's button_1.

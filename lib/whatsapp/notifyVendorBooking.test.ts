@@ -23,7 +23,7 @@ describe("buildVendorAssignTokenAndUrl", () => {
 })
 
 describe("buildVendorAssignDriverMessage", () => {
-  it("wires the signed token as button_1's dynamic url suffix (vendor_assign_driver_v2)", () => {
+  it("wires the signed token as button_1's dynamic url suffix (vendor_assign_driver_v3)", () => {
     const spec = buildVendorAssignDriverMessage({
       guestName: "Rahul Sharma",
       pickupLocation: "Srinagar",

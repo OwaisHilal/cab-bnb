@@ -83,7 +83,7 @@ export async function handleNotifyVendorBooking(
         components: message.msg91Components,
       })
     : { configured: true, success: false };
-  // vendor_assign_driver_v2 (Meta-approved 2026-09-23) now has the
+  // vendor_assign_driver_v3 (Meta-approved 2026-09-24) has the
   // "Assign driver" URL button baked in, filled via button_1 above. The
   // session cta_url fallback below still exists for when the flag is
   // off, the bulk send fails, or MSG91 isn't configured — same pattern

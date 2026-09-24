@@ -33,10 +33,11 @@ export function calculateBalanceDue(finalQuote: number, tripDays: number): numbe
 
 export const TOKEN_RECEIVED_TEMPLATE_KEY = "token_received_v1";
 export const VENDOR_ASSIGN_DRIVER_TEMPLATE_KEY = "vendor_assign_driver_v1";
-// MSG91-facing name, approved 2026-09-23 (one URL button) — see
-// docs/2026-09-21-vendor-assign-driver-v2-template.md. Fallback only when
+// MSG91-facing name, approved 2026-09-24 (same 9 body variables + one URL
+// button as v2, simplified CTA copy) — see
+// docs/2026-09-24-vendor-assign-driver-v3-template.md. Fallback only when
 // MSG91_VENDOR_NOTIFY_TEMPLATE_NAME isn't set; template_key above stays v1.
-export const MSG91_VENDOR_ASSIGN_DRIVER_TEMPLATE_NAME = "vendor_assign_driver_v2";
+export const MSG91_VENDOR_ASSIGN_DRIVER_TEMPLATE_NAME = "vendor_assign_driver_v3";
 export const VENDOR_ASSIGN_DRIVER_CTA_TITLE = "Assign driver";
 export const DRIVER_ASSIGNED_PAYMENT_TEMPLATE_KEY = "driver_assigned_payment_v1";
 export const DRIVER_ASSIGNED_PAYMENT_FOOTER = "Pay remaining balance to confirm.";
@@ -95,9 +96,9 @@ export function buildVendorAssignDriverMessage(input: {
   const dates = tripDateVariables(input.pickupAt, input.tripDays);
   const tripTotal = formatInr(input.tripTotal);
   const template = getMessageTemplate(VENDOR_ASSIGN_DRIVER_TEMPLATE_KEY);
-  const renderedBody = renderMessageTemplate(
+  const bodyText = renderMessageTemplate(
     template?.body_template ??
-      "New booking confirmed.\n\nGuest: {{guest_name}}\nRoute: {{pickup}} → {{drop}}\nDate: {{pickup_date}}, {{trip_days}} {{day_label}}\nPax: {{pax_count}} | Cab: {{vehicle_label}}\nTotal: {{trip_total}}\n\nReply with the driver's 10-digit mobile to assign.\nOptional: DRIVER: <name> | <phone> | <vehicle_number> | <vehicle_model>",
+      "New booking confirmed.\n\nGuest: {{guest_name}}\nRoute: {{pickup}} → {{drop}}\nDate: {{pickup_date}}, {{trip_days}} {{day_label}}\nPax: {{pax_count}} | Cab: {{vehicle_label}}\nTotal: {{trip_total}}\n\nReply with the driver's 10-digit mobile number, or tap Assign driver below.",
     {
       guest_name: input.guestName,
       pickup: input.pickupLocation,
@@ -109,11 +110,10 @@ export function buildVendorAssignDriverMessage(input: {
     },
   );
   // Same rationale as the Next.js twin in lib/whatsapp/notifyVendorBooking.ts:
-  // appended (not baked into the Meta-approved body above) so the bulk
-  // Utility send — which only ever wires msg91Components onto the wire —
-  // is byte-identical to before. Only the session/cta_url fallback path
-  // (see handlers/notifyVendorBooking.ts) shows this line + the real button.
-  const bodyText = `${renderedBody}\n\nFastest way: tap "${VENDOR_ASSIGN_DRIVER_CTA_TITLE}" below to submit details from your phone.`;
+  // v3's approved body already ends with "...or tap Assign driver below.",
+  // so nothing needs to be appended for the session/cta_url fallback path
+  // (see handlers/notifyVendorBooking.ts) — the real button comes from v3's
+  // approved BUTTONS component via button_1 below, same as the bulk path.
   return {
     bodyText,
     ctaTitle: VENDOR_ASSIGN_DRIVER_CTA_TITLE,
@@ -128,7 +128,7 @@ export function buildVendorAssignDriverMessage(input: {
       body_7: { type: "text", value: String(input.paxCount) },
       body_8: { type: "text", value: input.vehicleLabel },
       body_9: { type: "text", value: tripTotal },
-      // vendor_assign_driver_v2 (Meta-approved) has one URL button whose
+      // vendor_assign_driver_v3 (Meta-approved) has one URL button whose
       // template url is fixed as .../vendor/assign-driver?token={{1}} —
       // MSG91 only needs the dynamic suffix here, not the full URL.
       button_1: { type: "text", subtype: "url", value: input.assignToken },

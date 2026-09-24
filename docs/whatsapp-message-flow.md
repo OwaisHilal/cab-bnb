@@ -182,13 +182,15 @@ Same payment also starts **vendor notify** (next).
 
 ---
 
-## 5. Assign driver — `vendor_assign_driver_v1` (MSG91 name `vendor_assign_driver_v2`)
+## 5. Assign driver — `vendor_assign_driver_v1` (MSG91 name `vendor_assign_driver_v3`)
 
 **To:** Vendor (Aala Cabs) · **Trigger:** Token or full lock → `notify_vendor_booking`  
-Bulk Utility body is unchanged from v1 (same wording), but the MSG91-side
-template is now `vendor_assign_driver_v2` (approved 2026-09-23), which
-adds a real **"Assign driver" URL button** — `button_1` carries the
-signed vendor-assign token as the button's dynamic suffix. Session
+The MSG91-side template is `vendor_assign_driver_v3` (approved 2026-09-24),
+which keeps the same 9 body variables and the real **"Assign driver" URL
+button** from v2 — `button_1` carries the signed vendor-assign token as the
+button's dynamic suffix — but simplifies the trailing CTA sentence, dropping
+the long `Optional: DRIVER: <name> | <phone> | ...` line in favor of one
+line that also mentions the button. Session
 **`cta_url`** ("Assign driver" button, same web form) remains the
 fallback whenever the bulk send is skipped or fails
 (`MSG91_USE_APPROVED_TEMPLATES` off, MSG91 not configured, or the

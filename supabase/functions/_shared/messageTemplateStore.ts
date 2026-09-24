@@ -299,12 +299,12 @@ const FALLBACK_TEMPLATES: WhatsAppMessageTemplateRow[] = [
   },
   {
     template_key: "vendor_assign_driver_v1",
-    msg91_template_name: "vendor_assign_driver_v2",
+    msg91_template_name: "vendor_assign_driver_v3",
     category: "UTILITY",
     send_method: "bulk_template",
     language_code: "en_US",
     body_template:
-      "New booking confirmed.\n\nGuest: {{guest_name}}\nRoute: {{pickup}} → {{drop}}\nDate: {{pickup_date}}, {{trip_days}} {{day_label}}\nPax: {{pax_count}} | Cab: {{vehicle_label}}\nTotal: {{trip_total}}\n\nReply with the driver's 10-digit mobile to assign.\nOptional: DRIVER: <name> | <phone> | <vehicle_number> | <vehicle_model>",
+      "New booking confirmed.\n\nGuest: {{guest_name}}\nRoute: {{pickup}} → {{drop}}\nDate: {{pickup_date}}, {{trip_days}} {{day_label}}\nPax: {{pax_count}} | Cab: {{vehicle_label}}\nTotal: {{trip_total}}\n\nReply with the driver's 10-digit mobile number, or tap Assign driver below.",
     dashboard_body: null,
     header_template: null,
     footer_template: null,
@@ -316,7 +316,7 @@ const FALLBACK_TEMPLATES: WhatsAppMessageTemplateRow[] = [
     requires_dashboard_create: true,
     wired_in_code: null,
     notes:
-      "MSG91 name is vendor_assign_driver_v2 (UTILITY, one dynamic URL button, approved 2026-09-23).",
+      "MSG91 name is vendor_assign_driver_v3 (UTILITY, same 9 body variables + one dynamic URL button as v2, simplified CTA copy, approved 2026-09-24).",
     active: true,
   },
   {
