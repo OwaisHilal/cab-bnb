@@ -4,6 +4,7 @@ import {
   buildMsg91CreateGroupBody,
   buildMsg91GroupTextBody,
   parseMsg91GroupPayload,
+  withGroupsCreateSlash,
   type ParsedMsg91Group,
 } from "./msg91GroupApi.ts";
 
@@ -64,7 +65,9 @@ export async function createMsg91WhatsAppGroup(input: {
     return { configured: false, success: false, error: "MSG91 WhatsApp is not configured" };
   }
 
-  const created = await groupRequest(groupsBaseUrl(), {
+  // See withGroupsCreateSlash in msg91GroupApi.ts: the bare collection URL
+  // (no trailing slash) 308-redirects to an unreachable internal address.
+  const created = await groupRequest(withGroupsCreateSlash(groupsBaseUrl()), {
     body: JSON.stringify(
       buildMsg91CreateGroupBody({
         integratedNumber: credentials.integratedNumber,

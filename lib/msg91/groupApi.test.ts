@@ -7,7 +7,24 @@ import {
   parseMsg91GroupPayload,
   parseRideGroupWebhook,
   whatsAppInviteCode,
+  withGroupsCreateSlash,
 } from "./groupApi"
+
+describe("withGroupsCreateSlash", () => {
+  it("appends a trailing slash to the bare collection URL", () => {
+    assert.equal(
+      withGroupsCreateSlash("https://control.msg91.com/api/v5/whatsapp/groups"),
+      "https://control.msg91.com/api/v5/whatsapp/groups/",
+    )
+  })
+
+  it("does not double the slash if one is already present", () => {
+    assert.equal(
+      withGroupsCreateSlash("https://control.msg91.com/api/v5/whatsapp/groups/"),
+      "https://control.msg91.com/api/v5/whatsapp/groups/",
+    )
+  })
+})
 
 describe("MSG91 group payload parsing", () => {
   it("parses the local sim create-group envelope", () => {

@@ -1,6 +1,23 @@
 export const MSG91_WHATSAPP_GROUPS_URL =
   "https://control.msg91.com/api/v5/whatsapp/groups";
 
+/**
+ * DEBUG (session fdcd5f, 2026-09-24): confirmed via live runtime probe that
+ * MSG91's gateway 308-redirects the bare collection URL (no trailing slash,
+ * no id — i.e. the group-creation call) to an internal-only
+ * `*.elb.amazonaws.com` address with no `Location` header, so `fetch()` can
+ * never follow it — this is what surfaced as the opaque
+ * "MSG91 Groups API returned 308: null" job failure, and is a routing quirk
+ * on MSG91's side, not an account/feature gap. Adding the trailing slash
+ * makes the exact same request reach MSG91's real handler and return a real
+ * JSON error body instead. `/groups/<id>` (get/delete/message, which already
+ * has a path segment after `groups`) is unaffected by this and needs no
+ * change. Mirrored from lib/msg91/groupApi.ts's withGroupsCreateSlash.
+ */
+export function withGroupsCreateSlash(baseUrl: string): string {
+  return baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+}
+
 export const RIDE_GROUP_SUBJECT_MAX = 128;
 export const JOIN_APPROVAL_AUTO = "auto_approve" as const;
 
