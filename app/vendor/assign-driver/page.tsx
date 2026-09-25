@@ -18,6 +18,7 @@ export const metadata = {
 export const dynamic = "force-dynamic"
 
 interface VendorBookingSummary extends ResolvedVendorBooking {
+  bookingRef: string | null
   guestName: string
   pickupLocation: string
   dropLocation: string
@@ -41,7 +42,7 @@ async function loadBookingSummary(supabase: SupabaseClient, bookingId: string): 
   const { data: booking, error } = await supabase
     .from("bookings")
     .select(
-      "id, status, vendor_id, lock_type, payment_status, vehicle_type_id, final_quote, pickup_at, trip_days, pax_count, trip_requests(pickup_location, drop_location), tourists(full_name), vehicle_types(label)",
+      "id, booking_ref, status, vendor_id, lock_type, payment_status, vehicle_type_id, final_quote, pickup_at, trip_days, pax_count, trip_requests(pickup_location, drop_location), tourists(full_name), vehicle_types(label)",
     )
     .eq("id", bookingId)
     .maybeSingle()
@@ -65,6 +66,7 @@ async function loadBookingSummary(supabase: SupabaseClient, bookingId: string): 
 
   return {
     bookingId: booking.id as string,
+    bookingRef: (booking.booking_ref as string | null) ?? null,
     vendorId: booking.vendor_id as string,
     status: booking.status as string,
     lockType: booking.lock_type as string | null,
@@ -81,10 +83,23 @@ async function loadBookingSummary(supabase: SupabaseClient, bookingId: string): 
   }
 }
 
-function PageShell({ children }: { children: ReactNode }) {
+function PageShell({ children, showHeader = true }: { children: ReactNode; showHeader?: boolean }) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-kmr-backdrop px-6 py-12">
-      <div className="w-full max-w-sm rounded-md bg-white p-6 shadow-sm">{children}</div>
+    <main
+      className="flex min-h-screen flex-col items-center justify-center bg-[linear-gradient(180deg,#e7e7ea_0%,#f5f5f7_45%,#e7e7ea_100%)] px-4 py-10 pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:px-6"
+    >
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-[0_16px_48px_rgba(16,17,24,0.1)] ring-1 ring-black/[0.06]">
+        {showHeader && (
+          <header className="border-b border-black/[0.06] bg-gradient-to-b from-kmr-blue/[0.08] to-transparent px-6 pb-4 pt-6">
+            <p className="font-archivo text-[10px] font-bold uppercase tracking-[0.14em] text-kmr-blue">KMR Cabs</p>
+            <h1 className="mt-1 font-archivo text-[22px] font-extrabold tracking-[-0.45px] text-kmr-ink">Assign a driver</h1>
+            <p className="mt-1.5 font-archivo text-[13px] font-medium leading-snug text-kmr-muted-1">
+              Pick from your roster or add someone new — the guest is notified on WhatsApp.
+            </p>
+          </header>
+        )}
+        <div className="px-6 py-5">{children}</div>
+      </div>
     </main>
   )
 }
@@ -171,14 +186,12 @@ export default async function AssignDriverPage({
     dateLabel: `${formatPickupDate(booking.pickupAt)}, ${booking.tripDays} ${dayLabel}`,
     paxAndVehicleLabel: `Pax: ${booking.paxCount} · Cab: ${booking.vehicleLabel}`,
     totalLabel: formatInr(booking.tripTotal),
+    bookingRef: booking.bookingRef ?? undefined,
   }
 
   return (
     <PageShell>
-      <h1 className="font-archivo text-lg font-bold text-kmr-ink">Assign a driver</h1>
-      <div className="mt-4">
-        <AssignDriverForm token={token} booking={bookingSummary} driverOptions={sortedDriverOptions} />
-      </div>
+      <AssignDriverForm token={token} booking={bookingSummary} driverOptions={sortedDriverOptions} />
     </PageShell>
   )
 }

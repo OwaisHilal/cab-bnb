@@ -2,19 +2,23 @@
 
 import { useMemo, useState, type FormEvent } from "react"
 import { Button } from "@/components/ui/Button"
-import { cn } from "@/lib/utils/cn"
 import { normalizeVehicleRegistration } from "@/lib/drivers/vehicle"
-// Type-only: vendorDriverOptions.ts has `import "server-only"` at the top,
-// so only the shape may cross into this client component.
 import type { VendorDriverOption } from "@/lib/vendor-assign/vendorDriverOptions"
+import {
+  AssignDriverCtaLabel,
+  AssignDriverField,
+  AssignDriverStickyFooter,
+  AssignFlowTabs,
+  AssignFormSection,
+  BookingTripSummary,
+  DriverOptionRow,
+  DriverSearchField,
+  SelectedDriverCard,
+  type BookingTripSummaryData,
+} from "@/features/vendor-assign/components/assignDriverFormUi"
+import { formatDisplayName } from "@/features/vendor-assign/components/formatDisplayName"
 
-export interface BookingSummaryForForm {
-  guestName: string
-  routeLabel: string
-  dateLabel: string
-  paxAndVehicleLabel: string
-  totalLabel: string
-}
+export interface BookingSummaryForForm extends BookingTripSummaryData {}
 
 interface AssignDriverFormProps {
   token: string
@@ -64,29 +68,9 @@ type AssignDriverPayload =
       vehicle_model: string
     }
 
-/**
- * Submitted from app/vendor/assign-driver (linked from the vendor's
- * WhatsApp "Assign driver" CTA). Posts to app/api/vendor/assign-driver,
- * which shares the same upsert/attach logic as the legacy free-text
- * `DRIVER: ...` WhatsApp reply (lib/whatsapp/assignDriverToBooking.ts) —
- * either path produces an identical booking outcome.
- *
- * Two flows:
- * - "existing" — pick a saved driver from the vendor's roster (fast path,
- *   autofills vehicle from that driver's primary link).
- * - "manual" — type a new driver's details by hand.
- *
- * If a saved driver has no vehicle on file yet, or the vendor wants to
- * assign a different vehicle for this trip, the vehicle mini-form still
- * submits through the API's "manual" mode using that driver's exact saved
- * name/phone — this reuses the same server-side upsert logic (and its
- * name-conflict guard) without ever risking a duplicate driver row.
- */
 export function AssignDriverForm({ token, booking, driverOptions }: AssignDriverFormProps) {
   const [flow, setFlow] = useState<Flow>(driverOptions.length > 0 ? "existing" : "manual")
-  const [summaryOpen, setSummaryOpen] = useState(true)
 
-  // "Choose existing driver" flow state
   const [query, setQuery] = useState("")
   const [selectedDriverId, setSelectedDriverId] = useState<string | null>(null)
   const [syntheticSelectedDriver, setSyntheticSelectedDriver] = useState<VendorDriverOption | null>(null)
@@ -94,7 +78,6 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
   const [selectedVehicleNumber, setSelectedVehicleNumber] = useState("")
   const [selectedVehicleModel, setSelectedVehicleModel] = useState("")
 
-  // "Add new driver manually" flow state
   const [manualFields, setManualFields] = useState<ManualFieldState>(EMPTY_MANUAL_FIELDS)
 
   const [submitting, setSubmitting] = useState(false)
@@ -122,11 +105,19 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
     setApiError(null)
   }
 
+  const handleClearSelection = () => {
+    setSelectedDriverId(null)
+    setSyntheticSelectedDriver(null)
+    setAddVehicleForSelected(false)
+    setSelectedVehicleNumber("")
+    setSelectedVehicleModel("")
+    setApiError(null)
+  }
+
   const handleSelectDriver = (option: VendorDriverOption) => {
     setSelectedDriverId(option.driverId)
     setSyntheticSelectedDriver(null)
     setApiError(null)
-    setSummaryOpen(false)
     const needsVehicle = !option.primaryVehicleId
     setAddVehicleForSelected(needsVehicle)
     setSelectedVehicleNumber(needsVehicle ? "" : option.registrationNumber ?? "")
@@ -147,10 +138,6 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
     if (!existing) return
     setApiError(null)
     setFlow("existing")
-    // The conflicting driver may not be in the visible active roster (e.g.
-    // inactive, or the roster cap) — represent it as a synthetic option so
-    // the review card + submit still work. The server re-validates
-    // everything by ID/phone regardless of what we send from here.
     setSyntheticSelectedDriver({
       driverId: existing.driverId,
       fullName: existing.fullName,
@@ -308,7 +295,7 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
       <div className="rounded-sm bg-kmr-surface p-4 text-center">
         <p className="font-archivo text-[15px] font-bold text-kmr-green">Driver assigned</p>
         <p className="mt-1 font-archivo text-sm text-kmr-muted-1">
-          {success.fullName} has been assigned with {success.vehicleLabel}. The guest has been notified on WhatsApp.
+          {formatDisplayName(success.fullName)} has been assigned with {success.vehicleLabel}. The guest has been notified on WhatsApp.
         </p>
         <p className="mt-3 font-archivo text-sm text-kmr-muted-1">You can close this page and return to WhatsApp.</p>
       </div>
@@ -326,142 +313,67 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
     <div role="alert" className="flex flex-col gap-2 rounded-sm bg-kmr-orange/10 p-3">
       <p className="font-archivo text-sm text-kmr-ink">{apiError!.message}</p>
       <Button type="button" variant="secondary" onClick={handleUseExistingFromConflict}>
-        Use {apiError!.existingDriver!.fullName} instead
+        Use {formatDisplayName(apiError!.existingDriver!.fullName)} instead
       </Button>
     </div>
   ) : null
 
   return (
-    <div className="flex flex-col gap-4">
-      <details
-        open={summaryOpen}
-        onToggle={(event) => setSummaryOpen(event.currentTarget.open)}
-        className="rounded-sm bg-kmr-surface p-3"
-      >
-        <summary className="cursor-pointer font-archivo text-sm font-semibold text-kmr-ink" tabIndex={0}>
-          {booking.guestName} · {booking.routeLabel}
-        </summary>
-        <div className="mt-2 flex flex-col gap-1 font-archivo text-sm text-kmr-ink">
-          <span>Date: {booking.dateLabel}</span>
-          <span>{booking.paxAndVehicleLabel}</span>
-          <span>Total: {booking.totalLabel}</span>
-        </div>
-      </details>
+    <div className="flex flex-col gap-5 pb-2">
+      <BookingTripSummary booking={booking} />
 
       {driverOptions.length > 0 ? (
-        <div role="tablist" aria-label="Choose how to assign a driver" className="flex gap-1 rounded-sm bg-kmr-surface p-1">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={flow === "existing"}
-            onClick={() => handleSetFlow("existing")}
-            tabIndex={0}
-            className={cn(
-              "flex-1 rounded-sm px-3 py-2 font-archivo text-sm font-semibold transition-colors",
-              flow === "existing" ? "bg-white text-kmr-ink shadow-sm" : "text-kmr-muted-1",
-            )}
-          >
-            Saved driver
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={flow === "manual"}
-            onClick={() => handleSetFlow("manual")}
-            tabIndex={0}
-            className={cn(
-              "flex-1 rounded-sm px-3 py-2 font-archivo text-sm font-semibold transition-colors",
-              flow === "manual" ? "bg-white text-kmr-ink shadow-sm" : "text-kmr-muted-1",
-            )}
-          >
-            New driver
-          </button>
-        </div>
+        <AssignFlowTabs flow={flow} onFlowChange={handleSetFlow} />
       ) : (
         <p className="font-archivo text-xs text-kmr-muted-1">No saved drivers yet for this operator — add the first one below.</p>
       )}
 
       {flow === "existing" ? (
-        <div className="flex flex-col gap-3">
-          <label htmlFor="assign-driver-search" className="flex flex-col gap-1 text-left">
-            <span className="font-mono text-[9.5px] font-semibold tracking-[0.5px] text-kmr-muted-2">SEARCH SAVED DRIVERS</span>
-            <input
-              id="assign-driver-search"
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Name, phone, or vehicle number"
-              aria-label="Search saved drivers"
-              tabIndex={0}
-              className="rounded-sm bg-kmr-surface px-3 py-3 font-archivo text-[15px] text-kmr-ink outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kmr-blue"
+        <div
+          id="assign-driver-panel-existing"
+          role="tabpanel"
+          aria-labelledby="assign-driver-tab-existing"
+          className="flex flex-col gap-3"
+        >
+          {selectedOption ? (
+            <SelectedDriverCard
+              option={selectedOption}
+              addVehicleForSelected={addVehicleForSelected}
+              selectedVehicleNumber={selectedVehicleNumber}
+              selectedVehicleModel={selectedVehicleModel}
+              onChangeVehicle={(field, value) => {
+                if (field === "number") setSelectedVehicleNumber(value)
+                else setSelectedVehicleModel(value)
+              }}
+              onToggleDifferentVehicle={handleToggleDifferentVehicle}
+              onChangeDriver={handleClearSelection}
             />
-          </label>
-
-          <div role="listbox" aria-label="Saved drivers" className="flex max-h-64 flex-col gap-1.5 overflow-y-auto">
-            {filteredOptions.length === 0 ? (
-              <p className="px-1 py-2 font-archivo text-sm text-kmr-muted-1">No saved drivers match &ldquo;{query}&rdquo;.</p>
-            ) : (
-              filteredOptions.map((option) => (
-                <DriverOptionRow
-                  key={option.driverId}
-                  option={option}
-                  selected={option.driverId === selectedDriverId}
-                  onSelect={() => handleSelectDriver(option)}
-                />
-              ))
-            )}
-          </div>
-
-          {selectedOption && (
-            <div className="flex flex-col gap-3 rounded-sm bg-kmr-surface p-3">
-              <div>
-                <p className="font-archivo text-[15px] font-semibold text-kmr-ink">{selectedOption.fullName}</p>
-                <p className="font-archivo text-xs text-kmr-muted-1">•••• {selectedOption.phoneLast10.slice(-4)}</p>
-              </div>
-              <div className="flex gap-1.5">
-                <PhotoChip label="Driver photo" available={selectedOption.hasDriverPhoto} />
-                <PhotoChip label="Car photo" available={selectedOption.hasVehiclePhoto} />
-              </div>
-
-              {selectedOption.primaryVehicleId && (
-                <button
-                  type="button"
-                  onClick={handleToggleDifferentVehicle}
-                  tabIndex={0}
-                  className="self-start font-archivo text-xs font-semibold text-kmr-blue hover:underline"
-                >
-                  {addVehicleForSelected ? "Use saved vehicle instead" : "Use a different vehicle for this trip"}
-                </button>
-              )}
-
-              {addVehicleForSelected && (
-                <div className="flex flex-col gap-3 rounded-sm bg-white p-3">
-                  <p className="font-archivo text-xs font-semibold text-kmr-muted-1">
-                    {selectedOption.primaryVehicleId ? "Vehicle for this trip" : "Add this driver's vehicle — none on file yet"}
+          ) : (
+            <>
+              <DriverSearchField value={query} onChange={setQuery} />
+              <div role="listbox" aria-label="Saved drivers" className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+                {filteredOptions.length === 0 ? (
+                  <p className="px-1 py-2 font-archivo text-sm text-kmr-muted-1">
+                    No saved drivers match &ldquo;{query}&rdquo;.
                   </p>
-                  <Field
-                    label="Vehicle number"
-                    value={selectedVehicleNumber}
-                    onChange={(value) => setSelectedVehicleNumber(value.toUpperCase())}
-                    placeholder="e.g. JK01AB1234"
-                    required
-                  />
-                  <Field
-                    label="Vehicle model"
-                    value={selectedVehicleModel}
-                    onChange={setSelectedVehicleModel}
-                    placeholder="e.g. Swift Dzire"
-                    required
-                  />
-                </div>
-              )}
-            </div>
+                ) : (
+                  filteredOptions.map((option) => (
+                    <DriverOptionRow
+                      key={option.driverId}
+                      option={option}
+                      selected={option.driverId === selectedDriverId}
+                      onSelect={() => handleSelectDriver(option)}
+                    />
+                  ))
+                )}
+              </div>
+            </>
           )}
 
           {conflictCard}
           {errorBanner}
 
-          <div className="sticky bottom-0 -mx-6 -mb-6 bg-white px-6 pb-6 pt-2">
+          <AssignDriverStickyFooter>
             <Button
               type="button"
               disabled={!selectedOption}
@@ -469,139 +381,67 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
               loadingLabel="Assigning…"
               onClick={handleSubmitExisting}
             >
-              {selectedOption ? `Assign ${selectedOption.fullName}` : "Select a driver above"}
+              <AssignDriverCtaLabel selectedName={selectedOption?.fullName ?? null} />
             </Button>
-          </div>
+          </AssignDriverStickyFooter>
         </div>
       ) : (
-        <form onSubmit={handleSubmitManual} className="flex flex-col gap-3">
-          <Field
-            label="Driver name"
-            value={manualFields.driverName}
-            onChange={updateManualField("driverName")}
-            placeholder="e.g. Bilal Ahmed"
-            required
-          />
-          <Field
-            label="Driver phone"
-            value={manualFields.driverPhone}
-            onChange={updateManualField("driverPhone")}
-            placeholder="e.g. 9876543210"
-            type="tel"
-            hint="10-digit mobile number"
-            required
-          />
-          <Field
-            label="Vehicle number"
-            value={manualFields.vehicleNumber}
-            onChange={(value) => updateManualField("vehicleNumber")(value.toUpperCase())}
-            placeholder="e.g. JK01AB1234"
-            required
-          />
-          <Field
-            label="Vehicle model"
-            value={manualFields.vehicleModel}
-            onChange={updateManualField("vehicleModel")}
-            placeholder="e.g. Swift Dzire"
-            required
-          />
+        <form
+          id="assign-driver-panel-manual"
+          role="tabpanel"
+          aria-labelledby="assign-driver-tab-manual"
+          onSubmit={handleSubmitManual}
+          className="flex flex-col gap-3"
+        >
+          <AssignFormSection title="Driver" description="Who will meet the guest and drive this trip?">
+            <AssignDriverField
+              label="Driver name"
+              value={manualFields.driverName}
+              onChange={updateManualField("driverName")}
+              placeholder="e.g. Bilal Ahmed"
+              autoComplete="name"
+              required
+            />
+            <AssignDriverField
+              label="Driver phone"
+              value={manualFields.driverPhone}
+              onChange={updateManualField("driverPhone")}
+              placeholder="e.g. 9876543210"
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
+              hint="10-digit mobile number"
+              required
+            />
+          </AssignFormSection>
+
+          <AssignFormSection title="Vehicle" description="Plate and model shown to the guest on WhatsApp." accent="orange">
+            <AssignDriverField
+              label="Vehicle number"
+              value={manualFields.vehicleNumber}
+              onChange={(value) => updateManualField("vehicleNumber")(value.toUpperCase())}
+              placeholder="e.g. JK01AB1234"
+              required
+            />
+            <AssignDriverField
+              label="Vehicle model"
+              value={manualFields.vehicleModel}
+              onChange={updateManualField("vehicleModel")}
+              placeholder="e.g. Swift Dzire"
+              required
+            />
+          </AssignFormSection>
 
           {conflictCard}
           {errorBanner}
 
-          <div className="sticky bottom-0 -mx-6 -mb-6 bg-white px-6 pb-6 pt-2">
+          <AssignDriverStickyFooter>
             <Button type="submit" loading={submitting} loadingLabel="Assigning…">
               Assign driver
             </Button>
-          </div>
+          </AssignDriverStickyFooter>
         </form>
       )}
     </div>
-  )
-}
-
-function PhotoChip({ label, available }: { label: string; available: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[9.5px] font-semibold tracking-[0.3px]",
-        available ? "bg-kmr-green/10 text-kmr-green" : "bg-kmr-muted-2/10 text-kmr-muted-2",
-      )}
-    >
-      {available ? "✓" : "–"} {label}
-    </span>
-  )
-}
-
-function DriverOptionRow({
-  option,
-  selected,
-  onSelect,
-}: {
-  option: VendorDriverOption
-  selected: boolean
-  onSelect: () => void
-}) {
-  const vehicleLabel =
-    option.registrationNumber && option.model ? `${option.model} · ${option.registrationNumber}` : "No vehicle on file"
-  return (
-    <button
-      type="button"
-      role="option"
-      aria-selected={selected}
-      onClick={onSelect}
-      tabIndex={0}
-      className={cn(
-        "flex w-full flex-col items-start gap-1 rounded-sm border px-3 py-2.5 text-left transition-colors",
-        selected ? "border-kmr-blue bg-kmr-blue/5" : "border-transparent bg-kmr-surface hover:bg-kmr-surface-hover",
-      )}
-    >
-      <span className="font-archivo text-[15px] font-semibold text-kmr-ink">{option.fullName}</span>
-      <span className="font-archivo text-xs text-kmr-muted-1">
-        •••• {option.phoneLast10.slice(-4)} · {vehicleLabel}
-      </span>
-      <span className="flex gap-1.5">
-        <PhotoChip label="Driver photo" available={option.hasDriverPhoto} />
-        <PhotoChip label="Car photo" available={option.hasVehiclePhoto} />
-      </span>
-    </button>
-  )
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-  required = false,
-  hint,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  placeholder?: string
-  type?: string
-  required?: boolean
-  hint?: string
-}) {
-  const id = `assign-driver-${label.toLowerCase().replace(/\s+/g, "-")}`
-  return (
-    <label htmlFor={id} className="flex flex-col gap-1 text-left">
-      <span className="font-mono text-[9.5px] font-semibold tracking-[0.5px] text-kmr-muted-2">{label.toUpperCase()}</span>
-      <input
-        id={id}
-        name={id}
-        type={type}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        required={required}
-        aria-label={label}
-        tabIndex={0}
-        className="rounded-sm bg-kmr-surface px-3 py-3 font-archivo text-[15px] text-kmr-ink outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kmr-blue"
-      />
-      {hint && <span className="font-archivo text-[11px] text-kmr-muted-2">{hint}</span>}
-    </label>
   )
 }
