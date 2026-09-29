@@ -30,9 +30,10 @@ function VerifiedOperatorsMarquee() {
 interface HomeHeroProps {
   onOpenRequest: () => void;
   onApplyPreset: (days: number) => void;
+  onContinue: () => void;
 }
 
-export function HomeHero({ onOpenRequest, onApplyPreset }: HomeHeroProps) {
+export function HomeHero({ onOpenRequest, onApplyPreset, onContinue }: HomeHeroProps) {
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-[30px] pb-[90px] pt-[30px]">
       <TopBar />
@@ -87,6 +88,15 @@ export function HomeHero({ onOpenRequest, onApplyPreset }: HomeHeroProps) {
             strokeLinecap="square"
           />
         </svg>
+      </button>
+
+      <button
+        type="button"
+        onClick={onContinue}
+        aria-label="Continue with your phone"
+        className="flex w-full items-center justify-center rounded-sm border border-kmr-blue px-5 py-4 font-archivo text-sm font-bold text-kmr-blue"
+      >
+        Continue with your phone
       </button>
 
       <div className="flex flex-col gap-2">

@@ -1,5 +1,7 @@
 "use client";
 
+import { Suspense, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { MobileShell } from "@/components/ui/MobileShell";
 import { BottomNav } from "@/components/ui/BottomNav";
 import { useBookingFlow } from "@/features/booking-request/hooks/useBookingFlow";
@@ -7,32 +9,62 @@ import { HomeHero } from "@/features/booking-request/components/HomeHero";
 import { RequestSheet } from "@/features/booking-request/components/RequestSheet";
 import { DispatchScreen } from "@/features/quote-dispatch/components/DispatchScreen";
 import { WhatsAppOtpSheet } from "@/features/whatsapp-otp/components/WhatsAppOtpSheet";
-import { BookingStatusScreen } from "@/features/booking-status/components/BookingStatusScreen";
 import { ProfileScreen } from "@/features/profile/components/ProfileScreen";
 import { DemoAdminLink } from "@/features/admin-debug/components/DemoAdminLink";
-import { MockWhatsAppChat } from "@/features/demo/components/MockWhatsAppChat";
+import { GuestTripScreen } from "@/features/guest-trip/components/GuestTripScreen";
 
 export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
   const flow = useBookingFlow();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const continueRequested = searchParams.get("continue") === "1";
+  const confirmingParam = searchParams.get("confirming");
+  const confirming = confirmingParam === "balance" || confirmingParam === "token" ? confirmingParam : null;
   const showBottomNav = flow.overlay === "none";
+
+  useEffect(() => {
+    if (!continueRequested) return;
+    flow.navigateBooking();
+  }, [continueRequested, flow.navigateBooking]);
+
+  useEffect(() => {
+    if (!continueRequested || flow.screen !== "booking" || flow.overlay !== "none") return;
+    if (!flow.booking) return;
+    router.replace("/");
+  }, [continueRequested, flow.booking, flow.overlay, flow.screen, router]);
 
   return (
     <MobileShell>
       {flow.screen === "home" && (
-        <HomeHero onOpenRequest={flow.openSheet} onApplyPreset={flow.applyPreset} />
+        <HomeHero onOpenRequest={flow.openSheet} onApplyPreset={flow.applyPreset} onContinue={flow.openResume} />
       )}
 
-      {flow.screen === "booking" &&
-        (flow.booking ? (
-          <BookingStatusScreen
-            booking={flow.booking}
-            isDemoFlow={flow.isDemoFlow}
-            onSelectQuote={flow.selectQuote}
-            onOpenMockChat={flow.openMockChat}
-          />
-        ) : (
-          <EmptyBookingState onStart={flow.openSheet} />
-        ))}
+      {flow.screen === "booking" && flow.sessionId ? (
+        <GuestTripScreen
+          sessionId={flow.sessionId}
+          confirming={confirming}
+          notice={flow.tripNotice}
+          onMissing={() => {
+            if (continueRequested) flow.openResume();
+          }}
+          onClosed={flow.clearBooking}
+          onCancel={flow.clearBooking}
+          onStartRequest={flow.openSheet}
+          onContinue={flow.openResume}
+        />
+      ) : null}
+
+      {flow.screen === "booking" && !flow.sessionId ? (
+        <EmptyBookingState onStart={flow.openSheet} onContinue={flow.openResume} />
+      ) : null}
 
       {flow.screen === "profile" && (
         <ProfileScreen
@@ -84,15 +116,6 @@ export default function Home() {
         />
       )}
 
-      {flow.overlay === "mock_chat" && flow.tripRequestId && (
-        <MockWhatsAppChat
-          tripRequestId={flow.tripRequestId}
-          phoneDisplay={flow.otp.phone ? `+91 ${flow.otp.phone}` : "Traveller"}
-          selectedQuote={flow.selectedQuote}
-          onClose={flow.closeMockChat}
-        />
-      )}
-
       {showBottomNav && (
         <BottomNav
           active={flow.screen}
@@ -110,20 +133,20 @@ export default function Home() {
   );
 }
 
-function EmptyBookingState({ onStart }: { onStart: () => void }) {
+function EmptyBookingState({ onStart, onContinue }: { onStart: () => void; onContinue: () => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-[30px] pb-[90px] text-center">
-      <span className="font-mono text-[9px] font-semibold tracking-[1.5px] text-kmr-muted-3">
-        NO ACTIVE BOOKING
-      </span>
-      <h1 className="font-archivo text-2xl font-extrabold tracking-[-0.5px] text-kmr-ink">
-        Request your first quote.
-      </h1>
+      <span className="font-mono text-[9px] font-semibold tracking-[1.5px] text-kmr-muted-3">NO ACTIVE BOOKING</span>
+      <h1 className="font-archivo text-2xl font-extrabold tracking-[-0.5px] text-kmr-ink">Request your first quote.</h1>
       <button
         type="button"
-        onClick={onStart}
+        aria-label="Continue with your phone"
+        onClick={onContinue}
         className="rounded-sm bg-kmr-blue px-5 py-3 font-archivo text-sm font-bold text-white"
       >
+        Continue with your phone
+      </button>
+      <button type="button" onClick={onStart} className="font-archivo text-sm font-bold text-kmr-ink underline">
         Add cabs to your trip
       </button>
     </div>

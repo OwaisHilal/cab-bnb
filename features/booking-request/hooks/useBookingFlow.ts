@@ -21,8 +21,7 @@ import { QUOTE_REVEAL_DELAY_MS } from "@/features/quote-dispatch/constants";
 import type { DispatchVendorRow } from "@/features/quote-dispatch/types";
 import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
 import type { OtpDeliveryChannel, OtpState } from "@/features/whatsapp-otp/types";
-import type { BookingSummaryUi, QuoteRowUi, QuoteSnapshotStatusUi } from "@/features/booking-status/types";
-import { pickDefaultSelectedQuoteId } from "@/features/booking-status/quoteActions";
+import type { BookingSummaryUi } from "@/features/booking-status/types";
 import { getOrCreateClientSessionId, resetClientSessionId } from "@/lib/utils/clientSession";
 import { toIndianE164, isValidIndianMobile, sanitizeIndianPhoneInput, phoneLast4 } from "@/lib/utils/phone";
 import { getPhoneEmailProviderMode } from "@/features/phone-email/components/PhoneEmailAdapter";
@@ -37,50 +36,10 @@ import type { PhoneEmailResumePayload } from "@/lib/phone-email/resumeState";
 type PrimaryScreen = "home" | "booking" | "profile";
 type Overlay = "none" | "sheet" | "dispatch" | "otp" | "mock_chat";
 
-// Retries for ~90s: send_quotes drains on OTP verify; this buffer covers
-// MSG91 delivery + snapshot write, without polling indefinitely if
-// something upstream is stuck.
-const QUOTE_POLL_INTERVAL_MS = 3000;
-const QUOTE_POLL_MAX_ATTEMPTS = 30;
-
-const QUOTE_SNAPSHOT_STATUSES: readonly QuoteSnapshotStatusUi[] = [
-  "pending_send",
-  "sent",
-  "viewed",
-  "negotiating",
-  "finalized",
-  "expired",
-  "lost",
-];
-
-function isKnownQuoteStatus(value: string): value is QuoteSnapshotStatusUi {
-  return (QUOTE_SNAPSHOT_STATUSES as readonly string[]).includes(value);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 interface TripRequestCreateResponse {
   trip_request_id: string;
   matched_vendor_count: number;
   recommendation: { recommended_vehicle_type_id: number; reason: string | null } | null;
-}
-
-interface TripRequestSnapshotQuote {
-  id: string;
-  vendor_name: string;
-  vehicle_type_label: string;
-  current_quote: number;
-  is_best_price: boolean;
-  status: string;
-}
-
-interface TripRequestSnapshotResponse {
-  trip_request_id: string;
-  status: string;
-  matched_vendor_count: number;
-  quotes: TripRequestSnapshotQuote[];
 }
 
 function createDraft(): BookingRequestDraft {
@@ -124,17 +83,6 @@ function buildRecommendation(days: number, pax: number, vehicleType: VehicleType
 
 function buildRequestRef(tripRequestId: string | null): string {
   return tripRequestId ? `REQ-${tripRequestId.slice(0, 8).toUpperCase()}` : "REQUEST PENDING";
-}
-
-function toQuoteRowUi(quote: TripRequestSnapshotQuote, previouslySeenIds: ReadonlySet<string>): QuoteRowUi {
-  return {
-    id: quote.id,
-    vendorName: quote.vendor_name,
-    priceLabel: `\u20b9${quote.current_quote.toLocaleString("en-IN")}`,
-    isBestPrice: quote.is_best_price,
-    status: isKnownQuoteStatus(quote.status) ? quote.status : "sent",
-    isNew: !previouslySeenIds.has(quote.id),
-  };
 }
 
 export function useBookingFlow() {
@@ -196,6 +144,10 @@ export function useBookingFlow() {
   );
   const [dispatchDelayMs, setDispatchDelayMs] = useState(QUOTE_REVEAL_DELAY_MS);
   const [isDemoFlow, setIsDemoFlow] = useState(false);
+  const [resumeMode, setResumeMode] = useState(false);
+  const [tripNotice, setTripNotice] = useState<string | null>(() =>
+    resumedPhoneEmailPayload?.resumedExisting ? "You already have a trip in progress." : null,
+  );
 
   const dispatchTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const dispatchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -392,77 +344,45 @@ export function useBookingFlow() {
     setOtp((prev) => ({ ...prev, code, error: null }));
   }, []);
 
-  // Polls the customer-safe GET /api/trip-requests/[id] snapshot (Checklist
-  // 2.2 fallback path — option "b" from the Phase 4 audit) instead of a
-  // browser Realtime subscription, since RLS on trip_requests/quote_snapshots
-  // has no anon SELECT policy today (migration 0008). Stops as soon as any
-  // quote rows come back, on exhausting QUOTE_POLL_MAX_ATTEMPTS, or once a
-  // newer trip request supersedes this one via `activePollTripRequestId`.
-  //
-  // Phase 5 readiness fix pass (audit gap G3): Realtime is intentionally
-  // deferred rather than implemented here. Wiring browser Supabase Realtime
-  // today would require either an anon SELECT policy on trip_requests/
-  // quote_snapshots (widening exposure beyond the service-role-only model
-  // in 0008_rls_policies.sql) or a UUID-only access-control workaround,
-  // both of which are security regressions. Revisit once the auth/RLS
-  // model has a real per-session/per-tourist identity to scope Realtime
-  // subscriptions to; keep this polling fallback as the sole delivery
-  // path until then.
-  const pollTripRequestSnapshot = useCallback(async (requestId: string) => {
-    activePollTripRequestId.current = requestId;
-
-    for (let attempt = 0; attempt < QUOTE_POLL_MAX_ATTEMPTS; attempt += 1) {
-      if (activePollTripRequestId.current !== requestId) return;
-
-      try {
-        const response = await fetch(`/api/trip-requests/${requestId}`);
-        const data = (await response.json().catch(() => null)) as Partial<TripRequestSnapshotResponse> | null;
-
-        if (response.ok && data && Array.isArray(data.quotes) && data.quotes.length > 0) {
-          const rows = data.quotes.map((quote) => toQuoteRowUi(quote, seenQuoteIdsRef.current));
-          seenQuoteIdsRef.current = new Set(data.quotes.map((quote) => quote.id));
-          if (activePollTripRequestId.current === requestId) {
-            setBooking((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    quotes: rows,
-                    isAwaitingQuotes: false,
-                    selectedQuoteId: prev.selectedQuoteId ?? pickDefaultSelectedQuoteId(rows),
-                  }
-                : prev,
-            );
-          }
-          return;
-        }
-      } catch {
-        // Transient network error — fall through and retry on the next attempt.
-      }
-
-      if (activePollTripRequestId.current !== requestId) return;
-      await sleep(QUOTE_POLL_INTERVAL_MS);
-    }
-
-    if (activePollTripRequestId.current === requestId) {
-      setBooking((prev) => (prev ? { ...prev, isAwaitingQuotes: false } : prev));
-    }
-  }, []);
-
-  // Finishes the resume seeded by resumedPhoneEmailPayload above: clears
-  // the one-time flag (idempotent, safe under Strict Mode's dev-only
-  // double-invoke — unlike the useState seeding, this is a plain external
-  // side effect, not a setState call) and starts the same quote poll
-  // completeVerification() would have started.
+  // Clears the Phone.Email handoff once, after this hook has seeded from it.
+  // The guest snapshot is the live trip. This effect does not poll quotes.
   useEffect(() => {
     if (!resumedPhoneEmailPayload) return;
     clearVerifiedPhoneEmailResume();
-    void pollTripRequestSnapshot(resumedPhoneEmailPayload.tripRequestId);
-  }, [resumedPhoneEmailPayload, pollTripRequestSnapshot]);
+  }, [resumedPhoneEmailPayload]);
+
+  useEffect(() => {
+    if (!sessionId || resumedPhoneEmailPayload) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/guest-trip?session_id=${encodeURIComponent(sessionId)}`);
+        if (cancelled || !response.ok) return;
+        const data = (await response.json()) as { tripRequestId?: string };
+        setTripRequestId(data.tripRequestId ?? null);
+        setBooking({
+          bookingRef: buildRequestRef(data.tripRequestId ?? null),
+          summaryLabel: "Your trip",
+          quotes: [],
+          selectedQuoteId: null,
+          isAwaitingQuotes: false,
+        });
+        setIsVerified(true);
+        setScreen("booking");
+      } catch {
+        // A refresh with no network keeps the home screen. The booking tab retries.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resumedPhoneEmailPayload, sessionId]);
 
   // Shared by both verification paths (Plan §8): OTP-code success and
   // Phone.Email fallback success both land here.
-  const completeVerification = useCallback(() => {
-    if (!tripRequestId) {
+  const completeVerification = useCallback((resolvedTripId?: string) => {
+    const activeTripId = resolvedTripId ?? tripRequestId;
+    if (!activeTripId) {
       setOtp((prev) => ({
         ...prev,
         isSubmitting: false,
@@ -471,22 +391,22 @@ export function useBookingFlow() {
       return;
     }
 
+    if (resolvedTripId) setTripRequestId(resolvedTripId);
     seenQuoteIdsRef.current = new Set();
     setBooking({
-      bookingRef: buildRequestRef(tripRequestId),
+      bookingRef: buildRequestRef(activeTripId),
       summaryLabel: `${draft.days} days · ${draft.paxCount} travellers · ${draft.vehicleType.toUpperCase()}`,
       quotes: [],
       selectedQuoteId: null,
-      isAwaitingQuotes: true,
+      isAwaitingQuotes: false,
     });
     setIsVerified(true);
     setOtp((prev) => ({ ...prev, isSubmitting: false, step: "verified", error: null }));
-    void pollTripRequestSnapshot(tripRequestId);
     setTimeout(() => {
       setOverlay("none");
       setScreen("booking");
     }, 900);
-  }, [draft.days, draft.paxCount, draft.vehicleType, pollTripRequestSnapshot, tripRequestId]);
+  }, [draft.days, draft.paxCount, draft.vehicleType, tripRequestId]);
 
   const sendOtp = useCallback(async (prefer?: "whatsapp") => {
     const localDigits = sanitizeIndianPhoneInput(otp.phone);
@@ -574,7 +494,7 @@ export function useBookingFlow() {
       setOtp((prev) => ({ ...prev, error: `Enter the ${OTP_CODE_LENGTH}-digit code` }));
       return;
     }
-    if (!sessionId || !tripRequestId) {
+    if (!sessionId || (!resumeMode && !tripRequestId)) {
       setOtp((prev) => ({ ...prev, error: "Something went wrong with your request. Please start over." }));
       return;
     }
@@ -586,21 +506,34 @@ export function useBookingFlow() {
     setOtp((prev) => ({ ...prev, isSubmitting: true, error: null }));
 
     try {
-      const response = await fetch("/api/otp/verify", {
+      const response = await fetch(resumeMode ? "/api/guest-trip/resume" : "/api/otp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: sessionId,
           phone_e164: toIndianE164(otp.phone),
           otp_code: otp.code,
-          trip_request_id: tripRequestId,
+          ...(resumeMode ? {} : { trip_request_id: tripRequestId }),
         }),
       });
-      const data = await response.json().catch(() => null);
+      const data = (await response.json().catch(() => null)) as {
+        error?: string;
+        trip_request_id?: string;
+        tripRequestId?: string;
+        resumed_existing?: boolean;
+      } | null;
       console.info("[otp client] verify http", response.status);
 
+      if (response.status === 404 && resumeMode) {
+        setResumeMode(false);
+        setOverlay("none");
+        setScreen("home");
+        setOtp((prev) => ({ ...prev, isSubmitting: false, error: null }));
+        return;
+      }
+
       if (!response.ok) {
-        const errorMessage = (data as { error?: string } | null)?.error ?? "Incorrect OTP";
+        const errorMessage = data?.error ?? "Incorrect OTP";
         console.info("[otp client] verify fail", errorMessage);
         setOtp((prev) => ({
           ...prev,
@@ -611,12 +544,20 @@ export function useBookingFlow() {
       }
 
       console.info("[otp client] verify ok");
-      completeVerification();
+      if (data?.resumed_existing) {
+        setTripNotice("You already have a trip in progress.");
+      }
+      if (resumeMode) {
+        setResumeMode(false);
+        completeVerification(data?.tripRequestId);
+        return;
+      }
+      completeVerification(data?.resumed_existing ? data.trip_request_id : undefined);
     } catch {
       console.info("[otp client] verify fail", "network");
       setOtp((prev) => ({ ...prev, isSubmitting: false, error: "Network error. Try again." }));
     }
-  }, [completeVerification, otp.code, otp.phone, sessionId, tripRequestId]);
+  }, [completeVerification, otp.code, otp.phone, resumeMode, sessionId, tripRequestId]);
 
   // Passed to PhoneEmailAdapter as onBeforeRedirect: the tab is about to
   // navigate away to Phone.Email and back (Plan: Phone.Email Full Redirect
@@ -662,6 +603,14 @@ export function useBookingFlow() {
   }, []);
 
   const clearBooking = useCallback(() => {
+    const currentSession = sessionId;
+    if (currentSession) {
+      void fetch("/api/guest-trip/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: currentSession }),
+      });
+    }
     activePollTripRequestId.current = null;
     seenQuoteIdsRef.current = new Set();
     clearDispatchTimers();
@@ -681,8 +630,18 @@ export function useBookingFlow() {
     setIsSubmittingRequest(false);
     setSheetStep(0);
     setOverlay("none");
+    setTripNotice(null);
+    setResumeMode(false);
     setScreen("home");
-  }, [clearDispatchTimers]);
+  }, [clearDispatchTimers, sessionId]);
+
+  const openResume = useCallback(() => {
+    setResumeMode(true);
+    setOtp((prev) => ({ ...createOtpState(), phone: prev.phone }));
+    setOverlay("otp");
+  }, []);
+
+  const navigateBooking = useCallback(() => setScreen("booking"), []);
 
   const recommendation = buildRecommendation(draft.days, draft.paxCount, draft.vehicleType);
   const requestRef = buildRequestRef(tripRequestId);
@@ -702,8 +661,10 @@ export function useBookingFlow() {
     isSubmittingRequest,
     requestRef,
     tripRequestId,
+    sessionId,
+    tripNotice,
     navigateHome: () => setScreen("home"),
-    navigateBooking: () => setScreen("booking"),
+    navigateBooking,
     navigateProfile,
     openSheet,
     closeSheet,
@@ -725,6 +686,7 @@ export function useBookingFlow() {
     openMockChat,
     closeMockChat,
     clearBooking,
+    openResume,
   };
 }
 
