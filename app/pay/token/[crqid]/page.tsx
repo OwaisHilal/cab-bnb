@@ -4,6 +4,10 @@ import { formatInr } from "@/lib/whatsapp/formatInr"
 import { getAppBaseUrl } from "@/lib/utils/appUrl"
 import { CashfreeCheckoutButton } from "@/features/token-payment/components/CashfreeCheckoutButton"
 import { RefreshStatusButton } from "@/features/token-payment/components/RefreshStatusButton"
+import { Spinner } from "@/components/ui/Spinner"
+import { StepTracker } from "@/components/ui/StepTracker"
+import { TopBar } from "@/components/ui/TopBar"
+import { CheckIcon, InfoIcon, LockIcon, ShieldCheckIcon } from "@/components/ui/icons"
 
 export const metadata = {
   title: "Pay ₹99 token — KMR Cabs",
@@ -38,17 +42,55 @@ async function loadPaymentIntent(crqid: string): Promise<TokenPaymentIntentRow |
   return (data as TokenPaymentIntentRow | null) ?? null
 }
 
-function PaymentPageShell({ children }: { children: ReactNode }) {
+function PaymentPageShell({ children, stepIndex }: { children: ReactNode; stepIndex?: number }) {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-kmr-backdrop px-6 py-12">
-      <div className="w-full max-w-sm rounded-md bg-white p-6 text-center shadow-sm">{children}</div>
+    <main className="flex min-h-dvh justify-center bg-kmr-backdrop">
+      <div className="flex min-h-dvh w-full max-w-[430px] flex-col gap-6 bg-white px-[30px] py-[30px] shadow-[0_0_40px_rgba(16,17,24,0.12)] animate-kmr-fade">
+        <TopBar />
+        {stepIndex === undefined ? null : <StepTracker current={stepIndex} />}
+        <div className="flex flex-1 flex-col justify-center gap-5 pb-6">{children}</div>
+        <p className="flex items-center justify-center gap-1.5 pb-1 text-center font-mono text-[9px] font-semibold tracking-[1px] text-kmr-muted-3">
+          <ShieldCheckIcon size={13} className="text-kmr-green-dark" />
+          PAYMENTS SECURED BY CASHFREE
+        </p>
+      </div>
     </main>
+  )
+}
+
+function PaymentStatusBlock({
+  icon,
+  tone,
+  title,
+  description,
+  children,
+}: {
+  icon: ReactNode
+  tone: "blue" | "green" | "orange"
+  title: string
+  description?: string
+  children?: ReactNode
+}) {
+  const toneClasses = {
+    blue: "bg-kmr-blue/10 text-kmr-blue",
+    green: "bg-kmr-green/10 text-kmr-green-dark",
+    orange: "bg-kmr-orange/10 text-kmr-orange",
+  }
+  return (
+    <div role="status" className="flex flex-col items-center gap-3 text-center animate-kmr-reveal">
+      <span className={`flex size-16 items-center justify-center rounded-full ${toneClasses[tone]}`}>{icon}</span>
+      <h1 className="font-archivo text-[26px] font-extrabold leading-[1.15] tracking-[-0.6px] text-kmr-ink">{title}</h1>
+      {description ? (
+        <p className="font-archivo text-sm font-medium leading-[1.55] text-kmr-muted-1">{description}</p>
+      ) : null}
+      {children ? <div className="mt-2 flex flex-col items-center gap-3">{children}</div> : null}
+    </div>
   )
 }
 
 function TripLink({ href }: { href: string }) {
   return (
-    <a href={href} className="font-archivo text-sm font-bold text-kmr-blue">
+    <a href={href} className="font-archivo text-sm font-bold text-kmr-blue underline underline-offset-4">
       Back to your trip
     </a>
   )
@@ -72,10 +114,9 @@ export default async function TokenPaymentPage({
   if (!intent) {
     return (
       <PaymentPageShell>
-        <h1 className="font-archivo text-lg font-bold text-kmr-ink">Payment link not found</h1>
-        <div className="mt-4">
+        <PaymentStatusBlock icon={<InfoIcon size={30} />} tone="orange" title="Payment link not found">
           <TripLink href="/?continue=1" />
-        </div>
+        </PaymentStatusBlock>
       </PaymentPageShell>
     )
   }
@@ -96,26 +137,28 @@ export default async function TokenPaymentPage({
   if (tripClosed) {
     return (
       <PaymentPageShell>
-        <h1 className="font-archivo text-lg font-bold text-kmr-ink">This trip is closed.</h1>
-        <div className="mt-4">
+        <PaymentStatusBlock icon={<InfoIcon size={30} />} tone="blue" title="This trip is closed.">
           <TripLink href="/?continue=1" />
-        </div>
+        </PaymentStatusBlock>
       </PaymentPageShell>
     )
   }
 
   if (intent.status === "paid") {
     return (
-      <PaymentPageShell>
-        <h1 className="font-archivo text-lg font-bold text-kmr-green">Payment received</h1>
-        <p className="mt-2 font-archivo text-sm text-kmr-muted-1">
-          {isBalance
-            ? `Your ${formatInr(intent.amount_inr)} balance is confirmed.`
-            : `Your ${formatInr(intent.amount_inr)} token is confirmed.`}
-        </p>
-        <div className="mt-4">
+      <PaymentPageShell stepIndex={isBalance ? 4 : 2}>
+        <PaymentStatusBlock
+          icon={<CheckIcon size={32} />}
+          tone="green"
+          title="Payment received"
+          description={
+            isBalance
+              ? `Your ${formatInr(intent.amount_inr)} balance is confirmed.`
+              : `Your ${formatInr(intent.amount_inr)} token is confirmed.`
+          }
+        >
           <TripLink href="/?continue=1" />
-        </div>
+        </PaymentStatusBlock>
       </PaymentPageShell>
     )
   }
@@ -124,19 +167,20 @@ export default async function TokenPaymentPage({
 
   if (!orderIsPayable) {
     return (
-      <PaymentPageShell>
-        <h1 className="font-archivo text-lg font-bold text-kmr-ink">
-          {returningFromCheckout ? "Confirming your payment…" : "This payment link needs a refresh"}
-        </h1>
-        <p className="mt-2 font-archivo text-sm text-kmr-muted-1">
-          {returningFromCheckout
-            ? "If you already paid, you'll get a WhatsApp message shortly. This can take a few seconds."
-            : "This link has expired or was already used."}
-        </p>
-        <div className="mt-4 flex flex-col items-center gap-3">
+      <PaymentPageShell stepIndex={isBalance ? 3 : 1}>
+        <PaymentStatusBlock
+          icon={returningFromCheckout ? <Spinner tone="blue" size="lg" /> : <InfoIcon size={30} />}
+          tone={returningFromCheckout ? "blue" : "orange"}
+          title={returningFromCheckout ? "Confirming your payment…" : "This payment link needs a refresh"}
+          description={
+            returningFromCheckout
+              ? "If you already paid, you'll get a WhatsApp message shortly. This can take a few seconds. Please don't close this page."
+              : "This link has expired or was already used."
+          }
+        >
           {returningFromCheckout && <RefreshStatusButton />}
           <TripLink href={returningFromCheckout ? tripHref(confirming) : "/?continue=1"} />
-        </div>
+        </PaymentStatusBlock>
       </PaymentPageShell>
     )
   }
@@ -146,14 +190,28 @@ export default async function TokenPaymentPage({
     process.env.CASHFREE_ENVIRONMENT?.trim().toLowerCase() === "sandbox" ? "sandbox" : "production"
 
   return (
-    <PaymentPageShell>
-      <h1 className="font-archivo text-lg font-bold text-kmr-ink">
-        {isBalance
-          ? `Pay ${formatInr(intent.amount_inr)} to confirm your booking`
-          : `Pay ${formatInr(intent.amount_inr)} to lock this cab`}
-      </h1>
-      <p className="mt-2 font-archivo text-sm text-kmr-muted-1">Secure checkout powered by Cashfree.</p>
-      <div className="mt-6">
+    <PaymentPageShell stepIndex={isBalance ? 3 : 1}>
+      <div className="flex flex-col items-center gap-3 text-center animate-kmr-reveal">
+        <span className="flex size-16 items-center justify-center rounded-full bg-kmr-green/10 text-kmr-green-dark">
+          <LockIcon size={28} />
+        </span>
+        <span className="font-mono text-[9px] font-semibold tracking-[1.5px] text-kmr-muted-3">
+          {isBalance ? "PAY THE BALANCE" : "PAY THE TOKEN"}
+        </span>
+        <p className="font-mono text-[44px] font-bold leading-none tracking-[-1.5px] text-kmr-ink">
+          {formatInr(intent.amount_inr)}
+        </p>
+        <h1 className="font-archivo text-[19px] font-extrabold leading-[1.25] tracking-[-0.4px] text-kmr-ink">
+          {isBalance
+            ? `Pay ${formatInr(intent.amount_inr)} to confirm your booking`
+            : `Pay ${formatInr(intent.amount_inr)} to lock this cab`}
+        </h1>
+        <p className="flex items-center gap-1.5 rounded-full bg-kmr-surface px-3 py-1.5 font-archivo text-[12.5px] font-semibold text-kmr-muted-1">
+          <ShieldCheckIcon size={14} className="text-kmr-green-dark" />
+          Secure checkout powered by Cashfree.
+        </p>
+      </div>
+      <div className="mt-2">
         <CashfreeCheckoutButton
           paymentSessionId={intent.payment_session_id as string}
           returnUrl={`${appBaseUrl}/?continue=1&confirming=${confirming}`}

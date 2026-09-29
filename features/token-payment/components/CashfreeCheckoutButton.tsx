@@ -63,11 +63,25 @@ export function CashfreeCheckoutButton({
 
   return (
     <div className="flex flex-col gap-3">
-      <Button type="button" onClick={handlePayNow} loading={loading} loadingLabel="Opening secure checkout…">
+      <Button
+        type="button"
+        onClick={handlePayNow}
+        loading={loading}
+        loadingLabel="Opening secure checkout…"
+        className="min-h-[56px] text-base"
+      >
         Pay {formatInr(amountInr)} now
       </Button>
+      {loading && (
+        <p role="status" className="text-center font-archivo text-[12.5px] font-medium text-kmr-muted-1">
+          Hang tight, don&apos;t close or refresh this page.
+        </p>
+      )}
       {error && (
-        <p role="alert" className="font-archivo text-sm text-kmr-orange">
+        <p
+          role="alert"
+          className="rounded-md border border-kmr-orange/25 bg-kmr-orange/10 px-3.5 py-3 font-archivo text-[13px] font-semibold leading-[1.45] text-kmr-ink"
+        >
           {error}
         </p>
       )}

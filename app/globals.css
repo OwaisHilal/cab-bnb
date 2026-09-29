@@ -37,6 +37,8 @@
   --color-kmr-backdrop: var(--kmr-backdrop);
   --font-archivo: var(--font-archivo);
   --font-mono: var(--font-ibm-plex-mono);
+  --shadow-kmr-card: 0 1px 2px rgba(16, 17, 24, 0.05), 0 8px 22px rgba(16, 17, 24, 0.06);
+  --shadow-kmr-cta: 0 6px 18px rgba(31, 173, 83, 0.32);
 }
 
 body {
@@ -121,6 +123,21 @@ body {
   }
 }
 
+@keyframes kmr-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.kmr-skeleton {
+  background: linear-gradient(90deg, var(--kmr-surface) 25%, #ffffff 50%, var(--kmr-surface) 75%);
+  background-size: 200% 100%;
+  animation: kmr-shimmer 1.4s ease-in-out infinite;
+}
+
 .animate-kmr-fade {
   animation: kmr-fade 0.3s ease both;
 }
@@ -170,6 +187,10 @@ body {
 
   .animate-kmr-step-fade,
   .animate-kmr-step-label-fade {
+    animation: none;
+  }
+
+  .kmr-skeleton {
     animation: none;
   }
 

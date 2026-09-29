@@ -2,6 +2,7 @@
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { cn } from "@/lib/utils/cn";
+import { Spinner } from "@/components/ui/Spinner";
 
 type ButtonVariant = "primary" | "secondary" | "ghost";
 
@@ -10,18 +11,6 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
   loading?: boolean;
   loadingLabel?: string;
-}
-
-function Spinner({ className }: { className?: string }) {
-  return (
-    <span
-      className={cn(
-        "size-4 flex-none animate-spin rounded-full border-2 border-white/30 border-t-white",
-        className,
-      )}
-      aria-hidden="true"
-    />
-  );
 }
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
