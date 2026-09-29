@@ -56,15 +56,21 @@ export const handleSendBalancePayment = async (
   const { data: booking, error: bookingError } = await supabase
     .from("bookings")
     .select(
-      "id, status, payment_status, lock_type, final_quote, trip_days, pax_count, tourist_id, vendor_id, trip_request_id, winning_quote_snapshot_id, pickup_at, tourists(phone_e164), vendors(business_name, reliability_score), vehicle_types(label, code), trip_requests(pickup_location, drop_location, trip_start_date), drivers(full_name, photo_url), vehicles(stock_photo_url, registration_number, model)",
+      "id, status, payment_status, lock_type, final_quote, trip_days, pax_count, tourist_id, vendor_id, trip_request_id, winning_quote_snapshot_id, pickup_at, tourists(phone_e164), vendors(business_name, reliability_score), vehicle_types(label, code), trip_requests(status, pickup_location, drop_location, trip_start_date), drivers(full_name, photo_url), vehicles(stock_photo_url, registration_number, model)",
     )
     .eq("id", bookingId)
     .maybeSingle()
 
   if (bookingError) throw new Error(`Failed to fetch booking: ${bookingError.message}`)
   if (!booking) throw new Error(`booking ${bookingId} not found`)
+  if (booking.status === "cancelled") return
   if (booking.lock_type !== "token_99") return
   if (booking.payment_status === "fully_paid") return
+
+  const tripStatus = firstOrSelf(
+    booking.trip_requests as { status?: string } | { status?: string }[] | null,
+  )?.status
+  if (tripStatus === "abandoned" || tripStatus === "expired") return
 
   const { data: existingLog, error: logLookupError } = await supabase
     .from("whatsapp_message_log")
@@ -124,8 +130,8 @@ export const handleSendBalancePayment = async (
   )
   const trip = firstOrSelf(
     booking.trip_requests as
-      | { pickup_location: string | null; drop_location: string | null; trip_start_date: string }
-      | { pickup_location: string | null; drop_location: string | null; trip_start_date: string }[]
+      | { status?: string; pickup_location: string | null; drop_location: string | null; trip_start_date: string }
+      | { status?: string; pickup_location: string | null; drop_location: string | null; trip_start_date: string }[]
       | null,
   )
   const vehicleType = firstOrSelf(

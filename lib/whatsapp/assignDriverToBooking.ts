@@ -573,6 +573,22 @@ export const assignDriverToBooking = async (
   driver: AssignDriverInput,
   meta: { rawMessageText: string; waMessageId?: string },
 ): Promise<AssignDriverToBookingResult> => {
+  if (booking.status === "cancelled") {
+    return { ok: false, reason: "booking_not_assignable" }
+  }
+
+  const { data: tripLink } = await supabase
+    .from("bookings")
+    .select("trip_requests(status)")
+    .eq("id", booking.bookingId)
+    .maybeSingle()
+  const tripStatus = firstOrSelf(
+    tripLink?.trip_requests as { status?: string } | { status?: string }[] | null,
+  )?.status
+  if (tripStatus === "abandoned" || tripStatus === "expired") {
+    return { ok: false, reason: "booking_not_assignable" }
+  }
+
   if (!isBookingAssignable(booking)) {
     return { ok: false, reason: "booking_not_assignable" }
   }

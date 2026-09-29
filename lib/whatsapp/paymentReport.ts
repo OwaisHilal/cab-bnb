@@ -18,7 +18,11 @@ export function shouldEnqueuePaidFollowup(input: {
   action: PaymentReportAction
   bookingPaymentStatus?: string | null
   quoteStatus?: string | null
+  tripRequestStatus?: string | null
+  bookingStatus?: string | null
 }): boolean {
+  if (input.tripRequestStatus === "abandoned" || input.tripRequestStatus === "expired") return false
+  if (input.bookingStatus === "cancelled") return false
   if (input.action === "ignore") return false
   if (input.action === "balance") return input.bookingPaymentStatus !== "fully_paid"
   return input.quoteStatus !== "finalized"

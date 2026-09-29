@@ -138,14 +138,17 @@ export async function confirmPaymentByCrqid(
     }
     const { data: booking, error: bookingError } = await supabase
       .from("bookings")
-      .select("payment_status")
+      .select("payment_status, status, trip_requests(status)")
       .eq("id", bookingId)
       .maybeSingle();
     if (bookingError) throw new Error(`Failed to load booking for balance payment: ${bookingError.message}`);
+    const tripStatus = readEmbeddedStatus(booking?.trip_requests);
     if (
       shouldEnqueuePaidFollowup({
         action,
         bookingPaymentStatus: (booking?.payment_status as string | null) ?? null,
+        bookingStatus: (booking?.status as string | null) ?? null,
+        tripRequestStatus: tripStatus,
       })
     ) {
       const { error } = await supabase.from("job_queue").insert({
@@ -171,7 +174,7 @@ export async function confirmPaymentByCrqid(
 
   const { data: snapshot, error: snapshotError } = await supabase
     .from("quote_snapshots")
-    .select("id, status")
+    .select("id, status, trip_requests(status)")
     .eq("id", quoteSnapshotId)
     .maybeSingle();
 
@@ -182,6 +185,7 @@ export async function confirmPaymentByCrqid(
     shouldEnqueuePaidFollowup({
       action,
       quoteStatus: (snapshot?.status as string | null) ?? null,
+      tripRequestStatus: readEmbeddedStatus(snapshot?.trip_requests),
     })
   ) {
     const { error } = await supabase.from("job_queue").insert({
@@ -366,6 +370,14 @@ function isPaymentIntentTableMissing(error: { code?: string; message: string }):
     (message.includes("whatsapp_payment_intents") &&
       (message.includes("does not exist") || message.includes("schema cache") || message.includes("could not find")))
   );
+}
+
+function readEmbeddedStatus(value: unknown): string | null {
+  if (!value) return null;
+  const row = Array.isArray(value) ? value[0] : value;
+  if (!row || typeof row !== "object") return null;
+  const status = (row as { status?: unknown }).status;
+  return typeof status === "string" ? status : null;
 }
 
 async function applyStatusUpdate(supabase: SupabaseClient, status: InboundWhatsAppStatus): Promise<void> {

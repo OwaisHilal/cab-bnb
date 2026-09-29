@@ -39,6 +39,7 @@ interface QuoteSnapshotRow {
 
 interface TripRequestEmbed {
   id: string
+  status: string
   tourist_id: string | null
   pickup_location: string | null
   drop_location: string | null
@@ -97,7 +98,7 @@ export const handleSendTokenPaymentLink = async (
   const { data: snapshot, error: snapshotError } = await supabase
     .from("quote_snapshots")
     .select(
-      "id, trip_request_id, vendor_id, current_quote, status, vendors(business_name, reliability_score), vehicle_types(label), trip_requests(id, tourist_id, pickup_location, drop_location, trip_start_date, trip_days, pax_count, tourists(phone_e164), requested_vehicle_type:vehicle_types!requested_vehicle_type_id(label))",
+      "id, trip_request_id, vendor_id, current_quote, status, vendors(business_name, reliability_score), vehicle_types(label), trip_requests(id, status, tourist_id, pickup_location, drop_location, trip_start_date, trip_days, pax_count, tourists(phone_e164), requested_vehicle_type:vehicle_types!requested_vehicle_type_id(label))",
     )
     .eq("id", quoteSnapshotId)
     .maybeSingle()
@@ -113,6 +114,16 @@ export const handleSendTokenPaymentLink = async (
 
   const trip = firstOrSelf(row.trip_requests)
   if (!trip) throw new Error(`quote_snapshot ${quoteSnapshotId} has no trip_request`)
+  if (trip.status === "abandoned" || trip.status === "expired") return
+
+  const { data: closedBooking } = await supabase
+    .from("bookings")
+    .select("id, status")
+    .eq("trip_request_id", trip.id)
+    .eq("status", "cancelled")
+    .limit(1)
+    .maybeSingle()
+  if (closedBooking?.id) return
 
   const touristPhone = firstOrSelf(trip.tourists)?.phone_e164
   if (!touristPhone) {

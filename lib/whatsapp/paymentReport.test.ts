@@ -31,6 +31,25 @@ describe("shouldEnqueuePaidFollowup", () => {
     assert.equal(shouldEnqueuePaidFollowup({ action: "token_lock", quoteStatus: "sent" }), true)
     assert.equal(shouldEnqueuePaidFollowup({ action: "token_lock", quoteStatus: "finalized" }), false)
   })
+
+  it("does not enqueue a follow-up for a closed trip", () => {
+    assert.equal(
+      shouldEnqueuePaidFollowup({
+        action: "token_lock",
+        quoteStatus: "sent",
+        tripRequestStatus: "abandoned",
+      }),
+      false,
+    )
+    assert.equal(
+      shouldEnqueuePaidFollowup({
+        action: "balance",
+        bookingPaymentStatus: "token_paid",
+        bookingStatus: "cancelled",
+      }),
+      false,
+    )
+  })
 })
 
 describe("paymentLinkHeaderAttempts", () => {
