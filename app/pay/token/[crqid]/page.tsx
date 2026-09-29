@@ -19,13 +19,14 @@ interface TokenPaymentIntentRow {
   payment_session_id: string | null
   cashfree_order_status: string | null
   purpose: string | null
+  trip_request_id: string | null
 }
 
 async function loadPaymentIntent(crqid: string): Promise<TokenPaymentIntentRow | null> {
   const supabase = getSupabaseServiceRoleClient()
   const { data, error } = await supabase
     .from("whatsapp_payment_intents")
-    .select("status, amount_inr, payment_session_id, cashfree_order_status, purpose")
+    .select("status, amount_inr, payment_session_id, cashfree_order_status, purpose, trip_request_id")
     .eq("id", crqid)
     .maybeSingle()
 
@@ -45,13 +46,11 @@ function PaymentPageShell({ children }: { children: ReactNode }) {
   )
 }
 
-function BackToWhatsAppHint({ isBalance }: { isBalance: boolean }) {
+function TripLink({ href }: { href: string }) {
   return (
-    <p className="mt-2 font-archivo text-sm text-kmr-muted-1">
-      {isBalance
-        ? "Please go back to WhatsApp — a fresh payment link will follow shortly."
-        : 'Please go back to WhatsApp and tap "Select vendor" again to get a fresh payment link.'}
-    </p>
+    <a href={href} className="font-archivo text-sm font-bold text-kmr-blue">
+      Back to your trip
+    </a>
   )
 }
 
@@ -67,17 +66,43 @@ export default async function TokenPaymentPage({
   const returningFromCheckout = Boolean(orderIdParam)
 
   const intent = await loadPaymentIntent(crqid)
+  const tripHref = (confirming: "token" | "balance" | null) =>
+    confirming ? `/?continue=1&confirming=${confirming}` : "/?continue=1"
 
   if (!intent) {
     return (
       <PaymentPageShell>
         <h1 className="font-archivo text-lg font-bold text-kmr-ink">Payment link not found</h1>
-        <BackToWhatsAppHint isBalance={false} />
+        <div className="mt-4">
+          <TripLink href="/?continue=1" />
+        </div>
       </PaymentPageShell>
     )
   }
 
   const isBalance = intent.purpose === "balance"
+  const confirming = isBalance ? "balance" : "token"
+  let tripClosed = false
+  if (intent.trip_request_id) {
+    const supabase = getSupabaseServiceRoleClient()
+    const { data: trip } = await supabase
+      .from("trip_requests")
+      .select("status")
+      .eq("id", intent.trip_request_id)
+      .maybeSingle()
+    tripClosed = trip?.status === "abandoned" || trip?.status === "expired"
+  }
+
+  if (tripClosed) {
+    return (
+      <PaymentPageShell>
+        <h1 className="font-archivo text-lg font-bold text-kmr-ink">This trip is closed.</h1>
+        <div className="mt-4">
+          <TripLink href="/?continue=1" />
+        </div>
+      </PaymentPageShell>
+    )
+  }
 
   if (intent.status === "paid") {
     return (
@@ -85,9 +110,12 @@ export default async function TokenPaymentPage({
         <h1 className="font-archivo text-lg font-bold text-kmr-green">Payment received</h1>
         <p className="mt-2 font-archivo text-sm text-kmr-muted-1">
           {isBalance
-            ? `Your ${formatInr(intent.amount_inr)} balance payment is confirmed. Check WhatsApp for your driver's contact details.`
-            : `Your ${formatInr(intent.amount_inr)} token is confirmed. Check WhatsApp for your booking details.`}
+            ? `Your ${formatInr(intent.amount_inr)} balance is confirmed.`
+            : `Your ${formatInr(intent.amount_inr)} token is confirmed.`}
         </p>
+        <div className="mt-4">
+          <TripLink href="/?continue=1" />
+        </div>
       </PaymentPageShell>
     )
   }
@@ -107,7 +135,7 @@ export default async function TokenPaymentPage({
         </p>
         <div className="mt-4 flex flex-col items-center gap-3">
           {returningFromCheckout && <RefreshStatusButton />}
-          <BackToWhatsAppHint isBalance={isBalance} />
+          <TripLink href={returningFromCheckout ? tripHref(confirming) : "/?continue=1"} />
         </div>
       </PaymentPageShell>
     )
@@ -128,7 +156,7 @@ export default async function TokenPaymentPage({
       <div className="mt-6">
         <CashfreeCheckoutButton
           paymentSessionId={intent.payment_session_id as string}
-          returnUrl={`${appBaseUrl}/pay/token/${crqid}?order_id={order_id}`}
+          returnUrl={`${appBaseUrl}/?continue=1&confirming=${confirming}`}
           environment={environment}
           amountInr={intent.amount_inr}
         />
