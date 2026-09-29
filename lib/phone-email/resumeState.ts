@@ -14,6 +14,7 @@ export interface PhoneEmailResumePayload {
   days: number;
   paxCount: number;
   vehicleType: VehicleTypeCode;
+  resumedExisting?: boolean;
 }
 
 const PENDING_KEY = "kmr_phone_email_pending";

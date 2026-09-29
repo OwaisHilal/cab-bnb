@@ -112,5 +112,9 @@ export async function POST(request: NextRequest) {
   }
 
   console.info("[otp verify] ok");
-  return jsonOk({ verified: true, trip_request_id });
+  return jsonOk({
+    verified: true,
+    trip_request_id: completionResult.tripRequestId,
+    resumed_existing: completionResult.resumedExisting,
+  });
 }

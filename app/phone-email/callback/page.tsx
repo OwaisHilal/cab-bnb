@@ -65,7 +65,17 @@ function PhoneEmailCallbackContent() {
           return;
         }
 
-        writeVerifiedPhoneEmailResume(pending);
+        const data = (await response.json().catch(() => null)) as {
+          trip_request_id?: string;
+          resumed_existing?: boolean;
+        } | null;
+
+        writeVerifiedPhoneEmailResume({
+          ...pending,
+          tripRequestId:
+            data?.resumed_existing && data.trip_request_id ? data.trip_request_id : pending.tripRequestId,
+          resumedExisting: Boolean(data?.resumed_existing),
+        });
         router.replace("/");
       } catch {
         if (!cancelled) setStatus("error");

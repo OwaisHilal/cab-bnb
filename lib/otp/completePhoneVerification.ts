@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { findCurrentGuestTrip, rememberGuestSession } from "@/lib/guest-trip/findCurrentGuestTrip";
 import { drainDueJobs } from "@/lib/jobs/drainDueJobs";
 import { SEND_QUOTES_JOB_TYPE } from "@/lib/jobs/localJobHandlerTypes";
 import {
@@ -27,7 +28,7 @@ export interface CompletePhoneVerificationInput {
 }
 
 export type CompletePhoneVerificationResult =
-  | { ok: true; touristId: string }
+  | { ok: true; touristId: string; tripRequestId: string; resumedExisting: boolean }
   | { ok: false; status: number; message: string };
 
 /**
@@ -74,6 +75,43 @@ export async function completePhoneVerification(
       status: 500,
       message: `Failed to upsert tourist: ${touristUpsertError?.message ?? "unknown error"}`,
     };
+  }
+
+  const discardableNewRequestStatuses = ["matching", "quotes_ready", "otp_pending"];
+  let currentTrip;
+  try {
+    currentTrip = await findCurrentGuestTrip(supabase, tourist.id as string);
+  } catch (error) {
+    return {
+      ok: false,
+      status: 500,
+      message: error instanceof Error ? error.message : "Failed to find the current trip",
+    };
+  }
+
+  if (currentTrip?.inProgress && currentTrip.id !== tripRequestId) {
+    if (discardableNewRequestStatuses.includes(tripRequest.status)) {
+      const { error: abandonError } = await supabase
+        .from("trip_requests")
+        .update({ status: "abandoned" })
+        .eq("id", tripRequestId)
+        .in("status", discardableNewRequestStatuses);
+      if (abandonError) {
+        return { ok: false, status: 500, message: `Failed to close the extra trip: ${abandonError.message}` };
+      }
+    }
+
+    try {
+      await rememberGuestSession(supabase, sessionId, currentTrip.id);
+    } catch (error) {
+      return {
+        ok: false,
+        status: 500,
+        message: error instanceof Error ? error.message : "Failed to save guest session",
+      };
+    }
+
+    return { ok: true, touristId: tourist.id as string, tripRequestId: currentTrip.id, resumedExisting: true };
   }
 
   // A duplicate or late verification (e.g. a replayed OTP submit, or
@@ -144,5 +182,15 @@ export async function completePhoneVerification(
     }
   }
 
-  return { ok: true, touristId: tourist.id as string };
+  try {
+    await rememberGuestSession(supabase, sessionId, tripRequestId);
+  } catch (error) {
+    return {
+      ok: false,
+      status: 500,
+      message: error instanceof Error ? error.message : "Failed to save guest session",
+    };
+  }
+
+  return { ok: true, touristId: tourist.id as string, tripRequestId, resumedExisting: false };
 }

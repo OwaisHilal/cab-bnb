@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
     verified: true,
     channel: "phone_email" as const,
     phone_e164: proofResult.user.phoneE164,
-    trip_request_id,
+    trip_request_id: completionResult.tripRequestId,
+    resumed_existing: completionResult.resumedExisting,
   });
 }
