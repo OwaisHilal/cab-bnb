@@ -54,6 +54,8 @@ export interface SendWhatsAppResult {
   configured: boolean
   success: boolean
   simulated?: boolean
+  /** Which path actually returned this result. */
+  channel?: "template" | "session"
   waMessageId?: string
   error?: string
 }

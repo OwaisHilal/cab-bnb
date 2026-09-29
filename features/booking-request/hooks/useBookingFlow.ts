@@ -39,8 +39,11 @@ type Overlay = "none" | "sheet" | "dispatch" | "otp" | "mock_chat";
 interface TripRequestCreateResponse {
   trip_request_id: string;
   matched_vendor_count: number;
+  existing?: boolean;
   recommendation: { recommended_vehicle_type_id: number; reason: string | null } | null;
 }
+
+const ONE_BOOKING_NOTICE = "Only 1 booking is allowed for now.";
 
 function createDraft(): BookingRequestDraft {
   return {
@@ -146,7 +149,7 @@ export function useBookingFlow() {
   const [isDemoFlow, setIsDemoFlow] = useState(false);
   const [resumeMode, setResumeMode] = useState(false);
   const [tripNotice, setTripNotice] = useState<string | null>(() =>
-    resumedPhoneEmailPayload?.resumedExisting ? "You already have a trip in progress." : null,
+    resumedPhoneEmailPayload?.resumedExisting ? ONE_BOOKING_NOTICE : null,
   );
 
   const dispatchTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -195,11 +198,21 @@ export function useBookingFlow() {
     };
   }, []);
 
+  const viewCurrentBooking = useCallback(() => {
+    setTripNotice(ONE_BOOKING_NOTICE);
+    setOverlay("none");
+    setScreen("booking");
+  }, []);
+
   const openSheet = useCallback(() => {
+    if (tripRequestId) {
+      viewCurrentBooking();
+      return;
+    }
     setSheetStep(0);
     setIsSubmittingRequest(false);
     setOverlay("sheet");
-  }, []);
+  }, [tripRequestId, viewCurrentBooking]);
 
   const closeSheet = useCallback(() => {
     if (isSubmittingRequest) return;
@@ -316,6 +329,22 @@ export function useBookingFlow() {
       }
 
       setTripRequestId(data.trip_request_id);
+
+      if (data.existing) {
+        setTripNotice(ONE_BOOKING_NOTICE);
+        setIsVerified(true);
+        setBooking({
+          bookingRef: buildRequestRef(data.trip_request_id),
+          summaryLabel: "Your trip",
+          quotes: [],
+          selectedQuoteId: null,
+          isAwaitingQuotes: false,
+        });
+        setIsSubmittingRequest(false);
+        setOverlay("none");
+        setScreen("booking");
+        return;
+      }
 
       const matchedVendorCount = typeof data.matched_vendor_count === "number" ? data.matched_vendor_count : 0;
 
@@ -545,7 +574,7 @@ export function useBookingFlow() {
 
       console.info("[otp client] verify ok");
       if (data?.resumed_existing) {
-        setTripNotice("You already have a trip in progress.");
+        setTripNotice(ONE_BOOKING_NOTICE);
       }
       if (resumeMode) {
         setResumeMode(false);
@@ -643,6 +672,18 @@ export function useBookingFlow() {
 
   const navigateBooking = useCallback(() => setScreen("booking"), []);
 
+  const rememberSnapshot = useCallback((snapshot: { tripRequestId: string; tripSummary: string }) => {
+    setTripRequestId(snapshot.tripRequestId);
+    setBooking((prev) => ({
+      bookingRef: buildRequestRef(snapshot.tripRequestId),
+      summaryLabel: snapshot.tripSummary,
+      quotes: prev?.quotes ?? [],
+      selectedQuoteId: prev?.selectedQuoteId ?? null,
+      isAwaitingQuotes: false,
+    }));
+    setIsVerified(true);
+  }, []);
+
   const recommendation = buildRecommendation(draft.days, draft.paxCount, draft.vehicleType);
   const requestRef = buildRequestRef(tripRequestId);
 
@@ -687,6 +728,8 @@ export function useBookingFlow() {
     closeMockChat,
     clearBooking,
     openResume,
+    viewCurrentBooking,
+    rememberSnapshot,
   };
 }
 

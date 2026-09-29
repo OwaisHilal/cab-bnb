@@ -44,7 +44,13 @@ function HomeContent() {
   return (
     <MobileShell>
       {flow.screen === "home" && (
-        <HomeHero onOpenRequest={flow.openSheet} onApplyPreset={flow.applyPreset} onContinue={flow.openResume} />
+        <HomeHero
+          hasBooking={Boolean(flow.tripRequestId)}
+          onOpenRequest={flow.openSheet}
+          onApplyPreset={flow.applyPreset}
+          onContinue={flow.openResume}
+          onViewBooking={flow.viewCurrentBooking}
+        />
       )}
 
       {flow.screen === "booking" && flow.sessionId ? (
@@ -59,6 +65,7 @@ function HomeContent() {
           onCancel={flow.clearBooking}
           onStartRequest={flow.openSheet}
           onContinue={flow.openResume}
+          onSnapshot={flow.rememberSnapshot}
         />
       ) : null}
 
@@ -70,7 +77,7 @@ function HomeContent() {
         <ProfileScreen
           profile={{
             phoneDisplay: flow.otp.phone ? `+91 ${flow.otp.phone}` : "Not verified yet",
-            hasActiveBooking: Boolean(flow.booking),
+            hasActiveBooking: Boolean(flow.tripRequestId),
             activeBookingLabel: flow.booking?.summaryLabel ?? null,
           }}
           onOpenBooking={flow.navigateBooking}
@@ -137,14 +144,14 @@ function EmptyBookingState({ onStart, onContinue }: { onStart: () => void; onCon
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-[30px] pb-[90px] text-center">
       <span className="font-mono text-[9px] font-semibold tracking-[1.5px] text-kmr-muted-3">NO ACTIVE BOOKING</span>
-      <h1 className="font-archivo text-2xl font-extrabold tracking-[-0.5px] text-kmr-ink">Request your first quote.</h1>
+      <h1 className="font-archivo text-2xl font-extrabold tracking-[-0.5px] text-kmr-ink">Check a booking, or start one.</h1>
       <button
         type="button"
-        aria-label="Continue with your phone"
+        aria-label="Already booked? Check your trip"
         onClick={onContinue}
         className="rounded-sm bg-kmr-blue px-5 py-3 font-archivo text-sm font-bold text-white"
       >
-        Continue with your phone
+        Already booked? Check your trip
       </button>
       <button type="button" onClick={onStart} className="font-archivo text-sm font-bold text-kmr-ink underline">
         Add cabs to your trip

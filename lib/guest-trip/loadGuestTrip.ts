@@ -13,9 +13,16 @@ import {
 import { buildDriverContactMessage } from "@/lib/whatsapp/templateCatalog"
 import { buildQuoteChoiceMessage, buildQuoteSingleMessage } from "@/lib/whatsapp/templateCatalog"
 import { buildTokenReceivedAckMessage } from "@/lib/whatsapp/tokenReceivedAck"
-import { TOKEN_LOCK_PAYMENT_FOOTER, buildTokenPaymentLinkCopy } from "@/lib/whatsapp/tokenPaymentLink"
+import { TOKEN_LOCK_AMOUNT } from "@/lib/whatsapp/formatInr"
+import { TOKEN_LOCK_PAYMENT_FOOTER, buildTokenPaymentLinkCopy, formatTokenPaymentDayLines } from "@/lib/whatsapp/tokenPaymentLink"
 import { deriveGuestStep, isTripInProgress } from "@/lib/guest-trip/deriveGuestStep"
-import { pickCurrentGuestTrip } from "@/lib/guest-trip/pickCurrentGuestTrip"
+import {
+  paymentHasPaidToken,
+  paymentHasTakenMoney,
+  pickCurrentGuestTrip,
+  unpaidDuplicateTripIds,
+} from "@/lib/guest-trip/pickCurrentGuestTrip"
+import { abandonUnpaidGuestTrips } from "@/lib/guest-trip/settleGuestTrips"
 import type { GuestPaymentIntentStatus, GuestStep, GuestStepInput, GuestTripSnapshot } from "@/lib/guest-trip/types"
 
 export type GuestConfirming = "token" | "balance" | null
@@ -64,6 +71,7 @@ interface QuoteRow {
   id: string
   current_quote: number
   status: string
+  is_best_price?: boolean | null
   vendors:
     | { business_name: string; reliability_score: number | null }
     | { business_name: string; reliability_score: number | null }[]
@@ -245,12 +253,17 @@ export const loadGuestTrip = async (
       balanceConfirmed: booking?.payment_status === "fully_paid",
     }
     const step = deriveGuestStep(stepInput)
+    const tokenStatus = tokenIntent?.status ?? null
+    const paymentStatus = booking?.payment_status ?? null
     return {
       id: trip.id,
       createdAt: trip.created_at,
       inProgress: isTripInProgress(stepInput),
       finished: step === "driver_contact",
       closed: CLOSED_TRIP_STATUSES.has(trip.status) || step === "closed",
+      step,
+      hasPaidToken: paymentHasPaidToken(paymentStatus, tokenStatus),
+      hasTakenMoney: paymentHasTakenMoney(paymentStatus) || tokenStatus === "paid",
       trip,
       stepInput,
     }
@@ -258,6 +271,7 @@ export const loadGuestTrip = async (
 
   const picked = pickCurrentGuestTrip(candidates)
   if (!picked) return null
+  await abandonUnpaidGuestTrips(supabase, unpaidDuplicateTripIds(candidates, picked.id))
 
   await ensureMessageTemplates(supabase)
   return buildSnapshot(supabase, picked.trip, picked.stepInput, input.confirming, input.previewStep ?? null)
@@ -281,7 +295,7 @@ const buildSnapshot = async (
 
   const { data: quoteData, error: quoteError } = await supabase
     .from("quote_snapshots")
-    .select("id, current_quote, status, vendors(business_name, reliability_score), vehicle_types(label)")
+    .select("id, current_quote, status, is_best_price, vendors(business_name, reliability_score), vehicle_types(label)")
     .eq("trip_request_id", trip.id)
     .order("current_quote", { ascending: true })
 
@@ -303,9 +317,13 @@ const buildSnapshot = async (
         }),
         pricePerDay: Number(quote.current_quote),
         rating: vendor?.reliability_score ?? null,
+        isBestPrice: Boolean(quote.is_best_price),
         vehicleLabel: firstOrSelf(quote.vehicle_types)?.label ?? vehicleLabel,
       }
     })
+  if (quotes.length > 0 && !quotes.some((quote) => quote.isBestPrice)) {
+    quotes[0].isBestPrice = true
+  }
 
   const { data: intentData, error: intentError } = await supabase
     .from("whatsapp_payment_intents")
@@ -425,15 +443,36 @@ const buildSnapshot = async (
 
   const paymentCrqid = step === "balance" ? balanceIntent?.id ?? null : step === "lock" ? tokenIntent?.id ?? null : null
 
+  const quotedTotal = pricePerDay > 0 ? pricePerDay * trip.trip_days : null
+
   return {
     tripRequestId: trip.id,
     step,
     tripSummary,
-    quotes: quotes.map((quote) => ({ id: quote.id, vendorName: quote.vendorName, line: quote.line })),
+    quotes: quotes.map((quote) => ({
+      id: quote.id,
+      vendorName: quote.vendorName,
+      line: quote.line,
+      pricePerDay: quote.pricePerDay,
+      rating: quote.rating,
+      isBestPrice: quote.isBestPrice,
+    })),
     bodyText,
     hidePay,
     paymentCrqid,
     driverPhone: displayStep === "driver_contact" ? driverPhone : null,
+    driverName: displayStep === "driver_contact" ? driverName : null,
+    vehicleLabel: vehicleModel,
+    vehicleNumber: displayStep === "driver_contact" ? vehicleNumber : null,
+    operatorName: vendorName,
+    dayLines: formatTokenPaymentDayLines({
+      tripDays: trip.trip_days,
+      tripStartDate: trip.trip_start_date,
+    }),
+    pricePerDay: pricePerDay > 0 ? pricePerDay : null,
+    tokenAmount: TOKEN_LOCK_AMOUNT,
+    balanceAmount: quotedTotal === null ? null : calculateBalanceDue(pricePerDay, trip.trip_days),
+    totalAmount: quotedTotal,
     footerText: footerForStep(displayStep),
     rideGroupInviteUrl,
     resumedExisting: false,

@@ -12,7 +12,7 @@ interface BottomNavProps {
 
 const TAB_LABEL: Record<NavTab, string> = {
   home: "HOME",
-  booking: "BOOKING",
+  booking: "BOOKINGS",
   profile: "PROFILE",
 };
 

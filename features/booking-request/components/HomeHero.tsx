@@ -28,12 +28,20 @@ function VerifiedOperatorsMarquee() {
 }
 
 interface HomeHeroProps {
+  hasBooking: boolean;
   onOpenRequest: () => void;
   onApplyPreset: (days: number) => void;
   onContinue: () => void;
+  onViewBooking: () => void;
 }
 
-export function HomeHero({ onOpenRequest, onApplyPreset, onContinue }: HomeHeroProps) {
+export function HomeHero({
+  hasBooking,
+  onOpenRequest,
+  onApplyPreset,
+  onContinue,
+  onViewBooking,
+}: HomeHeroProps) {
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-[30px] pb-[90px] pt-[30px]">
       <TopBar />
@@ -67,36 +75,52 @@ export function HomeHero({ onOpenRequest, onApplyPreset, onContinue }: HomeHeroP
         <VerifiedOperatorsMarquee />
       </div>
 
-      <button
-        type="button"
-        onClick={onOpenRequest}
-        className="flex w-full items-center justify-between gap-3 rounded-sm bg-kmr-blue px-5 py-5 text-left transition-colors hover:bg-kmr-blue-dark"
-      >
-        <span className="flex flex-col gap-1">
-          <span className="font-archivo text-[19px] font-extrabold tracking-[-0.4px] text-white">
-            Add cabs to your trip
+      {hasBooking ? (
+        <div className="flex flex-col gap-3 rounded-sm bg-kmr-surface p-4">
+          <p className="font-archivo text-sm font-bold text-kmr-ink">Only 1 booking is allowed for now.</p>
+          <button
+            type="button"
+            aria-label="View current booking"
+            onClick={onViewBooking}
+            className="rounded-sm bg-kmr-blue px-4 py-3 font-archivo text-sm font-bold text-white"
+          >
+            View current booking
+          </button>
+        </div>
+      ) : null}
+
+      {hasBooking ? null : (
+        <button
+          type="button"
+          onClick={onOpenRequest}
+          className="flex w-full items-center justify-between gap-3 rounded-sm bg-kmr-blue px-5 py-5 text-left transition-colors hover:bg-kmr-blue-dark"
+        >
+          <span className="flex flex-col gap-1">
+            <span className="font-archivo text-[19px] font-extrabold tracking-[-0.4px] text-white">
+              Add cabs to your trip
+            </span>
+            <span className="font-mono text-[9.5px] font-medium tracking-[1px] text-white/60">
+              DAYS · TRAVELLERS · CAB — 3 QUICK TAPS
+            </span>
           </span>
-          <span className="font-mono text-[9.5px] font-medium tracking-[1px] text-white/60">
-            DAYS · TRAVELLERS · CAB — 3 QUICK TAPS
-          </span>
-        </span>
-        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" className="flex-none">
-          <path
-            d="M5 19 L17.5 6.5 M8 6 H18 V16"
-            stroke="#fff"
-            strokeWidth="2.6"
-            strokeLinecap="square"
-          />
-        </svg>
-      </button>
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" className="flex-none">
+            <path
+              d="M5 19 L17.5 6.5 M8 6 H18 V16"
+              stroke="#fff"
+              strokeWidth="2.6"
+              strokeLinecap="square"
+            />
+          </svg>
+        </button>
+      )}
 
       <button
         type="button"
         onClick={onContinue}
-        aria-label="Continue with your phone"
+        aria-label="Already booked? Check your trip"
         className="flex w-full items-center justify-center rounded-sm border border-kmr-blue px-5 py-4 font-archivo text-sm font-bold text-kmr-blue"
       >
-        Continue with your phone
+        Already booked? Check your trip
       </button>
 
       <div className="flex flex-col gap-2">
@@ -109,6 +133,10 @@ export function HomeHero({ onOpenRequest, onApplyPreset, onContinue }: HomeHeroP
               key={preset.id}
               type="button"
               onClick={() => {
+                if (hasBooking) {
+                  onViewBooking();
+                  return;
+                }
                 onApplyPreset(preset.days);
                 onOpenRequest();
               }}

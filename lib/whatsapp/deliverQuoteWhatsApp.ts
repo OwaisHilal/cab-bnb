@@ -3,7 +3,9 @@ import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { applyDemoSendFallback } from "@/lib/whatsapp/deliverAndLogOutbound"
 import { buildQuoteDeliveryPayload } from "@/lib/whatsapp/buildQuoteDelivery"
+import { openingQuoteWasDelivered } from "@/lib/whatsapp/openingQuoteDelivery"
 import { serializeWhatsAppMessageLogPayload } from "@/lib/whatsapp/messagePayload"
+import { shouldUseMsg91ApprovedTemplates } from "@/lib/msg91/useApprovedTemplates"
 import { sendWhatsAppMessage } from "@/lib/whatsapp/sendWhatsAppMessage"
 import { phoneLast4 } from "@/lib/utils/phone"
 import type { QuoteDeliveryPayload, SendWhatsAppResult } from "@/lib/whatsapp/types"
@@ -96,7 +98,25 @@ export async function deliverQuoteWhatsApp(
     return { ok: false, status: built.status, message: built.error }
   }
 
-  let send = applyDemoSendFallback(await sendWhatsAppMessage(built.touristPhone, built.message))
+  const templatesOn = shouldUseMsg91ApprovedTemplates()
+  const requireTemplate = templatesOn && built.message.msg91SendMode === "template"
+  const rawSend = await sendWhatsAppMessage(built.touristPhone, built.message, {
+    sessionFallback: !requireTemplate,
+  })
+  let send = applyDemoSendFallback(rawSend)
+  if (
+    !openingQuoteWasDelivered({
+      msg91SendMode: built.message.msg91SendMode,
+      templatesOn,
+      send,
+    })
+  ) {
+    send = {
+      ...send,
+      success: false,
+      error: send.error ?? "Opening quote was not delivered on WhatsApp",
+    }
+  }
   const channel: "whatsapp" | "demo_simulated" = send.simulated ? "demo_simulated" : "whatsapp"
 
   console.info("[quotes send] delivery", {

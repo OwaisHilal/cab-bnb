@@ -8,6 +8,7 @@ import {
   MSG91_QUOTE_CHOICE_TEMPLATE_NAME,
   QUOTE_CHOICE_MSG91_SEND_MODE,
   QUOTE_SINGLE_MSG91_SEND_MODE,
+  buildQuoteSingleMsg91Components,
   QUOTE_CHOICE_UNAVAILABLE_PAYLOAD,
   WHATSAPP_QUICK_REPLY_TITLE_MAX,
   buildQuoteChoiceButtons,
@@ -159,7 +160,15 @@ describe("quote MSG91 send modes", () => {
     assert.equal(QUOTE_CHOICE_MSG91_SEND_MODE, "template")
   })
 
-  it("keeps quote_single on the session list path", () => {
-    assert.equal(QUOTE_SINGLE_MSG91_SEND_MODE, "interactive")
+  it("sends quote_single as a Utility template with a BOOK_TOKEN button", () => {
+    assert.equal(QUOTE_SINGLE_MSG91_SEND_MODE, "template")
+    const components = buildQuoteSingleMsg91Components({
+      vendorName: "Aala Cabs",
+      pricePerDay: 8800,
+      vehicleLabel: "Sedan",
+      quoteSnapshotId: "11111111-1111-1111-1111-111111111111",
+    })
+    assert.equal(components.button_1?.subtype, "quick_reply")
+    assert.equal(components.button_1?.value, "BOOK_TOKEN::11111111-1111-1111-1111-111111111111")
   })
 })

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { jsonError, jsonOk, jsonValidationError } from "@/lib/api/errors";
 import { listTripIdsForGuestSession } from "@/lib/guest-trip/loadGuestTrip";
+import { resolveKeeperTripId } from "@/lib/guest-trip/settleGuestTrips";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -32,16 +33,7 @@ export async function POST(request: NextRequest) {
     const tripIds = await listTripIdsForGuestSession(supabase, parsed.data.session_id);
     if (tripIds.length === 0) return jsonError(404, "No trip for this session");
 
-    const { data: trips, error: tripError } = await supabase
-      .from("trip_requests")
-      .select("id, status, created_at")
-      .in("id", tripIds)
-      .order("created_at", { ascending: false });
-
-    if (tripError) return jsonError(500, `Failed to fetch trip: ${tripError.message}`);
-
-    const open = (trips ?? []).find((trip) => trip.status !== "abandoned" && trip.status !== "expired");
-    const tripId = (open?.id ?? trips?.[0]?.id) as string | undefined;
+    const tripId = await resolveKeeperTripId(supabase, tripIds);
     if (!tripId) return jsonError(404, "No trip for this session");
 
     const { error: abandonError } = await supabase.from("trip_requests").update({ status: "abandoned" }).eq("id", tripId);

@@ -4,7 +4,6 @@
  */
 
 import { formatInr, formatWhatsAppPayButtonTitle, TOKEN_LOCK_AMOUNT } from "@/lib/whatsapp/formatInr"
-import type { Msg91TemplateComponent } from "@/lib/msg91/types"
 import {
   getMessageTemplate,
   renderMessageTemplate,
@@ -14,6 +13,7 @@ import {
   QUOTE_CHOICE_FOOTER,
   QUOTE_CHOICE_MSG91_SEND_MODE,
   QUOTE_SINGLE_MSG91_SEND_MODE,
+  buildQuoteSingleMsg91Components,
   buildQuoteChoiceMsg91Components,
   buildQuoteChoiceNamedVariables,
   buildQuoteChoiceSessionButtons,
@@ -110,12 +110,6 @@ export function buildQuoteSingleMessage(input: {
     vehicle_label: input.vehicleLabel,
   })
 
-  const components: Record<string, Msg91TemplateComponent> = {
-    body_1: { type: "text", value: input.vendorName },
-    body_2: { type: "text", value: String(input.pricePerDay) },
-    body_3: { type: "text", value: input.vehicleLabel },
-  }
-
   return {
     templateKey: WHATSAPP_TEMPLATE_KEYS.QUOTE_SINGLE,
     bodyText,
@@ -127,7 +121,12 @@ export function buildQuoteSingleMessage(input: {
         description: `${pricePerDay} \u00b7 ${input.vehicleLabel}`,
       },
     ]),
-    msg91Components: components,
+    msg91Components: buildQuoteSingleMsg91Components({
+      vendorName: input.vendorName,
+      pricePerDay: input.pricePerDay,
+      vehicleLabel: input.vehicleLabel,
+      quoteSnapshotId: input.quoteSnapshotId,
+    }),
     msg91SendMode: QUOTE_SINGLE_MSG91_SEND_MODE,
   }
 }

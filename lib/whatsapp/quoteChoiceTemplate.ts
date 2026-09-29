@@ -18,8 +18,8 @@ export const QUOTE_CHOICE_TEMPLATE_KEY = "quote_choice_v1"
 export const MSG91_QUOTE_CHOICE_TEMPLATE_NAME = "quote_choice_v2"
 /** Cold-start first quote uses MSG91 Utility bulk; session buttons are fallback. */
 export const QUOTE_CHOICE_MSG91_SEND_MODE = "template" as const
-/** One-operator quote stays session list (dynamic BOOK_TOKEN row id). */
-export const QUOTE_SINGLE_MSG91_SEND_MODE = "interactive" as const
+/** One-operator quote uses the approved template so a cold WhatsApp thread receives it. */
+export const QUOTE_SINGLE_MSG91_SEND_MODE = "template" as const
 export const QUOTE_CHOICE_MAX_QUOTES = 3
 export const QUOTE_CHOICE_FOOTER = "Tap a button below to choose your cab."
 export const QUOTE_CHOICE_EMPTY_LINE = "—"
@@ -146,6 +146,24 @@ export const buildQuoteChoiceSessionButtons = (rows: QuoteChoiceRow[]): WhatsApp
     id: `BOOK_TOKEN::${row.quoteSnapshotId}`,
     title: quoteChoiceSelectTitle(row.vendorName),
   }))
+}
+
+export const buildQuoteSingleMsg91Components = (input: {
+  vendorName: string
+  pricePerDay: number
+  vehicleLabel: string
+  quoteSnapshotId: string
+}): Record<string, Msg91TemplateComponent> => {
+  return {
+    body_1: { type: "text", value: input.vendorName },
+    body_2: { type: "text", value: String(input.pricePerDay) },
+    body_3: { type: "text", value: input.vehicleLabel },
+    button_1: {
+      type: "text",
+      subtype: "quick_reply",
+      value: `BOOK_TOKEN::${input.quoteSnapshotId}`,
+    },
+  }
 }
 
 export const buildQuoteChoiceMsg91Components = (input: {

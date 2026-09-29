@@ -89,7 +89,7 @@ export async function completePhoneVerification(
     };
   }
 
-  if (currentTrip?.inProgress && currentTrip.id !== tripRequestId) {
+  if (currentTrip && !currentTrip.closed && currentTrip.id !== tripRequestId) {
     if (discardableNewRequestStatuses.includes(tripRequest.status)) {
       const { error: abandonError } = await supabase
         .from("trip_requests")
@@ -173,6 +173,17 @@ export async function completePhoneVerification(
       try {
         const jobs = await drainDueJobs(supabase, { jobTypes: [SEND_QUOTES_JOB_TYPE] });
         console.info("[quotes send] jobs", jobs);
+        if (jobs.failed > 0) {
+          const { data: failedJobs } = await supabase
+            .from("job_queue")
+            .select("last_error")
+            .eq("job_type", SEND_QUOTES_JOB_TYPE)
+            .filter("payload->>trip_request_id", "eq", tripRequestId)
+            .not("last_error", "is", null)
+            .order("updated_at", { ascending: false })
+            .limit(1);
+          console.info("[quotes send] last_error", failedJobs?.[0]?.last_error ?? "unknown");
+        }
       } catch (error) {
         console.info(
           "[quotes send] process failed",

@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { matchVendorRateBands } from "@/lib/matching/matchVendorRateBands";
+import { listTripIdsForGuestSession } from "@/lib/guest-trip/loadGuestTrip";
+import { resolveKeeperTripId } from "@/lib/guest-trip/settleGuestTrips";
 import { jsonError, jsonOk, jsonValidationError } from "@/lib/api/errors";
 
 const tripRequestSchema = z.object({
@@ -49,6 +51,21 @@ export async function POST(request: NextRequest) {
     supabase = getSupabaseServiceRoleClient();
   } catch (error) {
     return jsonError(500, error instanceof Error ? error.message : "Supabase is not configured");
+  }
+
+  try {
+    const existingIds = await listTripIdsForGuestSession(supabase, session_id);
+    const existingId = await resolveKeeperTripId(supabase, existingIds);
+    if (existingId) {
+      return jsonOk({
+        trip_request_id: existingId,
+        matched_vendor_count: 0,
+        existing: true,
+        recommendation: null,
+      });
+    }
+  } catch (error) {
+    return jsonError(500, error instanceof Error ? error.message : "Failed to check the current trip");
   }
 
   const { data: tripRequest, error: insertError } = await supabase

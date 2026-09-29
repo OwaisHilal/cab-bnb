@@ -98,6 +98,10 @@ export async function POST(request: NextRequest) {
         step,
         bodyText: preview?.bodyText ?? "",
         driverPhone: preview?.driverPhone ?? null,
+        driverName: preview?.driverName ?? null,
+        vehicleLabel: preview?.vehicleLabel ?? null,
+        vehicleNumber: preview?.vehicleNumber ?? null,
+        operatorName: preview?.operatorName ?? null,
         footerText: preview?.footerText ?? null,
         rideGroupInviteUrl: preview?.rideGroupInviteUrl ?? null,
       });

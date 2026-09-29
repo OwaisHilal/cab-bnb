@@ -9,6 +9,10 @@ interface AheadStep {
   step: "token_received" | "driver_contact"
   bodyText: string
   driverPhone: string | null
+  driverName: string | null
+  vehicleLabel: string | null
+  vehicleNumber: string | null
+  operatorName: string | null
   footerText: string | null
   rideGroupInviteUrl: string | null
 }
@@ -109,6 +113,10 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming) => {
         step?: "token_received" | "driver_contact"
         bodyText?: string
         driverPhone?: string | null
+        driverName?: string | null
+        vehicleLabel?: string | null
+        vehicleNumber?: string | null
+        operatorName?: string | null
         footerText?: string | null
         rideGroupInviteUrl?: string | null
       } | null
@@ -127,6 +135,10 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming) => {
           step: data.step,
           bodyText: data.bodyText ?? "",
           driverPhone: data.driverPhone ?? null,
+          driverName: data.driverName ?? null,
+          vehicleLabel: data.vehicleLabel ?? null,
+          vehicleNumber: data.vehicleNumber ?? null,
+          operatorName: data.operatorName ?? null,
           footerText: data.footerText ?? null,
           rideGroupInviteUrl: data.rideGroupInviteUrl ?? null,
         })
@@ -175,9 +187,14 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming) => {
     ? ahead
       ? {
           ...snapshot,
+          step: ahead.step,
           bodyText: ahead.bodyText,
           footerText: ahead.footerText,
           driverPhone: ahead.driverPhone,
+          driverName: ahead.driverName,
+          vehicleLabel: ahead.vehicleLabel,
+          vehicleNumber: ahead.vehicleNumber,
+          operatorName: ahead.operatorName,
           rideGroupInviteUrl: ahead.rideGroupInviteUrl,
           hidePay: true,
         }

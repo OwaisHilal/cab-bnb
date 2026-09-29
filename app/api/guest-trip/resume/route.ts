@@ -79,7 +79,8 @@ export async function POST(request: NextRequest) {
   try {
     const current = await findCurrentGuestTrip(supabase, tourist.id as string);
     if (!current) return jsonError(404, "No trip for this phone");
-    await rememberGuestSession(supabase, session_id, current.id);
+    const saved = await rememberGuestSession(supabase, session_id, current.id);
+    if (!saved) return jsonError(503, "This device could not be saved to your trip yet.");
     const snapshot = await loadGuestTrip(supabase, { sessionId: session_id, confirming: null });
     if (!snapshot) return jsonError(404, "No trip for this phone");
     return jsonOk(snapshot);

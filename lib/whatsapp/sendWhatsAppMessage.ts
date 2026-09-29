@@ -24,6 +24,7 @@ import type { SendWhatsAppResult, WhatsAppMessageSpec } from "@/lib/whatsapp/typ
 export async function sendWhatsAppMessage(
   phoneE164: string,
   spec: WhatsAppMessageSpec,
+  options?: { sessionFallback?: boolean },
 ): Promise<SendWhatsAppResult> {
   const templateEnv = resolveWhatsAppTemplateEnv(spec.templateKey)
   const pathOptions = {
@@ -31,6 +32,7 @@ export async function sendWhatsAppMessage(
     msg91Configured: isMsg91WhatsAppConfigured(),
     hasTemplateEnv: Boolean(templateEnv),
   }
+  const allowSessionFallback = options?.sessionFallback !== false
 
   const firstPath = resolveWhatsAppSendPath(spec, pathOptions)
   if (firstPath === "bulk_template" && templateEnv && spec.msg91Components) {
@@ -41,9 +43,20 @@ export async function sendWhatsAppMessage(
       namespace: templateEnv.namespace,
       components: spec.msg91Components,
     })
-    if (templateSend.success) {
-      console.info("[whatsapp send]", { mode: "template", templateKey: spec.templateKey })
-      return templateSend
+    console.info("[whatsapp send]", {
+      mode: "template",
+      templateKey: spec.templateKey,
+      success: templateSend.success,
+    })
+    if (templateSend.success || !allowSessionFallback) {
+      return { ...templateSend, channel: "template" }
+    }
+  } else if (!allowSessionFallback && spec.msg91SendMode === "template") {
+    return {
+      configured: pathOptions.msg91Configured,
+      success: false,
+      channel: "template",
+      error: "Approved WhatsApp template was not sent",
     }
   }
 
@@ -53,7 +66,7 @@ export async function sendWhatsAppMessage(
   })
   const sessionSend = await sendWhatsAppSessionPath(phoneE164, spec, sessionPath)
   console.info("[whatsapp send]", { mode: "session", templateKey: spec.templateKey })
-  return sessionSend
+  return { ...sessionSend, channel: "session" }
 }
 
 const sendWhatsAppSessionPath = async (
