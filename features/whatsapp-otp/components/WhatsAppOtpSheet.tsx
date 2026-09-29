@@ -15,6 +15,7 @@ interface WhatsAppOtpSheetProps {
   onVerifyOtp: () => void;
   onEditPhone: () => void;
   onBeforePhoneEmailRedirect: () => void;
+  onGetStarted: () => void;
 }
 
 const CODE_ENTRY_COPY: Record<Exclude<OtpDeliveryChannel, "phone_email">, string> = {
@@ -35,6 +36,7 @@ export function WhatsAppOtpSheet({
   onVerifyOtp,
   onEditPhone,
   onBeforePhoneEmailRedirect,
+  onGetStarted,
 }: WhatsAppOtpSheetProps) {
   const phoneInputRef = useRef<HTMLInputElement>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
@@ -248,6 +250,23 @@ export function WhatsAppOtpSheet({
             >
               Try WhatsApp OTP
             </button>
+          </div>
+        )}
+
+        {otp.step === "no_booking" && (
+          <div className="flex flex-col gap-3.5">
+            <span className="font-mono text-[9px] font-semibold tracking-[1.5px] text-kmr-muted-3">
+              NO PRIOR BOOKINGS
+            </span>
+            <h2 className="font-archivo text-[23px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink">
+              No booking on this number.
+            </h2>
+            <p className="font-archivo text-[12.5px] font-medium leading-[1.55] text-kmr-muted-1">
+              Get started with a new trip.
+            </p>
+            <Button onClick={onGetStarted} aria-label="Get started">
+              Get started
+            </Button>
           </div>
         )}
 

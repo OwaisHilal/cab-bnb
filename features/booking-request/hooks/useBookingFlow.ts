@@ -32,6 +32,7 @@ import {
   writePendingPhoneEmailResume,
 } from "@/lib/phone-email/resumeState";
 import type { PhoneEmailResumePayload } from "@/lib/phone-email/resumeState";
+import { clearCachedGuestTrip, fetchGuestTrip } from "@/features/guest-trip/guestTripClient";
 
 type PrimaryScreen = "home" | "booking" | "profile";
 type Overlay = "none" | "sheet" | "dispatch" | "otp" | "mock_chat";
@@ -280,8 +281,19 @@ export function useBookingFlow() {
 
       dispatchTimeout.current = setTimeout(() => {
         clearDispatchTimers();
-        setOverlay(isVerified ? "none" : "otp");
-        if (isVerified) setScreen("booking");
+        if (isVerified) {
+          setOverlay("none");
+          setScreen("booking");
+          return;
+        }
+        setOtp((prev) => ({
+          ...prev,
+          step: "phone",
+          code: "",
+          error: null,
+          isSubmitting: false,
+        }));
+        setOverlay("otp");
       }, dispatchDelayMs);
     },
     [clearDispatchTimers, dispatchDelayMs, isVerified],
@@ -385,13 +397,12 @@ export function useBookingFlow() {
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch(`/api/guest-trip?session_id=${encodeURIComponent(sessionId)}`);
-        if (cancelled || !response.ok) return;
-        const data = (await response.json()) as { tripRequestId?: string };
-        setTripRequestId(data.tripRequestId ?? null);
+        const result = await fetchGuestTrip(sessionId, null);
+        if (cancelled || !result.ok) return;
+        setTripRequestId(result.snapshot.tripRequestId);
         setBooking({
-          bookingRef: buildRequestRef(data.tripRequestId ?? null),
-          summaryLabel: "Your trip",
+          bookingRef: buildRequestRef(result.snapshot.tripRequestId),
+          summaryLabel: result.snapshot.tripSummary,
           quotes: [],
           selectedQuoteId: null,
           isAwaitingQuotes: false,
@@ -550,14 +561,19 @@ export function useBookingFlow() {
         trip_request_id?: string;
         tripRequestId?: string;
         resumed_existing?: boolean;
+        found?: boolean;
       } | null;
       console.info("[otp client] verify http", response.status);
 
-      if (response.status === 404 && resumeMode) {
+      if (resumeMode && response.ok && data?.found === false) {
         setResumeMode(false);
-        setOverlay("none");
-        setScreen("home");
-        setOtp((prev) => ({ ...prev, isSubmitting: false, error: null }));
+        setOtp((prev) => ({
+          ...prev,
+          isSubmitting: false,
+          step: "no_booking",
+          code: "",
+          error: null,
+        }));
         return;
       }
 
@@ -634,6 +650,7 @@ export function useBookingFlow() {
   const clearBooking = useCallback(() => {
     const currentSession = sessionId;
     if (currentSession) {
+      clearCachedGuestTrip(currentSession);
       void fetch("/api/guest-trip/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -668,6 +685,23 @@ export function useBookingFlow() {
     setResumeMode(true);
     setOtp((prev) => ({ ...createOtpState(), phone: prev.phone }));
     setOverlay("otp");
+  }, []);
+
+  const startFromNoBooking = useCallback(() => {
+    setResumeMode(false);
+    setOtp((prev) => ({
+      ...prev,
+      step: "phone",
+      code: "",
+      deliveryChannel: null,
+      demoOtpCode: null,
+      error: null,
+      isSubmitting: false,
+    }));
+    setSheetStep(0);
+    setIsSubmittingRequest(false);
+    setScreen("home");
+    setOverlay("sheet");
   }, []);
 
   const navigateBooking = useCallback(() => setScreen("booking"), []);
@@ -728,6 +762,7 @@ export function useBookingFlow() {
     closeMockChat,
     clearBooking,
     openResume,
+    startFromNoBooking,
     viewCurrentBooking,
     rememberSnapshot,
   };

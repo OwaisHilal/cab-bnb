@@ -58,6 +58,7 @@ function HomeContent() {
           sessionId={flow.sessionId}
           confirming={confirming}
           notice={flow.tripNotice}
+          active
           onMissing={() => {
             if (continueRequested) flow.openResume();
           }}
@@ -120,6 +121,7 @@ function HomeContent() {
           onVerifyOtp={flow.verifyOtp}
           onEditPhone={flow.editPhone}
           onBeforePhoneEmailRedirect={flow.persistPhoneEmailResumeState}
+          onGetStarted={flow.startFromNoBooking}
         />
       )}
 

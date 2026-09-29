@@ -1,7 +1,19 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  clearCachedGuestTrip,
+  currentGuestTripEpoch,
+  fetchGuestTrip,
+  guestTripCacheIsFresh,
+  guestTripIsKnownMissing,
+  guestTripSnapshotKey,
+  readCachedGuestTrip,
+} from "@/features/guest-trip/guestTripClient"
 import type { GuestStep, GuestTripSnapshot } from "@/lib/guest-trip/types"
+
+const FAST_POLL_MS = 3000
+const SLOW_POLL_MS = 15000
 
 type Confirming = "token" | "balance" | null
 
@@ -17,57 +29,99 @@ interface AheadStep {
   rideGroupInviteUrl: string | null
 }
 
-export const useGuestTrip = (sessionId: string, confirming: Confirming) => {
-  const [snapshot, setSnapshot] = useState<GuestTripSnapshot | null>(null)
+export const useGuestTrip = (sessionId: string, confirming: Confirming, active = true) => {
+  const [snapshot, setSnapshot] = useState<GuestTripSnapshot | null>(() => readCachedGuestTrip(sessionId))
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selecting, setSelecting] = useState(false)
   const [paying, setPaying] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [localConfirming, setLocalConfirming] = useState<Confirming>(confirming)
-  const [missing, setMissing] = useState(false)
+  const [missing, setMissing] = useState(() => (sessionId ? guestTripIsKnownMissing(sessionId) : false))
   const [ahead, setAhead] = useState<AheadStep | null>(null)
-  const snapshotRef = useRef<GuestTripSnapshot | null>(null)
+  const snapshotRef = useRef<GuestTripSnapshot | null>(snapshot)
+  const stepRef = useRef<GuestStep | null>(snapshot?.step ?? null)
+  const confirmingPaymentRef = useRef(false)
+  const appliedEpochRef = useRef(0)
+  const sessionRef = useRef(sessionId)
+  const sessionSeenRef = useRef(sessionId)
+  sessionRef.current = sessionId
+  if (sessionSeenRef.current !== sessionId) {
+    sessionSeenRef.current = sessionId
+    const next = readCachedGuestTrip(sessionId)
+    snapshotRef.current = next
+    stepRef.current = next?.step ?? null
+    setSnapshot(next)
+  }
+  const cachedNow = sessionId ? readCachedGuestTrip(sessionId) : null
+  if (cachedNow && snapshot === null) {
+    snapshotRef.current = cachedNow
+    stepRef.current = cachedNow.step
+    setSnapshot(cachedNow)
+  } else if (!cachedNow && sessionId && guestTripIsKnownMissing(sessionId) && !missing && snapshot === null) {
+    setMissing(true)
+  }
 
   useEffect(() => {
     if (confirming) setLocalConfirming(confirming)
   }, [confirming])
 
-  const refresh = useCallback(async () => {
+  const applySnapshot = useCallback((data: GuestTripSnapshot, resultEpoch: number) => {
+    if (resultEpoch < appliedEpochRef.current) return
+    appliedEpochRef.current = resultEpoch
+    const unchanged = snapshotRef.current !== null && guestTripSnapshotKey(snapshotRef.current) === guestTripSnapshotKey(data)
+    snapshotRef.current = data
+    stepRef.current = data.step
+    if (!unchanged) setSnapshot(data)
+    setMissing(false)
+    setLoadError(null)
+    setAhead((current) => (current && data.step === current.step ? null : current))
+    if (localConfirming === "token" && data.step !== "lock") setLocalConfirming(null)
+    if (localConfirming === "balance" && data.step !== "balance") setLocalConfirming(null)
+  }, [localConfirming])
+
+  const refresh = useCallback(async (fresh = false) => {
     if (!sessionId) return
-    const params = new URLSearchParams({ session_id: sessionId })
-    if (localConfirming) params.set("confirming", localConfirming)
+    const requestedSession = sessionId
     try {
-      const response = await fetch(`/api/guest-trip?${params.toString()}`)
-      if (response.status === 404) {
-        if (snapshotRef.current) setLoadError("Still trying to refresh this trip.")
-        else setMissing(true)
+      const result = await fetchGuestTrip(sessionId, localConfirming, fresh)
+      if (sessionRef.current !== requestedSession) return
+      if (!result.ok) {
+        if (result.status === 404 && !snapshotRef.current) setMissing(true)
+        else setLoadError("Still trying to refresh this trip.")
         return
       }
-      if (!response.ok) {
-        setLoadError("Still trying to refresh this trip.")
-        return
-      }
-      const data = (await response.json()) as GuestTripSnapshot
-      snapshotRef.current = data
-      setSnapshot(data)
-      setMissing(false)
-      setLoadError(null)
-      setAhead((current) => (current && data.step === current.step ? null : current))
-      if (localConfirming === "token" && data.step !== "lock") setLocalConfirming(null)
-      if (localConfirming === "balance" && data.step !== "balance") setLocalConfirming(null)
+      applySnapshot(result.snapshot, result.epoch)
     } catch {
       setLoadError("Still trying to refresh this trip.")
     }
-  }, [localConfirming, sessionId])
+  }, [applySnapshot, localConfirming, sessionId])
 
   useEffect(() => {
-    if (!sessionId) return
-    void refresh()
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void refresh()
-    }, 3000)
-    return () => window.clearInterval(timer)
-  }, [refresh, sessionId])
+    if (!sessionId || !active) return
+    let cancelled = false
+    let timer = 0
+    const cached = readCachedGuestTrip(sessionId)
+    if (cached) applySnapshot(cached, appliedEpochRef.current)
+    const refreshNow = !guestTripCacheIsFresh(sessionId) && !guestTripIsKnownMissing(sessionId)
+
+    const schedule = () => {
+      const fast = confirmingPaymentRef.current || stepRef.current === "quotes_waiting"
+      timer = window.setTimeout(() => {
+        void run()
+      }, fast ? FAST_POLL_MS : SLOW_POLL_MS)
+    }
+    const run = async () => {
+      if (cancelled) return
+      if (document.visibilityState === "visible") await refresh()
+      if (!cancelled) schedule()
+    }
+    if (refreshNow) void run()
+    else schedule()
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [active, applySnapshot, refresh, sessionId])
 
   const handleSelect = useCallback(
     async (quoteId: string) => {
@@ -83,7 +137,7 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming) => {
           setLoadError(data?.error ?? "Couldn't lock this cab.")
           return
         }
-        await refresh()
+        await refresh(true)
       } catch {
         setLoadError("Still trying to refresh this trip.")
       } finally {
@@ -127,7 +181,7 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming) => {
       if (data.outcome === "already_paid") {
         setAhead(null)
         setLocalConfirming(null)
-        await refresh()
+        await refresh(true)
         return
       }
       if (data.outcome === "show_next_step" && data.step) {
@@ -172,6 +226,9 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming) => {
         return false
       }
       snapshotRef.current = null
+      stepRef.current = null
+      clearCachedGuestTrip(sessionId)
+      appliedEpochRef.current = currentGuestTripEpoch()
       setSnapshot(null)
       setAhead(null)
       return true
@@ -208,6 +265,8 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming) => {
     (localConfirming === "token" && snapshot?.step === "lock") ||
       (localConfirming === "balance" && snapshot?.step === "balance"),
   )
+  confirmingPaymentRef.current = confirmingPayment
+  stepRef.current = snapshot?.step ?? stepRef.current
 
   return {
     snapshot: displayed,
@@ -224,6 +283,9 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming) => {
     handleCancel,
     clearSnapshot: () => {
       snapshotRef.current = null
+      stepRef.current = null
+      if (sessionId) clearCachedGuestTrip(sessionId)
+      appliedEpochRef.current = currentGuestTripEpoch()
       setSnapshot(null)
     },
   }

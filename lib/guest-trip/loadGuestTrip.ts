@@ -69,6 +69,7 @@ interface TripRow {
 
 interface QuoteRow {
   id: string
+  trip_request_id?: string
   current_quote: number
   status: string
   is_best_price?: boolean | null
@@ -90,6 +91,7 @@ interface IntentRow {
 
 interface BookingRow {
   id: string
+  trip_request_id?: string
   status: string
   payment_status: string
   driver_id: string | null
@@ -118,34 +120,47 @@ interface DriverDetailRow {
 const tripSelect =
   "id, status, created_at, trip_days, pax_count, pickup_location, drop_location, trip_start_date, requested_vehicle_type:vehicle_types!requested_vehicle_type_id(label)"
 
+const quoteSelect =
+  "id, trip_request_id, current_quote, status, is_best_price, vendors(business_name, reliability_score), vehicle_types(label)"
+
+const bookingSelect =
+  "id, trip_request_id, status, payment_status, driver_id, final_quote, trip_days, pax_count, winning_quote_snapshot_id, created_at, drivers(full_name, phone_e164), vehicles(model, registration_number), vendors(business_name, reliability_score)"
+
+const loadSessionTrips = async (supabase: SupabaseClient, sessionId: string): Promise<TripRow[]> => {
+  const [ownedResult, linkedResult] = await Promise.all([
+    supabase.from("trip_requests").select(tripSelect).eq("session_id", sessionId),
+    supabase.from("guest_trip_sessions").select("trip_request_id").eq("session_id", sessionId),
+  ])
+
+  if (ownedResult.error) throw new Error(`Failed to fetch trip requests: ${ownedResult.error.message}`)
+  const trips = ((ownedResult.data ?? []) as unknown as TripRow[]).slice()
+  const seen = new Set(trips.map((trip) => trip.id))
+
+  if (linkedResult.error) {
+    if (!isMissingRelation(linkedResult.error)) {
+      throw new Error(`Failed to fetch guest trip sessions: ${linkedResult.error.message}`)
+    }
+    return trips
+  }
+
+  const missingIds = ((linkedResult.data ?? []) as Array<{ trip_request_id: string }>)
+    .map((row) => row.trip_request_id)
+    .filter((id) => !seen.has(id))
+
+  if (missingIds.length === 0) return trips
+
+  const { data, error } = await supabase.from("trip_requests").select(tripSelect).in("id", missingIds)
+  if (error) throw new Error(`Failed to fetch trip requests: ${error.message}`)
+  trips.push(...((data ?? []) as unknown as TripRow[]))
+  return trips
+}
+
 export const listTripIdsForGuestSession = async (
   supabase: SupabaseClient,
   sessionId: string,
 ): Promise<string[]> => {
-  const ids = new Set<string>()
-
-  const { data: owned, error: ownedError } = await supabase
-    .from("trip_requests")
-    .select("id")
-    .eq("session_id", sessionId)
-
-  if (ownedError) throw new Error(`Failed to fetch trip requests: ${ownedError.message}`)
-  for (const row of owned ?? []) ids.add(row.id as string)
-
-  const { data: linked, error: linkedError } = await supabase
-    .from("guest_trip_sessions")
-    .select("trip_request_id")
-    .eq("session_id", sessionId)
-
-  if (linkedError) {
-    if (!isMissingRelation(linkedError)) {
-      throw new Error(`Failed to fetch guest trip sessions: ${linkedError.message}`)
-    }
-  } else {
-    for (const row of linked ?? []) ids.add(row.trip_request_id as string)
-  }
-
-  return [...ids]
+  const trips = await loadSessionTrips(supabase, sessionId)
+  return trips.map((trip) => trip.id)
 }
 
 export const sessionCanReadTrip = async (
@@ -172,68 +187,48 @@ export const loadGuestTrip = async (
     previewStep?: "token_received" | "driver_contact" | null
   },
 ): Promise<GuestTripSnapshot | null> => {
-  const tripIds = await listTripIdsForGuestSession(supabase, input.sessionId)
-  if (tripIds.length === 0) return null
-
-  const { data: tripRows, error: tripError } = await supabase.from("trip_requests").select(tripSelect).in("id", tripIds)
-  if (tripError) throw new Error(`Failed to fetch trip requests: ${tripError.message}`)
-
-  const trips = (tripRows ?? []) as unknown as TripRow[]
+  const trips = await loadSessionTrips(supabase, input.sessionId)
   if (trips.length === 0) return null
+  const tripIds = trips.map((trip) => trip.id)
 
-  const { data: quoteRows, error: quoteError } = await supabase
-    .from("quote_snapshots")
-    .select("id, trip_request_id, current_quote, status")
-    .in("trip_request_id", tripIds)
-    .order("current_quote", { ascending: true })
+  const [quoteResult, intentResult, bookingResult] = await Promise.all([
+    supabase.from("quote_snapshots").select(quoteSelect).in("trip_request_id", tripIds).order("current_quote", { ascending: true }),
+    supabase
+      .from("whatsapp_payment_intents")
+      .select("id, status, purpose, quote_snapshot_id, booking_id, trip_request_id, created_at")
+      .in("trip_request_id", tripIds)
+      .in("status", [...OPEN_INTENT_STATUSES])
+      .order("created_at", { ascending: true }),
+    supabase.from("bookings").select(bookingSelect).in("trip_request_id", tripIds).order("created_at", { ascending: false }),
+  ])
 
-  if (quoteError) throw new Error(`Failed to fetch quote snapshots: ${quoteError.message}`)
-
-  const { data: intentRows, error: intentError } = await supabase
-    .from("whatsapp_payment_intents")
-    .select("id, status, purpose, quote_snapshot_id, booking_id, trip_request_id, created_at")
-    .in("trip_request_id", tripIds)
-    .in("status", [...OPEN_INTENT_STATUSES])
-    .order("created_at", { ascending: true })
-
-  if (intentError && !isMissingRelation(intentError)) {
-    throw new Error(`Failed to fetch payment intents: ${intentError.message}`)
+  if (quoteResult.error) throw new Error(`Failed to fetch quote snapshots: ${quoteResult.error.message}`)
+  if (intentResult.error && !isMissingRelation(intentResult.error)) {
+    throw new Error(`Failed to fetch payment intents: ${intentResult.error.message}`)
   }
+  if (bookingResult.error) throw new Error(`Failed to fetch bookings: ${bookingResult.error.message}`)
 
-  const { data: bookingRows, error: bookingError } = await supabase
-    .from("bookings")
-    .select("id, trip_request_id, status, payment_status, driver_id, created_at")
-    .in("trip_request_id", tripIds)
-    .order("created_at", { ascending: false })
-
-  if (bookingError) throw new Error(`Failed to fetch bookings: ${bookingError.message}`)
-
-  const quotesByTrip = new Map<string, Array<{ id: string; status: string }>>()
-  for (const quote of quoteRows ?? []) {
-    const tripRequestId = quote.trip_request_id as string
+  const quotesByTrip = new Map<string, QuoteRow[]>()
+  for (const quote of (quoteResult.data ?? []) as unknown as QuoteRow[]) {
+    const tripRequestId = quote.trip_request_id
+    if (!tripRequestId) continue
     const list = quotesByTrip.get(tripRequestId) ?? []
-    list.push({ id: quote.id as string, status: quote.status as string })
+    list.push(quote)
     quotesByTrip.set(tripRequestId, list)
   }
 
-  const intentsByTrip = new Map<string, IntentRow[]>()
-  for (const intent of (intentError ? [] : intentRows ?? []) as unknown as Array<IntentRow & { trip_request_id: string }>) {
+  const intentsByTrip = new Map<string, Array<IntentRow & { trip_request_id: string }>>()
+  for (const intent of (intentResult.error ? [] : intentResult.data ?? []) as unknown as Array<IntentRow & { trip_request_id: string }>) {
     const list = intentsByTrip.get(intent.trip_request_id) ?? []
     list.push(intent)
     intentsByTrip.set(intent.trip_request_id, list)
   }
 
-  const bookingByTrip = new Map<string, { id: string; payment_status: string; driver_id: string | null; status: string }>()
-  for (const booking of bookingRows ?? []) {
-    const tripRequestId = booking.trip_request_id as string
-    if (!bookingByTrip.has(tripRequestId)) {
-      bookingByTrip.set(tripRequestId, {
-        id: booking.id as string,
-        payment_status: booking.payment_status as string,
-        driver_id: (booking.driver_id as string | null) ?? null,
-        status: booking.status as string,
-      })
-    }
+  const bookingByTrip = new Map<string, BookingRow>()
+  for (const booking of (bookingResult.data ?? []) as unknown as BookingRow[]) {
+    const tripRequestId = booking.trip_request_id
+    if (!tripRequestId || bookingByTrip.has(tripRequestId)) continue
+    bookingByTrip.set(tripRequestId, booking)
   }
 
   const candidates = trips.map((trip) => {
@@ -273,14 +268,25 @@ export const loadGuestTrip = async (
   if (!picked) return null
   await abandonUnpaidGuestTrips(supabase, unpaidDuplicateTripIds(candidates, picked.id))
 
-  await ensureMessageTemplates(supabase)
-  return buildSnapshot(supabase, picked.trip, picked.stepInput, input.confirming, input.previewStep ?? null)
+  return buildSnapshot(
+    supabase,
+    picked.trip,
+    picked.stepInput,
+    quotesByTrip.get(picked.id) ?? [],
+    intentsByTrip.get(picked.id) ?? [],
+    bookingByTrip.get(picked.id) ?? null,
+    input.confirming,
+    input.previewStep ?? null,
+  )
 }
 
 const buildSnapshot = async (
   supabase: SupabaseClient,
   trip: TripRow,
   stepInput: GuestStepInput,
+  quoteRows: QuoteRow[],
+  intentRows: IntentRow[],
+  booking: BookingRow | null,
   confirming: GuestConfirming,
   previewStep: "token_received" | "driver_contact" | null,
 ): Promise<GuestTripSnapshot> => {
@@ -293,15 +299,7 @@ const buildSnapshot = async (
     dropLocation: trip.drop_location,
   })
 
-  const { data: quoteData, error: quoteError } = await supabase
-    .from("quote_snapshots")
-    .select("id, current_quote, status, is_best_price, vendors(business_name, reliability_score), vehicle_types(label)")
-    .eq("trip_request_id", trip.id)
-    .order("current_quote", { ascending: true })
-
-  if (quoteError) throw new Error(`Failed to fetch quote snapshots: ${quoteError.message}`)
-
-  const quotes = ((quoteData ?? []) as unknown as QuoteRow[])
+  const quotes = quoteRows
     .filter((quote) => !QUOTE_SKIP_STATUSES.has(quote.status))
     .slice(0, QUOTE_CHOICE_MAX_QUOTES)
     .map((quote) => {
@@ -325,33 +323,8 @@ const buildSnapshot = async (
     quotes[0].isBestPrice = true
   }
 
-  const { data: intentData, error: intentError } = await supabase
-    .from("whatsapp_payment_intents")
-    .select("id, status, purpose, quote_snapshot_id, booking_id, created_at")
-    .eq("trip_request_id", trip.id)
-    .in("status", [...OPEN_INTENT_STATUSES])
-    .order("created_at", { ascending: true })
-
-  if (intentError && !isMissingRelation(intentError)) {
-    throw new Error(`Failed to fetch payment intents: ${intentError.message}`)
-  }
-
-  const intents = (intentError ? [] : intentData ?? []) as unknown as IntentRow[]
+  const intents = intentRows
   const tokenIntent = intents.find((intent) => intent.purpose === "token_lock") ?? null
-
-  const { data: bookingData, error: bookingError } = await supabase
-    .from("bookings")
-    .select(
-      "id, status, payment_status, driver_id, final_quote, trip_days, pax_count, winning_quote_snapshot_id, drivers(full_name, phone_e164), vehicles(model, registration_number), vendors(business_name, reliability_score)",
-    )
-    .eq("trip_request_id", trip.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (bookingError) throw new Error(`Failed to fetch booking: ${bookingError.message}`)
-
-  const booking = (bookingData as unknown as BookingRow | null) ?? null
   const balanceIntent = booking
     ? intents.find((intent) => intent.purpose === "balance" && intent.booking_id === booking.id) ?? null
     : null
@@ -372,43 +345,22 @@ const buildSnapshot = async (
         ? "token_received"
         : step
 
-  let driverDetail: DriverDetailRow | null = null
-  let rideGroupInviteUrl: string | null = null
-  if (booking) {
-    const { data: detail, error: detailError } = await supabase
-      .from("driver_detail_submissions")
-      .select("parsed_driver_name, parsed_driver_phone, parsed_vehicle_number, parsed_vehicle_model")
-      .eq("booking_id", booking.id)
-      .in("parse_status", ["parsed_ok", "ops_corrected"])
-      .order("received_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (detailError && !isMissingRelation(detailError)) {
-      throw new Error(`Failed to fetch driver details: ${detailError.message}`)
-    }
-    driverDetail = (detail as DriverDetailRow | null) ?? null
-
-    const { data: group, error: groupError } = await supabase
-      .from("whatsapp_ride_groups")
-      .select("invite_link, status")
-      .eq("booking_id", booking.id)
-      .neq("status", "deleted")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (groupError && !isMissingRelation(groupError)) {
-      throw new Error(`Failed to fetch ride group: ${groupError.message}`)
-    }
-    const invite = group?.invite_link
-    rideGroupInviteUrl = typeof invite === "string" && invite.length > 0 ? invite : null
-  }
-
-  const lockedQuote = tokenIntent?.quote_snapshot_id
-    ? quotes.find((quote) => quote.id === tokenIntent.quote_snapshot_id) ??
-      (await loadOneQuote(supabase, tokenIntent.quote_snapshot_id, vehicleLabel))
+  const knownLockedQuote = tokenIntent?.quote_snapshot_id
+    ? quotes.find((quote) => quote.id === tokenIntent.quote_snapshot_id) ?? null
     : quotes[0] ?? null
+  const missingQuoteId =
+    tokenIntent?.quote_snapshot_id && !knownLockedQuote ? tokenIntent.quote_snapshot_id : null
+
+  const [[driverDetail, rideGroupInviteUrl, loadedQuote]] = await Promise.all([
+    Promise.all([
+      booking ? loadDriverDetail(supabase, booking.id) : Promise.resolve<DriverDetailRow | null>(null),
+      booking ? loadRideGroupInvite(supabase, booking.id) : Promise.resolve<string | null>(null),
+      missingQuoteId ? loadOneQuote(supabase, missingQuoteId, vehicleLabel) : Promise.resolve(null),
+    ] as const),
+    ensureMessageTemplates(supabase),
+  ])
+
+  const lockedQuote = knownLockedQuote ?? loadedQuote
 
   const driver = firstOrSelf(booking?.drivers)
   const vehicle = firstOrSelf(booking?.vehicles)
@@ -477,6 +429,35 @@ const buildSnapshot = async (
     rideGroupInviteUrl,
     resumedExisting: false,
   }
+}
+
+const loadDriverDetail = async (supabase: SupabaseClient, bookingId: string): Promise<DriverDetailRow | null> => {
+  const { data, error } = await supabase
+    .from("driver_detail_submissions")
+    .select("parsed_driver_name, parsed_driver_phone, parsed_vehicle_number, parsed_vehicle_model")
+    .eq("booking_id", bookingId)
+    .in("parse_status", ["parsed_ok", "ops_corrected"])
+    .order("received_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error && !isMissingRelation(error)) throw new Error(`Failed to fetch driver details: ${error.message}`)
+  return (data as DriverDetailRow | null) ?? null
+}
+
+const loadRideGroupInvite = async (supabase: SupabaseClient, bookingId: string): Promise<string | null> => {
+  const { data, error } = await supabase
+    .from("whatsapp_ride_groups")
+    .select("invite_link, status")
+    .eq("booking_id", bookingId)
+    .neq("status", "deleted")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error && !isMissingRelation(error)) throw new Error(`Failed to fetch ride group: ${error.message}`)
+  const invite = data?.invite_link
+  return typeof invite === "string" && invite.length > 0 ? invite : null
 }
 
 const loadOneQuote = async (

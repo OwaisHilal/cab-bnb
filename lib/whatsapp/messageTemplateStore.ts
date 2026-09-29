@@ -403,6 +403,7 @@ export function renderMessageTemplate(
 }
 
 export async function ensureMessageTemplates(supabase: SupabaseClient): Promise<Map<string, WhatsAppMessageTemplateRow>> {
+  if (templateCache) return templateCache
   const { data, error } = await supabase
     .from("whatsapp_message_templates")
     .select("*")

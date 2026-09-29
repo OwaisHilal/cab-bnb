@@ -1,4 +1,4 @@
-export type OtpStep = "phone" | "code" | "phone_email" | "verified";
+export type OtpStep = "phone" | "code" | "phone_email" | "verified" | "no_booking";
 
 /**
  * "whatsapp"/"sms" come back from POST /api/otp/send once a channel accepts

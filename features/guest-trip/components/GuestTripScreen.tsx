@@ -16,6 +16,7 @@ interface GuestTripScreenProps {
   onStartRequest: () => void
   onContinue: () => void
   onSnapshot?: (snapshot: GuestTripSnapshot) => void
+  active?: boolean
 }
 
 const STATUS_CHECK_LABEL = "Already booked? Check your trip"
@@ -58,8 +59,9 @@ export const GuestTripScreen = ({
   onStartRequest,
   onContinue,
   onSnapshot,
+  active = true,
 }: GuestTripScreenProps) => {
-  const trip = useGuestTrip(sessionId, confirming)
+  const trip = useGuestTrip(sessionId, confirming, active)
   const snapshot = trip.snapshot
   const reportedMissing = useRef(false)
   const reportedSnapshot = useRef<string | null>(null)

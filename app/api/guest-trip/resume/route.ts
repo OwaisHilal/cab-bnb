@@ -74,11 +74,11 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (touristError) return jsonError(500, `Failed to fetch tourist: ${touristError.message}`);
-  if (!tourist?.id) return jsonError(404, "No trip for this phone");
+  if (!tourist?.id) return jsonOk({ found: false });
 
   try {
     const current = await findCurrentGuestTrip(supabase, tourist.id as string);
-    if (!current) return jsonError(404, "No trip for this phone");
+    if (!current) return jsonOk({ found: false });
     const saved = await rememberGuestSession(supabase, session_id, current.id);
     if (!saved) return jsonError(503, "This device could not be saved to your trip yet.");
     const snapshot = await loadGuestTrip(supabase, { sessionId: session_id, confirming: null });
