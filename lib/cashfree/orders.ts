@@ -34,6 +34,17 @@ function getCashfreeOrdersBaseUrl(): string {
   return env === "sandbox" ? SANDBOX_BASE_URL : PRODUCTION_BASE_URL
 }
 
+export function readCashfreeOrdersContext(): {
+  clientId: string
+  clientSecret: string
+  apiVersion: string
+  baseUrl: string
+} | null {
+  const credentials = readCashfreeCredentials()
+  if (!credentials) return null
+  return { ...credentials, baseUrl: getCashfreeOrdersBaseUrl() }
+}
+
 function readErrorMessage(responseBody: unknown, status: number): string {
   if (responseBody && typeof responseBody === "object") {
     const row = responseBody as Record<string, unknown>
