@@ -1,6 +1,7 @@
 import "server-only"
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import type { VehicleModelSource } from "@/lib/drivers/vehicleModel"
 import { isMissingFleet } from "@/lib/whatsapp/assignDriverToBooking"
 
 /**
@@ -101,6 +102,51 @@ export const loadVendorDriverOptions = async (
       searchText: [fullName, phoneLast10, registrationNumber, model].filter(Boolean).join(" ").toLowerCase(),
     }
   })
+}
+
+/**
+ * Models this vendor already uses, tagged with vehicle type: fleet rows
+ * (`vehicles.model`) and active rate-band labels
+ * (`vendor_rate_bands.vehicle_model`). The assign page filters these to the
+ * booking's vehicle type. Keep the select shape in sync with
+ * `loadKnownModelSpellings` in lib/whatsapp/assignDriverToBooking.ts.
+ */
+export const loadVendorModelSources = async (
+  supabase: SupabaseClient,
+  vendorId: string,
+): Promise<VehicleModelSource[]> => {
+  const [vehiclesResult, bandsResult] = await Promise.all([
+    supabase.from("vehicles").select("model, vehicle_type_id").eq("vendor_id", vendorId).limit(MAX_ROSTER_SIZE),
+    supabase
+      .from("vendor_rate_bands")
+      .select("vehicle_model, vehicle_type_id")
+      .eq("vendor_id", vendorId)
+      .eq("is_active", true)
+      .limit(MAX_ROSTER_SIZE),
+  ])
+
+  if (vehiclesResult.error) {
+    if (isMissingFleet(vehiclesResult.error)) return []
+    throw new Error(`Failed to load vendor vehicle models: ${vehiclesResult.error.message}`)
+  }
+  if (bandsResult.error) {
+    throw new Error(`Failed to load vendor rate-band models: ${bandsResult.error.message}`)
+  }
+
+  const sources: VehicleModelSource[] = []
+  for (const row of vehiclesResult.data ?? []) {
+    sources.push({
+      model: (row.model as string | null) ?? "",
+      vehicleTypeId: (row.vehicle_type_id as number | null) ?? null,
+    })
+  }
+  for (const row of bandsResult.data ?? []) {
+    sources.push({
+      model: (row.vehicle_model as string | null) ?? "",
+      vehicleTypeId: (row.vehicle_type_id as number | null) ?? null,
+    })
+  }
+  return sources
 }
 
 /**

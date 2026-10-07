@@ -49,6 +49,7 @@ interface FakeTables {
   driver_vehicle_links: Row[]
   driver_detail_submissions: Row[]
   job_queue: Row[]
+  vendor_rate_bands: Row[]
 }
 
 type FilterOp = "eq" | "neq" | "in"
@@ -194,6 +195,7 @@ const emptyDb = (): FakeTables => ({
   driver_vehicle_links: [],
   driver_detail_submissions: [],
   job_queue: [],
+  vendor_rate_bands: [],
 })
 
 /** Seeds the one `bookings` row attachBooking's status-guarded update needs. */
@@ -430,5 +432,85 @@ describe("assignDriverToBooking — manual mode", () => {
 
     assert.deepEqual(result, { ok: true })
     assert.equal(db.job_queue[0]?.job_type, "send_confirmation_card")
+  })
+
+  it("stores a known model's saved spelling when the typed model only differs by case or spacing", async () => {
+    const db = emptyDb()
+    seedBookingRow(db, baseBooking)
+    db.vendor_rate_bands.push({
+      vendor_id: "vendor-1",
+      vehicle_type_id: 1,
+      vehicle_model: "Swift Dzire",
+      is_active: true,
+    })
+    const supabase = createFakeSupabase(db)
+
+    const result = await assignDriverToBooking(
+      supabase,
+      baseBooking,
+      { mode: "manual", driverName: "Bilal Ahmed", driverPhone: "9876500001", vehicleNumber: "JK01CD5678", vehicleModel: "  swift   dzire " },
+      { rawMessageText: "x" },
+    )
+
+    assert.deepEqual(result, { ok: true })
+    assert.equal(db.vehicles[0]?.model, "Swift Dzire")
+    assert.equal(db.driver_detail_submissions[0]?.parsed_vehicle_model, "Swift Dzire")
+  })
+
+  it("reuses an existing plate without rewriting its model or vehicle type", async () => {
+    const db = emptyDb()
+    seedBookingRow(db, baseBooking)
+    db.vehicles.push({
+      id: "vehicle-dzire",
+      vendor_id: "vendor-1",
+      registration_number: "JK01AB1234",
+      model: "Swift Dzire",
+      vehicle_type_id: 2,
+    })
+    const supabase = createFakeSupabase(db)
+
+    const result = await assignDriverToBooking(
+      supabase,
+      baseBooking,
+      { mode: "manual", driverName: "Bilal Ahmed", driverPhone: "9876500001", vehicleNumber: "jk01 ab 1234", vehicleModel: "swift dzire" },
+      { rawMessageText: "x" },
+    )
+
+    assert.deepEqual(result, { ok: true })
+    assert.equal(db.vehicles.length, 1)
+    assert.equal(db.vehicles[0]?.model, "Swift Dzire")
+    assert.equal(db.vehicles[0]?.vehicle_type_id, 2)
+    assert.equal(db.bookings.find((b) => b.id === baseBooking.bookingId)?.vehicle_id, "vehicle-dzire")
+    assert.equal(db.driver_detail_submissions[0]?.parsed_vehicle_model, "Swift Dzire")
+  })
+
+  it("returns existing_vehicle_model_mismatch and does not rename the saved vehicle", async () => {
+    const db = emptyDb()
+    seedBookingRow(db, baseBooking)
+    db.vehicles.push({
+      id: "vehicle-dzire",
+      vendor_id: "vendor-1",
+      registration_number: "JK01AB1234",
+      model: "Swift Dzire",
+      vehicle_type_id: 1,
+    })
+    const supabase = createFakeSupabase(db)
+
+    const result = await assignDriverToBooking(
+      supabase,
+      baseBooking,
+      { mode: "manual", driverName: "Bilal Ahmed", driverPhone: "9876500001", vehicleNumber: "JK01AB1234", vehicleModel: "banana" },
+      { rawMessageText: "x" },
+    )
+
+    assert.deepEqual(result, {
+      ok: false,
+      reason: "existing_vehicle_model_mismatch",
+      existingVehicle: { vehicleId: "vehicle-dzire", registrationNumber: "JK01AB1234", model: "Swift Dzire" },
+    })
+    assert.equal(db.vehicles.length, 1)
+    assert.equal(db.vehicles[0]?.model, "Swift Dzire")
+    assert.equal(db.drivers.length, 0, "a model conflict must not create a driver")
+    assert.equal(db.bookings.find((b) => b.id === baseBooking.bookingId)?.status, "vendor_confirmed")
   })
 })

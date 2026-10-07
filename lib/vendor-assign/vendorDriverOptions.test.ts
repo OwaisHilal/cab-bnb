@@ -2,7 +2,8 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { loadVendorDriverOptions, sortVendorDriverOptionsByPreferredVehicleType, type VendorDriverOption } from "./vendorDriverOptions"
+import { distinctModelSuggestions } from "@/lib/drivers/vehicleModel"
+import { loadVendorDriverOptions, loadVendorModelSources, sortVendorDriverOptionsByPreferredVehicleType, type VendorDriverOption } from "./vendorDriverOptions"
 
 /**
  * Chainable thenable stub: every `.select/.eq/.order/.limit` call returns
@@ -115,5 +116,58 @@ describe("sortVendorDriverOptionsByPreferredVehicleType", () => {
     const options = [makeOption("adil", 2), makeOption("bilal", 1)]
     const sorted = sortVendorDriverOptionsByPreferredVehicleType(options, null)
     assert.deepEqual(sorted, options)
+  })
+})
+
+describe("loadVendorModelSources", () => {
+  const createFakeModelClient = (tables: Record<string, { data: unknown; error: { code?: string; message: string } | null }>) => {
+    return {
+      from: (name: string) => {
+        const result = tables[name] ?? { data: [], error: null }
+        const builder = {
+          select: () => builder,
+          eq: () => builder,
+          limit: () => builder,
+          then: (
+            onfulfilled?: ((value: typeof result) => unknown) | null,
+            onrejected?: ((reason: unknown) => unknown) | null,
+          ) => Promise.resolve(result).then(onfulfilled, onrejected),
+        }
+        return builder
+      },
+    } as unknown as SupabaseClient
+  }
+
+  it("reads fleet models and active rate-band labels", async () => {
+    const supabase = createFakeModelClient({
+      vehicles: {
+        data: [
+          { model: "Swift Dzire", vehicle_type_id: 1 },
+          { model: "Innova Crysta", vehicle_type_id: 2 },
+        ],
+        error: null,
+      },
+      vendor_rate_bands: {
+        data: [{ vehicle_model: "Amaze", vehicle_type_id: 1 }],
+        error: null,
+      },
+    })
+
+    const sources = await loadVendorModelSources(supabase, "vendor-1")
+    assert.deepEqual(distinctModelSuggestions(sources, 1), ["Amaze", "Swift Dzire"])
+    assert.deepEqual(distinctModelSuggestions(sources, 2), ["Innova Crysta"])
+  })
+
+  it("returns no suggestions when the booking has no vehicle type", async () => {
+    const sources = [{ model: "Amaze", vehicleTypeId: 1 }]
+    assert.deepEqual(distinctModelSuggestions(sources, null), [])
+  })
+
+  it("returns an empty list when the fleet tables are missing", async () => {
+    const supabase = createFakeModelClient({
+      vehicles: { data: null, error: { code: "42P01", message: "relation does not exist" } },
+      vendor_rate_bands: { data: [], error: null },
+    })
+    assert.deepEqual(await loadVendorModelSources(supabase, "vendor-1"), [])
   })
 })

@@ -1,11 +1,13 @@
 import type { ReactNode } from "react"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server"
+import { distinctModelSuggestions } from "@/lib/drivers/vehicleModel"
 import { formatInr } from "@/lib/whatsapp/formatInr"
 import { verifyVendorAssignToken } from "@/lib/whatsapp/vendorAssignToken"
 import { isBookingAssignable, type ResolvedVendorBooking } from "@/lib/whatsapp/assignDriverToBooking"
 import {
   loadVendorDriverOptions,
+  loadVendorModelSources,
   sortVendorDriverOptionsByPreferredVehicleType,
 } from "@/lib/vendor-assign/vendorDriverOptions"
 import { AssignDriverForm, type BookingSummaryForForm } from "@/features/vendor-assign/components/AssignDriverForm"
@@ -157,9 +159,10 @@ export default async function AssignDriverPage({
   // reads — load them together so the roster query isn't an extra
   // sequential round-trip before this (WhatsApp in-app browser) page can
   // render.
-  const [booking, driverOptions] = await Promise.all([
+  const [booking, driverOptions, modelSources] = await Promise.all([
     loadBookingSummary(supabase, verified.payload.bookingId),
     loadVendorDriverOptions(supabase, verified.payload.vendorId),
+    loadVendorModelSources(supabase, verified.payload.vendorId),
   ])
 
   if (!booking || booking.vendorId !== verified.payload.vendorId) {
@@ -179,6 +182,7 @@ export default async function AssignDriverPage({
 
   const dayLabel = booking.tripDays > 1 ? "days" : "day"
   const sortedDriverOptions = sortVendorDriverOptionsByPreferredVehicleType(driverOptions, booking.vehicleTypeId)
+  const modelSuggestions = distinctModelSuggestions(modelSources, booking.vehicleTypeId)
 
   const bookingSummary: BookingSummaryForForm = {
     guestName: booking.guestName,
@@ -191,7 +195,12 @@ export default async function AssignDriverPage({
 
   return (
     <PageShell>
-      <AssignDriverForm token={token} booking={bookingSummary} driverOptions={sortedDriverOptions} />
+      <AssignDriverForm
+        token={token}
+        booking={bookingSummary}
+        driverOptions={sortedDriverOptions}
+        modelSuggestions={modelSuggestions}
+      />
     </PageShell>
   )
 }

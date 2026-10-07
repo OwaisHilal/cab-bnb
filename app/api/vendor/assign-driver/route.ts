@@ -42,6 +42,8 @@ const assignDriverSchema = z.discriminatedUnion("mode", [existingModeSchema, man
  * - `manual`: vendor typed driver/vehicle details by hand. If the phone
  *   already belongs to a different saved driver, this returns
  *   `existing_driver_name_mismatch` (409) instead of renaming that driver.
+ *   If the plate is already saved under a different model, this returns
+ *   `existing_vehicle_model_mismatch` (409) instead of renaming that vehicle.
  *
  * Delegates the actual upsert/attach logic to assignDriverToBooking.ts,
  * the same helper the free-text `DRIVER: ...` WhatsApp reply path uses
@@ -118,6 +120,14 @@ export async function POST(request: NextRequest) {
         "existing_driver_name_mismatch",
         `A driver with this phone number is already saved as "${result.existingDriver.fullName}". Use that saved driver instead of adding a new one.`,
         { existingDriver: result.existingDriver },
+      );
+    }
+    if (result.reason === "existing_vehicle_model_mismatch") {
+      return jsonErrorCode(
+        409,
+        "existing_vehicle_model_mismatch",
+        `This number is already saved as "${result.existingVehicle.model}". Use that model instead of renaming it.`,
+        { existingVehicle: result.existingVehicle },
       );
     }
     if (result.reason === "driver_not_found") {

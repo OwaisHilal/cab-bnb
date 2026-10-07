@@ -3,6 +3,7 @@ import "server-only"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { phoneLast10, toDriverPhoneE164 } from "@/lib/drivers/phone"
 import { normalizeDriverName, normalizeVehicleRegistration } from "@/lib/drivers/vehicle"
+import { canonicalizeVehicleModel, collapseVehicleModel, vehicleModelKey } from "@/lib/drivers/vehicleModel"
 import {
   ACTIVE_VENDOR_BOOKING_STATUSES,
   ATTACHED_OR_LATER_BOOKING_STATUSES,
@@ -28,7 +29,9 @@ import {
  *   or no saved roster). If the typed phone already belongs to a saved
  *   active driver whose name doesn't match (normalized), this returns
  *   `existing_driver_name_mismatch` instead of silently renaming that
- *   driver — see docs/2026-09-23-vendor-assign-ux.md.
+ *   driver — see docs/2026-09-23-vendor-assign-ux.md. If the typed plate
+ *   already belongs to this vendor under a different model, this returns
+ *   `existing_vehicle_model_mismatch` instead of renaming that vehicle.
  */
 
 export interface ResolvedVendorBooking {
@@ -63,10 +66,17 @@ export interface ExistingDriverConflictSummary {
   phoneE164: string
 }
 
+export interface ExistingVehicleConflictSummary {
+  vehicleId: string
+  registrationNumber: string
+  model: string
+}
+
 export type AssignDriverToBookingResult =
   | { ok: true }
   | { ok: false; reason: "booking_not_assignable" }
   | { ok: false; reason: "existing_driver_name_mismatch"; existingDriver: ExistingDriverConflictSummary }
+  | { ok: false; reason: "existing_vehicle_model_mismatch"; existingVehicle: ExistingVehicleConflictSummary }
   | { ok: false; reason: "driver_not_found" }
   | { ok: false; reason: "inactive_driver" }
   | { ok: false; reason: "vehicle_required" }
@@ -220,8 +230,39 @@ const setPrimaryDriverVehicle = async (
 }
 
 type ManualUpsertResult =
-  | { ok: true; driverId: string; vehicleId: string }
+  | { ok: true; driverId: string; vehicleId: string; vehicleModel: string; vehicleNumber: string }
   | { ok: false; reason: "existing_driver_name_mismatch"; existingDriver: ExistingDriverConflictSummary }
+  | { ok: false; reason: "existing_vehicle_model_mismatch"; existingVehicle: ExistingVehicleConflictSummary }
+
+/**
+ * Spellings this vendor already uses, from fleet rows and active rate bands.
+ * Keep the select shape in sync with `loadVendorModelSources` in
+ * lib/vendor-assign/vendorDriverOptions.ts.
+ */
+const loadKnownModelSpellings = async (supabase: SupabaseClient, vendorId: string): Promise<string[]> => {
+  const [vehiclesResult, bandsResult] = await Promise.all([
+    supabase.from("vehicles").select("model").eq("vendor_id", vendorId),
+    supabase.from("vendor_rate_bands").select("vehicle_model").eq("vendor_id", vendorId).eq("is_active", true),
+  ])
+
+  if (vehiclesResult.error && !isMissingFleet(vehiclesResult.error)) {
+    throw new Error(`Failed to load known vehicle models: ${vehiclesResult.error.message}`)
+  }
+  if (bandsResult.error) {
+    throw new Error(`Failed to load known rate-band models: ${bandsResult.error.message}`)
+  }
+
+  const spellings: string[] = []
+  for (const row of vehiclesResult.data ?? []) {
+    const model = (row.model as string | null) ?? ""
+    if (model.trim()) spellings.push(model)
+  }
+  for (const row of bandsResult.data ?? []) {
+    const model = (row.vehicle_model as string | null) ?? ""
+    if (model.trim()) spellings.push(model)
+  }
+  return spellings
+}
 
 /**
  * Upserts a driver + vehicle by (vendor, phone) / (vendor, registration)
@@ -257,6 +298,48 @@ const upsertDriverAndVehicle = async (
     throw new Error(`Failed to look up driver: ${driverLookupError.message}`)
   }
 
+  if (existingDriver) {
+    const existingName = (existingDriver.full_name as string) ?? ""
+    if (normalizeDriverName(existingName) !== normalizeDriverName(input.name)) {
+      return {
+        ok: false,
+        reason: "existing_driver_name_mismatch",
+        existingDriver: {
+          driverId: existingDriver.id as string,
+          fullName: existingName,
+          phoneE164: (existingDriver.phone_e164 as string) ?? phoneE164,
+        },
+      }
+    }
+  }
+
+  const knownSpellings = await loadKnownModelSpellings(supabase, input.vendorId)
+  const canonicalModel = canonicalizeVehicleModel(input.vehicleModel, knownSpellings)
+
+  const { data: existingVehicle, error: vehicleLookupError } = await supabase
+    .from("vehicles")
+    .select("id, model, vehicle_type_id, registration_number")
+    .eq("vendor_id", input.vendorId)
+    .eq("registration_number", registrationNumber)
+    .maybeSingle()
+
+  if (vehicleLookupError && !isMissingFleet(vehicleLookupError)) {
+    throw new Error(`Failed to look up vehicle: ${vehicleLookupError.message}`)
+  }
+
+  const storedModel = collapseVehicleModel((existingVehicle?.model as string | null) ?? "")
+  if (existingVehicle && storedModel && vehicleModelKey(storedModel) !== vehicleModelKey(canonicalModel)) {
+    return {
+      ok: false,
+      reason: "existing_vehicle_model_mismatch",
+      existingVehicle: {
+        vehicleId: existingVehicle.id as string,
+        registrationNumber,
+        model: storedModel,
+      },
+    }
+  }
+
   let driverId: string | undefined
   if (!existingDriver) {
     const { data: inserted, error: insertDriverError } = await supabase
@@ -271,41 +354,19 @@ const upsertDriverAndVehicle = async (
       .maybeSingle()
     if (insertDriverError) {
       if (isMissingFleet(insertDriverError)) {
-        return { ok: true, driverId: "", vehicleId: "" }
+        return { ok: true, driverId: "", vehicleId: "", vehicleModel: canonicalModel, vehicleNumber: registrationNumber }
       }
       throw new Error(`Failed to insert driver: ${insertDriverError.message}`)
     }
     driverId = inserted?.id as string
   } else {
     driverId = existingDriver.id as string
-    const existingName = (existingDriver.full_name as string) ?? ""
-    if (normalizeDriverName(existingName) !== normalizeDriverName(input.name)) {
-      return {
-        ok: false,
-        reason: "existing_driver_name_mismatch",
-        existingDriver: {
-          driverId,
-          fullName: existingName,
-          phoneE164: (existingDriver.phone_e164 as string) ?? phoneE164,
-        },
-      }
-    }
     // Same name (formatting differences aside) — safe to reactivate, never renames.
     await supabase.from("drivers").update({ status: "active" }).eq("id", driverId)
   }
 
-  const { data: existingVehicle, error: vehicleLookupError } = await supabase
-    .from("vehicles")
-    .select("id")
-    .eq("vendor_id", input.vendorId)
-    .eq("registration_number", registrationNumber)
-    .maybeSingle()
-
-  if (vehicleLookupError && !isMissingFleet(vehicleLookupError)) {
-    throw new Error(`Failed to look up vehicle: ${vehicleLookupError.message}`)
-  }
-
   let vehicleId = existingVehicle?.id as string | undefined
+  let resolvedModel = storedModel || canonicalModel
   if (!vehicleId) {
     const { data: insertedVehicle, error: insertVehicleError } = await supabase
       .from("vehicles")
@@ -313,29 +374,38 @@ const upsertDriverAndVehicle = async (
         vendor_id: input.vendorId,
         vehicle_type_id: input.vehicleTypeId,
         registration_number: registrationNumber,
-        model: input.vehicleModel,
+        model: canonicalModel,
       })
       .select("id")
       .maybeSingle()
     if (insertVehicleError) {
       if (isMissingFleet(insertVehicleError)) {
-        return { ok: true, driverId: driverId ?? "", vehicleId: "" }
+        return { ok: true, driverId: driverId ?? "", vehicleId: "", vehicleModel: canonicalModel, vehicleNumber: registrationNumber }
       }
       throw new Error(`Failed to insert vehicle: ${insertVehicleError.message}`)
     }
     vehicleId = insertedVehicle?.id as string
-  } else {
-    await supabase
-      .from("vehicles")
-      .update({ model: input.vehicleModel, vehicle_type_id: input.vehicleTypeId })
-      .eq("id", vehicleId)
+    resolvedModel = canonicalModel
+  } else if (!storedModel) {
+    const patch: Record<string, unknown> = { model: canonicalModel }
+    if (existingVehicle?.vehicle_type_id == null && input.vehicleTypeId != null) {
+      patch.vehicle_type_id = input.vehicleTypeId
+    }
+    await supabase.from("vehicles").update(patch).eq("id", vehicleId)
+    resolvedModel = canonicalModel
   }
 
   if (driverId && vehicleId) {
     await setPrimaryDriverVehicle(supabase, driverId, vehicleId)
   }
 
-  return { ok: true, driverId: driverId ?? "", vehicleId: vehicleId ?? "" }
+  return {
+    ok: true,
+    driverId: driverId ?? "",
+    vehicleId: vehicleId ?? "",
+    vehicleModel: resolvedModel,
+    vehicleNumber: registrationNumber,
+  }
 }
 
 export const lookupDriverByPhone = async (
@@ -551,8 +621,8 @@ const assignManualDriverToBooking = async (
       vehicleId: upserted.vehicleId || null,
       fullName: driver.driverName,
       phoneE164: toDriverPhoneE164(driver.driverPhone),
-      vehicleNumber: normalizeVehicleRegistration(driver.vehicleNumber),
-      vehicleModel: driver.vehicleModel,
+      vehicleNumber: upserted.vehicleNumber,
+      vehicleModel: upserted.vehicleModel,
     },
     meta.rawMessageText,
     meta.waMessageId,

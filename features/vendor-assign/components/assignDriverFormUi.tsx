@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react"
 import { cn } from "@/lib/utils/cn"
+import { vehicleModelKey } from "@/lib/drivers/vehicleModel"
 import type { VendorDriverOption } from "@/lib/vendor-assign/vendorDriverOptions"
 import { formatDisplayName } from "@/features/vendor-assign/components/formatDisplayName"
 
@@ -278,11 +279,60 @@ export function AssignDriverField({
   )
 }
 
+export function VehicleModelField({
+  label,
+  value,
+  onChange,
+  suggestions,
+  placeholder,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  suggestions: readonly string[]
+  placeholder?: string
+}) {
+  const selectedKey = vehicleModelKey(value)
+  return (
+    <div className="flex flex-col gap-2">
+      <AssignDriverField label={label} value={value} onChange={onChange} placeholder={placeholder} required />
+      {suggestions.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <span className="font-archivo text-[11px] font-semibold text-kmr-muted-2">Or pick a saved model</span>
+          <div role="group" aria-label="Saved vehicle models" className="flex flex-wrap gap-1.5">
+            {suggestions.map((model) => {
+              const selected = selectedKey.length > 0 && selectedKey === vehicleModelKey(model)
+              return (
+                <button
+                  key={model}
+                  type="button"
+                  aria-pressed={selected}
+                  tabIndex={0}
+                  onClick={() => onChange(model)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 font-archivo text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kmr-blue",
+                    selected
+                      ? "border-kmr-blue bg-kmr-blue/10 text-kmr-blue"
+                      : "border-black/10 bg-white text-kmr-ink hover:border-kmr-blue/40",
+                  )}
+                >
+                  {model}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function SelectedDriverCard({
   option,
   addVehicleForSelected,
   selectedVehicleNumber,
   selectedVehicleModel,
+  modelSuggestions,
   onChangeVehicle,
   onToggleDifferentVehicle,
   onChangeDriver,
@@ -291,6 +341,7 @@ export function SelectedDriverCard({
   addVehicleForSelected: boolean
   selectedVehicleNumber: string
   selectedVehicleModel: string
+  modelSuggestions: readonly string[]
   onChangeVehicle: (field: "number" | "model", value: string) => void
   onToggleDifferentVehicle: () => void
   onChangeDriver: () => void
@@ -348,12 +399,12 @@ export function SelectedDriverCard({
             placeholder="e.g. JK01AB1234"
             required
           />
-          <AssignDriverField
+          <VehicleModelField
             label="Vehicle model"
             value={selectedVehicleModel}
             onChange={(value) => onChangeVehicle("model", value)}
+            suggestions={modelSuggestions}
             placeholder="e.g. Swift Dzire"
-            required
           />
         </div>
       )}

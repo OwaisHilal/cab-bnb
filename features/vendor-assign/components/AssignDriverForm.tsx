@@ -14,6 +14,7 @@ import {
   DriverOptionRow,
   DriverSearchField,
   SelectedDriverCard,
+  VehicleModelField,
   type BookingTripSummaryData,
 } from "@/features/vendor-assign/components/assignDriverFormUi"
 import { formatDisplayName } from "@/features/vendor-assign/components/formatDisplayName"
@@ -24,6 +25,7 @@ interface AssignDriverFormProps {
   token: string
   booking: BookingSummaryForForm
   driverOptions: VendorDriverOption[]
+  modelSuggestions: readonly string[]
 }
 
 type Flow = "existing" | "manual"
@@ -34,10 +36,17 @@ interface ExistingDriverConflict {
   phoneE164: string
 }
 
+interface ExistingVehicleConflict {
+  vehicleId: string
+  registrationNumber: string
+  model: string
+}
+
 interface ApiErrorState {
   code?: string
   message: string
   existingDriver?: ExistingDriverConflict
+  existingVehicle?: ExistingVehicleConflict
 }
 
 type HardStop = "expired" | "invalid" | "already_assigned"
@@ -68,7 +77,7 @@ type AssignDriverPayload =
       vehicle_model: string
     }
 
-export function AssignDriverForm({ token, booking, driverOptions }: AssignDriverFormProps) {
+export function AssignDriverForm({ token, booking, driverOptions, modelSuggestions }: AssignDriverFormProps) {
   const [flow, setFlow] = useState<Flow>(driverOptions.length > 0 ? "existing" : "manual")
 
   const [query, setQuery] = useState("")
@@ -133,6 +142,45 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
     })
   }
 
+  const handleUseSavedVehicleModel = () => {
+    const saved = apiError?.existingVehicle
+    if (!saved) return
+    setApiError(null)
+
+    if (flow === "existing" && selectedOption && addVehicleForSelected) {
+      setSelectedVehicleModel(saved.model)
+      const normalizedVehicleNumber = normalizeVehicleRegistration(selectedVehicleNumber)
+      void submit(
+        {
+          token,
+          mode: "manual",
+          driver_name: selectedOption.fullName,
+          driver_phone: selectedOption.phoneLast10,
+          vehicle_number: normalizedVehicleNumber,
+          vehicle_model: saved.model,
+        },
+        { fullName: selectedOption.fullName, vehicleLabel: `${saved.model} (${normalizedVehicleNumber})` },
+      )
+      return
+    }
+
+    setManualFields((current) => ({ ...current, vehicleModel: saved.model }))
+    const trimmedName = manualFields.driverName.trim()
+    const phoneDigits = manualFields.driverPhone.replace(/\D/g, "")
+    const normalizedVehicleNumber = normalizeVehicleRegistration(manualFields.vehicleNumber)
+    void submit(
+      {
+        token,
+        mode: "manual",
+        driver_name: trimmedName,
+        driver_phone: phoneDigits,
+        vehicle_number: normalizedVehicleNumber,
+        vehicle_model: saved.model,
+      },
+      { fullName: trimmedName, vehicleLabel: `${saved.model} (${normalizedVehicleNumber})` },
+    )
+  }
+
   const handleUseExistingFromConflict = () => {
     const existing = apiError?.existingDriver
     if (!existing) return
@@ -167,7 +215,12 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
       })
 
       const data = (await response.json().catch(() => null)) as
-        | { error?: string; code?: string; existingDriver?: ExistingDriverConflict }
+        | {
+            error?: string
+            code?: string
+            existingDriver?: ExistingDriverConflict
+            existingVehicle?: ExistingVehicleConflict
+          }
         | null
 
       if (!response.ok) {
@@ -187,6 +240,7 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
           code: data?.code,
           message: data?.error ?? "Something went wrong. Please try again.",
           existingDriver: data?.existingDriver,
+          existingVehicle: data?.existingVehicle,
         })
         return
       }
@@ -303,8 +357,9 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
   }
 
   const showConflictCard = apiError?.code === "existing_driver_name_mismatch" && apiError.existingDriver
+  const showVehicleConflict = apiError?.code === "existing_vehicle_model_mismatch" && apiError.existingVehicle
   const errorBanner =
-    apiError && !showConflictCard ? (
+    apiError && !showConflictCard && !showVehicleConflict ? (
       <p role="alert" className="font-archivo text-sm font-semibold text-kmr-orange">
         {apiError.message}
       </p>
@@ -314,6 +369,14 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
       <p className="font-archivo text-sm text-kmr-ink">{apiError!.message}</p>
       <Button type="button" variant="secondary" onClick={handleUseExistingFromConflict}>
         Use {formatDisplayName(apiError!.existingDriver!.fullName)} instead
+      </Button>
+    </div>
+  ) : null
+  const vehicleConflictCard = showVehicleConflict ? (
+    <div role="alert" className="flex flex-col gap-2 rounded-sm bg-kmr-orange/10 p-3">
+      <p className="font-archivo text-sm text-kmr-ink">{apiError!.message}</p>
+      <Button type="button" variant="secondary" onClick={handleUseSavedVehicleModel}>
+        Use {apiError!.existingVehicle!.model}
       </Button>
     </div>
   ) : null
@@ -341,6 +404,7 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
               addVehicleForSelected={addVehicleForSelected}
               selectedVehicleNumber={selectedVehicleNumber}
               selectedVehicleModel={selectedVehicleModel}
+              modelSuggestions={modelSuggestions}
               onChangeVehicle={(field, value) => {
                 if (field === "number") setSelectedVehicleNumber(value)
                 else setSelectedVehicleModel(value)
@@ -371,6 +435,7 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
           )}
 
           {conflictCard}
+          {vehicleConflictCard}
           {errorBanner}
 
           <AssignDriverStickyFooter>
@@ -423,16 +488,17 @@ export function AssignDriverForm({ token, booking, driverOptions }: AssignDriver
               placeholder="e.g. JK01AB1234"
               required
             />
-            <AssignDriverField
+            <VehicleModelField
               label="Vehicle model"
               value={manualFields.vehicleModel}
               onChange={updateManualField("vehicleModel")}
+              suggestions={modelSuggestions}
               placeholder="e.g. Swift Dzire"
-              required
             />
           </AssignFormSection>
 
           {conflictCard}
+          {vehicleConflictCard}
           {errorBanner}
 
           <AssignDriverStickyFooter>

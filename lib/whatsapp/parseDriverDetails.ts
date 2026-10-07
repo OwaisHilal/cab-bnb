@@ -98,6 +98,27 @@ export const handleParseDriverDetails = async (
         wa_message_id: payload.wa_message_id,
       })
     }
+    // A plate this vendor already saved under a different model is the same
+    // kind of ambiguity: don't rename the fleet row from a free-text reply.
+    if (!result.ok && result.reason === "existing_vehicle_model_mismatch") {
+      const { error: insertError } = await supabase.from("driver_detail_submissions").insert({
+        booking_id: resolved.bookingId,
+        vendor_id: resolved.vendorId,
+        raw_message_text: raw,
+        parse_status: "parse_failed",
+        wa_message_id: payload.wa_message_id,
+      })
+      if (insertError) throw new Error(`Failed to record parse_failed submission: ${insertError.message}`)
+      await enqueueJob(supabase, "ops_alert", {
+        reason: "vehicle_model_mismatch",
+        booking_id: resolved.bookingId,
+        vendor_id: resolved.vendorId,
+        raw_message_text: raw,
+        existing_vehicle_model: result.existingVehicle.model,
+        existing_vehicle_number: result.existingVehicle.registrationNumber,
+        wa_message_id: payload.wa_message_id,
+      })
+    }
     return
   }
 
