@@ -32,6 +32,7 @@ interface IntentRow {
 }
 
 export async function POST(request: NextRequest) {
+  const requestStartedAt = Date.now();
   let body: unknown;
   try {
     body = await request.json();
@@ -48,6 +49,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return jsonError(500, error instanceof Error ? error.message : "Supabase is not configured");
   }
+
+  // #region agent log
+  fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'59deff'},body:JSON.stringify({sessionId:'59deff',runId:'initial',hypothesisId:'H5-server-entry',location:'app/api/guest-trip/checkout/route.ts:POST',message:'checkout POST entered',data:{crqid:parsed.data.crqid ?? null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
 
   try {
     const intent = await resolveIntent(supabase, parsed.data.session_id, parsed.data.crqid);
@@ -73,8 +78,11 @@ export async function POST(request: NextRequest) {
     }
 
     let cashfreeOrderStatus: string | null = null;
+    let fetchOrderStatusMs: number | null = null;
     if (intent.status !== "paid" && intent.cf_order_id) {
+      const orderStatusStartedAt = Date.now();
       cashfreeOrderStatus = await fetchCashfreeOrderStatus(intent.cf_order_id);
+      fetchOrderStatusMs = Date.now() - orderStatusStartedAt;
     }
 
     const decision = decideCheckout({
@@ -116,6 +124,7 @@ export async function POST(request: NextRequest) {
 
     const confirming = intent.purpose === "balance" ? "balance" : "token";
     const appBaseUrl = getAppBaseUrl();
+    const ensureOrderStartedAt = Date.now();
     const orderResult = await ensureCashfreeOrderForIntent(supabase, {
       crqid: intent.id,
       touristPhone: phone,
@@ -124,13 +133,24 @@ export async function POST(request: NextRequest) {
       returnUrl: `${appBaseUrl}/?continue=1&confirming=${confirming}`,
       notifyUrl: `${appBaseUrl}/webhooks/cashfree`,
     });
+    const ensureOrderMs = Date.now() - ensureOrderStartedAt;
 
     if (!orderResult.success) {
+      // #region agent log
+      fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'59deff'},body:JSON.stringify({sessionId:'59deff',runId:'initial',hypothesisId:'H1-order-create-fetch',location:'app/api/guest-trip/checkout/route.ts:POST',message:'ensureCashfreeOrderForIntent failed',data:{fetchOrderStatusMs,ensureOrderMs,totalMs:Date.now()-requestStartedAt,error:orderResult.error ?? null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       return jsonError(500, orderResult.error ?? "Couldn't start checkout");
     }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'59deff'},body:JSON.stringify({sessionId:'59deff',runId:'initial',hypothesisId:'H1-H2-server-timings',location:'app/api/guest-trip/checkout/route.ts:POST',message:'checkout POST success summary',data:{fetchOrderStatusMs,ensureOrderMs,totalMs:Date.now()-requestStartedAt,hadExistingCfOrderId:Boolean(intent.cf_order_id)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+
     return jsonOk({ outcome: "checkout", href: `/pay/token/${intent.id}` });
   } catch (error) {
+    // #region agent log
+    fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'59deff'},body:JSON.stringify({sessionId:'59deff',runId:'initial',hypothesisId:'H1-H2-server-error',location:'app/api/guest-trip/checkout/route.ts:POST',message:'checkout POST threw',data:{totalMs:Date.now()-requestStartedAt,errorMessage:error instanceof Error ? error.message : String(error)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     return jsonError(500, error instanceof Error ? error.message : "Failed to start checkout");
   }
 }

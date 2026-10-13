@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { preferSupabaseIpv4 } from "@/lib/node/preferSupabaseIpv4";
 
 let cachedClient: SupabaseClient | null = null;
 
@@ -28,6 +29,7 @@ function readRequiredEnv(name: string): string {
  * and Edge Functions only.
  */
 export function getSupabaseServiceRoleClient(): SupabaseClient {
+  preferSupabaseIpv4();
   if (cachedClient) return cachedClient;
 
   const supabaseUrl = readRequiredEnv("NEXT_PUBLIC_SUPABASE_URL");
