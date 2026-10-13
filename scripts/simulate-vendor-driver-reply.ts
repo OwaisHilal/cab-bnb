@@ -38,7 +38,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
-const PRODUCTION_URL = "https://cab-bnb.vercel.app/api/whatsapp/webhook";
+const PRODUCTION_URL = "https://kashmir.cab/api/whatsapp/webhook";
 const LOCAL_URL = "http://localhost:3000/api/whatsapp/webhook";
 
 // Aala Cabs — supabase/seed.sql — and its demo driver from

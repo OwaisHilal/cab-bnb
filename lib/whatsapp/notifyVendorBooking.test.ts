@@ -18,7 +18,7 @@ describe("buildVendorAssignTokenAndUrl", () => {
   it("derives the url from the same token it returns", () => {
     const { token, url } = buildVendorAssignTokenAndUrl({ bookingId: "booking-1", vendorId: "vendor-1" })
     assert.ok(token.includes("."))
-    assert.equal(url, `https://cab-bnb.vercel.app/vendor/assign-driver?token=${encodeURIComponent(token)}`)
+    assert.equal(url, `https://kashmir.cab/vendor/assign-driver?token=${encodeURIComponent(token)}`)
   })
 })
 

@@ -17,7 +17,7 @@ which explain the temporary static-link workaround this change replaces.
   (`/pay/token/<crqid>`) instead of a Cashfree URL directly. That page opens Cashfree's hosted
   Checkout for that specific order.
 - `app/webhooks/cashfree` — the path already configured on the Cashfree dashboard
-  (`https://cab-bnb.vercel.app/webhooks/cashfree`) — verifies the signed
+  (`https://kashmir.cab/webhooks/cashfree`) — verifies the signed
   `PAYMENT_SUCCESS_WEBHOOK`, matches `cf_order_id` back to a `whatsapp_payment_intents` row, and
   calls the existing `confirmPaymentByCrqid` to finalize the booking automatically, the same way
   MSG91's "On Payment Report Received" already does for balance payments.
@@ -140,7 +140,7 @@ avoiding a race between two different implementations. The now-dead Deno files
 
 Added `CASHFREE_CLIENT_ID`, `CASHFREE_ENVIRONMENT` (`sandbox` | `production`),
 `CASHFREE_API_VERSION` (defaults to `2023-08-01`), and `NEXT_PUBLIC_APP_BASE_URL` (defaults to
-`https://cab-bnb.vercel.app` in code — `lib/utils/appUrl.ts`). `CASHFREE_SECRET_KEY` is reused
+`https://kashmir.cab` in code — `lib/utils/appUrl.ts`). `CASHFREE_SECRET_KEY` is reused
 for both the PG Orders API call and webhook signature verification, same as Cashfree's documented
 scheme.
 

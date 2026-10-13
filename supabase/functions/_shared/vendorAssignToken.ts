@@ -12,7 +12,7 @@
  * VENDOR_ASSIGN_SECRET=<value>`.
  */
 
-const DEFAULT_APP_BASE_URL = "https://cab-bnb.vercel.app";
+const DEFAULT_APP_BASE_URL = "https://kashmir.cab";
 const DEFAULT_TTL_MS = 72 * 60 * 60 * 1000;
 
 export function getAppBaseUrl(): string {

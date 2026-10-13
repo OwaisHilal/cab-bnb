@@ -26,7 +26,7 @@ interface PaymentIntentLookupRow {
 
 /**
  * Canonical Cashfree webhook path — matches the dashboard config
- * (https://cab-bnb.vercel.app/webhooks/cashfree). Handles the PG Orders
+ * (https://kashmir.cab/webhooks/cashfree). Handles the PG Orders
  * payment webhook that lib/whatsapp/sendTokenPaymentLink.ts's
  * `createCashfreeOrder` orders produce, and still audit-logs the legacy
  * Payment Links `PAYMENT_LINK_EVENT` shape from the retired 0020/0021

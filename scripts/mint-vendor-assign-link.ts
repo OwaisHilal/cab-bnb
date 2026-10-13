@@ -15,7 +15,7 @@ import { createHmac } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 
-const DEFAULT_PRODUCTION_BASE = "https://cab-bnb.vercel.app"
+const DEFAULT_PRODUCTION_BASE = "https://kashmir.cab"
 const LOCAL_BASE = "http://localhost:3000"
 const DEFAULT_TTL_MS = 72 * 60 * 60 * 1000
 
