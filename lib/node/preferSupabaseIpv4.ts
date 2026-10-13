@@ -8,17 +8,23 @@ const PATCH_FLAG = Symbol.for("kmr.preferSupabaseIpv4");
 
 let applied = false;
 const ipv4Cache = new Map<string, { addresses: string[]; expiresAt: number }>();
-const originalLookup = dns.lookup.bind(dns);
+const originalLookup = dns.lookup.bind(dns) as (...args: unknown[]) => void;
 const publicResolver = new dns.Resolver();
 publicResolver.setServers(PUBLIC_DNS_SERVERS);
 
-type LookupCallback = (
+// `dns.lookup`'s real type is a union of several incompatible overloads
+// (bare family number, options object, bare callback, etc. — see
+// node_modules/@types/node/dns.d.ts). Modeling our single implementation
+// against that whole union defeats TypeScript's overload checking, so we
+// deliberately keep the implementation loosely typed and only assert the
+// final exported shape against `typeof dns.lookup` once, at the patch site.
+type LoadingLookupCallback = (
   err: NodeJS.ErrnoException | null,
   address: string | dns.LookupAddress[],
   family?: number,
 ) => void;
 
-const finishLookup = (options: dns.LookupOptions, callback: LookupCallback, addresses: string[]) => {
+const finishLookup = (options: dns.LookupOptions, callback: LoadingLookupCallback, addresses: string[]) => {
   if (options.all) {
     callback(
       null,
@@ -64,7 +70,9 @@ const resolvePublicIpv4 = (hostname: string, callback: (addresses: string[] | nu
  * still return A records, and connecting to those IPv4 addresses works.
  *
  * Scoped to Supabase hosts so other DNS is unchanged. Falls back to the
- * original lookup if public DNS fails.
+ * original lookup if public DNS fails, and ignores the rare bare-`family`
+ * or no-options call shapes (ours is the only caller that matters here —
+ * undici always calls with an options object).
  */
 export const preferSupabaseIpv4 = (): void => {
   if (applied || PATCH_FLAG in dns.lookup) {
@@ -73,25 +81,27 @@ export const preferSupabaseIpv4 = (): void => {
   }
   applied = true;
 
-  const patchedLookup: typeof dns.lookup = ((hostname, optionsOrCallback, maybeCallback) => {
-    const options: dns.LookupOptions =
-      typeof optionsOrCallback === "function" || optionsOrCallback == null ? {} : optionsOrCallback;
-    const callback: LookupCallback | undefined =
-      typeof optionsOrCallback === "function" ? optionsOrCallback : maybeCallback;
+  const patchedLookup = (hostname: unknown, optionsOrCallback: unknown, maybeCallback?: unknown): void => {
+    const isOptionsObject = typeof optionsOrCallback === "object" && optionsOrCallback !== null;
+    const options: dns.LookupOptions = isOptionsObject ? (optionsOrCallback as dns.LookupOptions) : {};
+    const callback = (
+      typeof optionsOrCallback === "function" ? optionsOrCallback : maybeCallback
+    ) as LoadingLookupCallback | undefined;
 
     if (typeof hostname !== "string" || !hostname.endsWith(SUPABASE_HOST_SUFFIX) || typeof callback !== "function") {
-      return originalLookup(hostname as string, optionsOrCallback as never, maybeCallback as never);
+      originalLookup(hostname, optionsOrCallback, maybeCallback);
+      return;
     }
 
     resolvePublicIpv4(hostname, (addresses) => {
       if (!addresses?.length) {
-        originalLookup(hostname, optionsOrCallback as never, maybeCallback as never);
+        originalLookup(hostname, optionsOrCallback, maybeCallback);
         return;
       }
       finishLookup(options, callback, addresses);
     });
-  }) as typeof dns.lookup;
+  };
 
   Object.defineProperty(patchedLookup, PATCH_FLAG, { value: true });
-  dns.lookup = patchedLookup;
+  dns.lookup = patchedLookup as unknown as typeof dns.lookup;
 };

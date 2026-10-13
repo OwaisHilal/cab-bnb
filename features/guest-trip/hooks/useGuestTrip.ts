@@ -67,9 +67,6 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
 
   const applySnapshot = useCallback((data: GuestTripSnapshot, resultEpoch: number) => {
     if (resultEpoch < appliedEpochRef.current) return
-    // #region agent log
-    fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'59deff'},body:JSON.stringify({sessionId:'59deff',runId:'initial',hypothesisId:'H7-H8-polling-step',location:'useGuestTrip.ts:applySnapshot',message:'snapshot applied',data:{step:data.step,localConfirming,currentOrigin:typeof window!=='undefined'?window.location.origin:null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     appliedEpochRef.current = resultEpoch
     const unchanged = snapshotRef.current !== null && guestTripSnapshotKey(snapshotRef.current) === guestTripSnapshotKey(data)
     snapshotRef.current = data
@@ -154,7 +151,6 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
     const current = snapshotRef.current
     if (!current) return
     setPaying(true)
-    const payClickedAt = Date.now()
     try {
       const response = await fetch("/api/guest-trip/checkout", {
         method: "POST",
@@ -164,9 +160,6 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
           ...(current.paymentCrqid ? { crqid: current.paymentCrqid } : {}),
         }),
       })
-      // #region agent log
-      fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'59deff'},body:JSON.stringify({sessionId:'59deff',runId:'initial',hypothesisId:'H5-client-roundtrip',location:'useGuestTrip.ts:handlePay',message:'checkout fetch done',data:{ms:Date.now()-payClickedAt,status:response.status,ok:response.ok},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       const data = (await response.json().catch(() => null)) as {
         error?: string
         outcome?: string

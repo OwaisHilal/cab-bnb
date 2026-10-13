@@ -33,28 +33,15 @@ export function CashfreeCheckoutButton({
   const handlePayNow = async () => {
     setLoading(true)
     setError(null)
-    const payNowClickedAt = Date.now()
 
     try {
       const cashfree = await load({ mode: environment })
-      // #region agent log
-      fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'59deff'},body:JSON.stringify({sessionId:'59deff',runId:'initial',hypothesisId:'H3-sdk-load',location:'CashfreeCheckoutButton.tsx:handlePayNow',message:'cashfree sdk load done',data:{ms:Date.now()-payNowClickedAt,loaded:Boolean(cashfree)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
 
       if (!cashfree) {
         setError("Payments aren't available in this browser. Please try again.")
         setLoading(false)
         return
       }
-
-      const checkoutStartedAt = Date.now()
-      // #region agent log
-      fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'59deff'},body:JSON.stringify({sessionId:'59deff',runId:'initial',hypothesisId:'H4-hosted-checkout',location:'CashfreeCheckoutButton.tsx:handlePayNow',message:'cashfree checkout() invoked',data:{sinceClickMs:Date.now()-payNowClickedAt},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-
-      // #region agent log
-      fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'59deff'},body:JSON.stringify({sessionId:'59deff',runId:'initial',hypothesisId:'H6-cross-origin',location:'CashfreeCheckoutButton.tsx:handlePayNow',message:'returnUrl origin check',data:{returnUrl,currentOrigin:typeof window!=='undefined'?window.location.origin:null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
 
       const result = await cashfree.checkout({
         paymentSessionId,
@@ -63,9 +50,6 @@ export function CashfreeCheckoutButton({
       })
 
       if (result?.error) {
-        // #region agent log
-        fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'59deff'},body:JSON.stringify({sessionId:'59deff',runId:'initial',hypothesisId:'H4-hosted-checkout',location:'CashfreeCheckoutButton.tsx:handlePayNow',message:'cashfree checkout() returned error',data:{ms:Date.now()-checkoutStartedAt,errorMessage:result.error.message ?? null},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         setError(result.error.message ?? "Payment was cancelled or failed. Please try again.")
         setLoading(false)
       }

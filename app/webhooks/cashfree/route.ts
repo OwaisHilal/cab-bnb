@@ -82,9 +82,6 @@ export async function POST(request: NextRequest) {
 }
 
 async function handlePaymentWebhook(data: CashfreePaymentWebhookData): Promise<void> {
-  // #region agent log
-  fetch('http://127.0.0.1:7783/ingest/080f2f3b-a7b7-4f0a-a5fe-1c40b1d12f19',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'59deff'},body:JSON.stringify({sessionId:'59deff',runId:'initial',hypothesisId:'H6-H7-webhook-receipt',location:'app/webhooks/cashfree/route.ts:handlePaymentWebhook',message:'webhook received on this server',data:{orderId:data.orderId,paymentStatus:data.paymentStatus},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   const supabase = getSupabaseServiceRoleClient();
 
   const { data: intentRow, error: lookupError } = await supabase
