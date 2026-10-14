@@ -47,7 +47,6 @@ function HomeContent() {
         <HomeHero
           hasBooking={Boolean(flow.tripRequestId)}
           onOpenRequest={flow.openSheet}
-          onApplyPreset={flow.applyPreset}
           onContinue={flow.openResume}
           onViewBooking={flow.viewCurrentBooking}
         />
