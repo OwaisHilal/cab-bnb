@@ -97,14 +97,15 @@ function TrustBadges() {
 function VerifiedOperatorsMarquee() {
   const renderOperatorItems = (keyPrefix: string) =>
     VERIFIED_OPERATORS.map(({ name, logo }) => (
-      <div key={`${keyPrefix}-${name}`} className="flex flex-none items-center gap-4">
-        <span className="flex flex-none items-center gap-2">
-          <span className="relative size-12 flex-none overflow-hidden rounded-full bg-kmr-surface ring-1 ring-black/5">
-            <Image src={logo} alt={`${name} logo`} fill sizes="48px" className="object-contain p-1" />
-          </span>
-          <span className="whitespace-nowrap font-archivo text-xs font-bold tracking-wide text-kmr-muted-1">
-            {name}
-          </span>
+      <div key={`${keyPrefix}-${name}`} className="flex flex-none items-center gap-6">
+        <span className="relative size-16 flex-none overflow-hidden rounded-full bg-white ring-1 ring-black/5">
+          <Image
+            src={logo}
+            alt={`${name} logo`}
+            fill
+            sizes="64px"
+            className="object-cover"
+          />
         </span>
         <span className="size-1 flex-none rounded-full bg-kmr-orange" />
       </div>
@@ -113,8 +114,8 @@ function VerifiedOperatorsMarquee() {
   return (
     <div className="overflow-hidden" aria-label="Verified operators">
       <div className="flex w-max animate-kmr-marquee">
-        <div className="flex flex-none items-center gap-4 pr-4">{renderOperatorItems("a")}</div>
-        <div className="flex flex-none items-center gap-4 pr-4" aria-hidden="true">
+        <div className="flex flex-none items-center gap-6 pr-6">{renderOperatorItems("a")}</div>
+        <div className="flex flex-none items-center gap-6 pr-6" aria-hidden="true">
           {renderOperatorItems("b")}
         </div>
       </div>
@@ -177,7 +178,7 @@ export function HomeHero({
         </div>
       </div>
 
-      <div className="flex flex-none flex-col gap-3 border-t border-black/5 bg-white px-[30px] pb-[90px] pt-4">
+      <div className="flex flex-none flex-col gap-2 border-t border-black/5 bg-white px-[30px] pb-[90px] pt-4">
         {hasBooking ? (
           <div className="flex flex-col gap-3 rounded-sm bg-kmr-surface p-4">
             <p className="font-archivo text-sm font-bold text-kmr-ink">Only 1 booking is allowed for now.</p>
@@ -221,7 +222,7 @@ export function HomeHero({
           type="button"
           onClick={onContinue}
           aria-label="Already booked? Check your trip"
-          className="flex w-full items-center justify-center rounded-sm border border-kmr-blue px-5 py-4 font-archivo text-sm font-bold text-kmr-blue"
+          className="mx-auto inline-flex min-h-[44px] items-center justify-center self-center px-1 py-2 font-archivo text-sm font-bold text-kmr-muted-1 underline transition-colors hover:text-kmr-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kmr-blue"
         >
           Already booked? Check your trip
         </button>

@@ -325,14 +325,14 @@ export function RouteOrbitCanvas() {
     const drawFrame = (now: number) => {
       if (!shouldAnimate()) return;
 
-      if (!startTime) startTime = now - ORBIT_CONFIG.introDelayMs;
-      const elapsed = now - startTime;
-
       if (now - lastDrawTime < ORBIT_CONFIG.throttleMs) return;
       lastDrawTime = now;
 
       if (!geometry) rebuildGeometry();
       if (!geometry) return;
+
+      if (!startTime) startTime = now - ORBIT_CONFIG.introDelayMs;
+      const elapsed = now - startTime;
 
       drawOrbitFrame(ctx, geometry, colors, elapsed);
     };
@@ -344,7 +344,11 @@ export function RouteOrbitCanvas() {
 
     const intersectionObserver = new IntersectionObserver(
       ([entry]) => {
+        const wasAnimating = shouldAnimate();
         isIntersecting = entry?.isIntersecting ?? true;
+        if (!wasAnimating && shouldAnimate()) {
+          startTime = 0;
+        }
         if (!shouldAnimate() && geometry) {
           drawStaticFrame(ctx, geometry, colors);
         }
@@ -357,7 +361,11 @@ export function RouteOrbitCanvas() {
     });
 
     const handleVisibilityChange = () => {
+      const wasAnimating = shouldAnimate();
       isDocumentVisible = document.visibilityState === "visible";
+      if (!wasAnimating && shouldAnimate()) {
+        startTime = 0;
+      }
       if (!shouldAnimate() && geometry) {
         drawStaticFrame(ctx, geometry, colors);
       }
