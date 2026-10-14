@@ -46,7 +46,7 @@ function HomeContent() {
       {flow.screen === "home" && (
         <HomeHero
           hasBooking={Boolean(flow.tripRequestId)}
-          showAlreadyBookedCta={!flow.tripRequestId && !flow.customerIdentity}
+          showAlreadyBookedCta={!flow.tripRequestId && !flow.verifiedPhoneE164}
           onOpenRequest={flow.openSheet}
           onContinue={flow.openResume}
           onViewBooking={flow.viewCurrentBooking}
