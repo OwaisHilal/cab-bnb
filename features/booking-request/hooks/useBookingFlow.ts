@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   MAX_PAX_COUNT,
   MAX_TRIP_DAYS,
@@ -89,74 +89,70 @@ function buildRequestRef(tripRequestId: string | null): string {
   return tripRequestId ? `REQ-${tripRequestId.slice(0, 8).toUpperCase()}` : "REQUEST PENDING";
 }
 
-export function useBookingFlow() {
-  // The Phone.Email fallback now redirects the whole tab away and back
-  // (lib/phone-email/resumeState.ts) rather than using a popup, so this
-  // hook's previous instance is gone by the time the user returns — this
-  // peeks sessionStorage once, synchronously, to seed the states below as
-  // if verification had just completed in-place. Deliberately non-
-  // destructive (see peekVerifiedPhoneEmailResume's docs): the actual
-  // sessionStorage cleanup happens in an effect further down, since that's
-  // idempotent and safe under React Strict Mode's dev-only double-invoke,
-  // unlike seeding several useState initializers from a single destructive
-  // read would be.
-  const [resumedPhoneEmailPayload] = useState<PhoneEmailResumePayload | null>(() =>
-    typeof window === "undefined" ? null : peekVerifiedPhoneEmailResume(),
-  );
+function bookingSummaryFromPhoneEmailResume(payload: PhoneEmailResumePayload): BookingSummaryUi {
+  return {
+    bookingRef: buildRequestRef(payload.tripRequestId),
+    summaryLabel: `${payload.days} days · ${payload.paxCount} travellers · ${payload.vehicleType.toUpperCase()}`,
+    quotes: [],
+    selectedQuoteId: null,
+    isAwaitingQuotes: true,
+  };
+}
 
-  const [screen, setScreen] = useState<PrimaryScreen>(() => (resumedPhoneEmailPayload ? "booking" : "home"));
+export function useBookingFlow() {
+  const [screen, setScreen] = useState<PrimaryScreen>("home");
   const [overlay, setOverlay] = useState<Overlay>("none");
   const [sheetStep, setSheetStep] = useState<BookingRequestStep>(0);
-  const [draft, setDraft] = useState<BookingRequestDraft>(() =>
-    resumedPhoneEmailPayload
-      ? {
-          ...createDraft(),
-          days: resumedPhoneEmailPayload.days,
-          paxCount: resumedPhoneEmailPayload.paxCount,
-          vehicleType: resumedPhoneEmailPayload.vehicleType,
-        }
-      : createDraft(),
-  );
+  const [draft, setDraft] = useState<BookingRequestDraft>(createDraft);
   const [dispatchRows, setDispatchRows] = useState<DispatchVendorRow[]>([]);
-  const [otp, setOtp] = useState<OtpState>(() => {
-    const base = createOtpState();
-    return resumedPhoneEmailPayload ? { ...base, step: "verified" } : base;
-  });
-  const [isVerified, setIsVerified] = useState(() => Boolean(resumedPhoneEmailPayload));
-  const [booking, setBooking] = useState<BookingSummaryUi | null>(() =>
-    resumedPhoneEmailPayload
-      ? {
-          bookingRef: buildRequestRef(resumedPhoneEmailPayload.tripRequestId),
-          summaryLabel: `${resumedPhoneEmailPayload.days} days · ${resumedPhoneEmailPayload.paxCount} travellers · ${resumedPhoneEmailPayload.vehicleType.toUpperCase()}`,
-          quotes: [],
-          selectedQuoteId: null,
-          isAwaitingQuotes: true,
-        }
-      : null,
-  );
+  const [otp, setOtp] = useState<OtpState>(createOtpState);
+  const [isVerified, setIsVerified] = useState(false);
+  const [booking, setBooking] = useState<BookingSummaryUi | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
-  // Lazy-initialized rather than set in an effect: sessionStorage isn't
-  // available during SSR, so this resolves to "" on the server and the
-  // real session id on the client's first render — no rendered output
-  // depends on this value, so there's nothing for hydration to mismatch on.
-  const [sessionId, setSessionId] = useState<string>(() =>
-    typeof window === "undefined" ? "" : getOrCreateClientSessionId(),
-  );
-  const [tripRequestId, setTripRequestId] = useState<string | null>(
-    () => resumedPhoneEmailPayload?.tripRequestId ?? null,
-  );
+  const [sessionId, setSessionId] = useState("");
+  const [tripRequestId, setTripRequestId] = useState<string | null>(null);
   const [dispatchDelayMs, setDispatchDelayMs] = useState(QUOTE_REVEAL_DELAY_MS);
   const [isDemoFlow, setIsDemoFlow] = useState(false);
   const [resumeMode, setResumeMode] = useState(false);
-  const [tripNotice, setTripNotice] = useState<string | null>(() =>
-    resumedPhoneEmailPayload?.resumedExisting ? ONE_BOOKING_NOTICE : null,
-  );
+  const [tripNotice, setTripNotice] = useState<string | null>(null);
+  // Client-only sessionStorage reads must not run in useState initializers:
+  // the server HTML is rendered with the defaults above, and the client's
+  // first hydration render must match exactly or React warns (e.g. HomeHero's
+  // hasBooking footer flipping when tripRequestId was seeded only on client).
+  const [isClientBootstrapped, setIsClientBootstrapped] = useState(false);
+  const [phoneEmailResumeApplied, setPhoneEmailResumeApplied] = useState(false);
+  // Durable login identity from the 7-day session cookie (Phone Session
+  // Login plan) — distinct from sessionId above, which stays the per-tab
+  // device id. null until GET /api/auth/session confirms a valid cookie.
+  const [customerIdentity, setCustomerIdentity] = useState<{ touristId: string; phoneE164: string } | null>(null);
 
   const dispatchTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const dispatchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activePollTripRequestId = useRef<string | null>(null);
   const seenQuoteIdsRef = useRef<Set<string>>(new Set());
+
+  useLayoutEffect(() => {
+    const payload = peekVerifiedPhoneEmailResume();
+    if (payload) {
+      setPhoneEmailResumeApplied(true);
+      setScreen("booking");
+      setDraft({
+        ...createDraft(),
+        days: payload.days,
+        paxCount: payload.paxCount,
+        vehicleType: payload.vehicleType,
+      });
+      setOtp({ ...createOtpState(), step: "verified" });
+      setIsVerified(true);
+      setBooking(bookingSummaryFromPhoneEmailResume(payload));
+      setTripRequestId(payload.tripRequestId);
+      setTripNotice(payload.resumedExisting ? ONE_BOOKING_NOTICE : null);
+      clearVerifiedPhoneEmailResume();
+    }
+    setSessionId(getOrCreateClientSessionId());
+    setIsClientBootstrapped(true);
+  }, []);
 
   const clearDispatchTimers = useCallback(() => {
     if (dispatchTimer.current) {
@@ -385,15 +381,8 @@ export function useBookingFlow() {
     setOtp((prev) => ({ ...prev, code, error: null }));
   }, []);
 
-  // Clears the Phone.Email handoff once, after this hook has seeded from it.
-  // The guest snapshot is the live trip. This effect does not poll quotes.
   useEffect(() => {
-    if (!resumedPhoneEmailPayload) return;
-    clearVerifiedPhoneEmailResume();
-  }, [resumedPhoneEmailPayload]);
-
-  useEffect(() => {
-    if (!sessionId || resumedPhoneEmailPayload) return;
+    if (!isClientBootstrapped || !sessionId || phoneEmailResumeApplied) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -416,7 +405,64 @@ export function useBookingFlow() {
     return () => {
       cancelled = true;
     };
-  }, [resumedPhoneEmailPayload, sessionId]);
+  }, [isClientBootstrapped, phoneEmailResumeApplied, sessionId]);
+
+  // Phone Session Login plan: a different tab/device/browser-restart has
+  // none of the state the effect above relies on (this tab's sessionId has
+  // never been linked to a trip), but the durable login cookie — set after
+  // any of the three verification paths (OTP-code, Phone.Email, or
+  // "Already booked?" resume) — may still identify the tourist. This asks
+  // the server to resolve that cookie, link this tab's sessionId to the
+  // tourist's current trip via guest_trip_sessions if one exists, and
+  // report back. Deliberately scoped to the current trip only (approved
+  // design) — no booking history is restored, and when there is no active
+  // trip this only restores the profile's phone identity, leaving
+  // isVerified/tripRequestId untouched so a brand-new booking still goes
+  // through the normal OTP flow (which is the only path that links
+  // tourist_id and enqueues send_quotes for that new trip).
+  useEffect(() => {
+    if (!isClientBootstrapped || !sessionId || phoneEmailResumeApplied) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/auth/session?session_id=${encodeURIComponent(sessionId)}`);
+        if (cancelled) return;
+        const data = (await response.json().catch(() => null)) as {
+          authenticated?: boolean;
+          touristId?: string;
+          phoneE164?: string;
+          tripRequestId?: string | null;
+        } | null;
+
+        if (!response.ok || !data?.authenticated || !data.touristId || !data.phoneE164) return;
+        setCustomerIdentity({ touristId: data.touristId, phoneE164: data.phoneE164 });
+
+        if (!data.tripRequestId) return;
+
+        // Server already linked this tab's sessionId above — fresh=true
+        // bypasses the client cache so this read isn't skipped as a dedupe
+        // of the (likely 404, pre-link) call the effect above just made.
+        const result = await fetchGuestTrip(sessionId, null, true);
+        if (cancelled || !result.ok) return;
+        setTripRequestId(result.snapshot.tripRequestId);
+        setBooking({
+          bookingRef: buildRequestRef(result.snapshot.tripRequestId),
+          summaryLabel: result.snapshot.tripSummary,
+          quotes: [],
+          selectedQuoteId: null,
+          isAwaitingQuotes: false,
+        });
+        setIsVerified(true);
+        setScreen("booking");
+      } catch {
+        // Offline on first paint: stays in guest mode: the next visit (or
+        // this tab's own guest-trip polling, once a trip exists) retries.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isClientBootstrapped, phoneEmailResumeApplied, sessionId]);
 
   // Shared by both verification paths (Plan §8): OTP-code success and
   // Phone.Email fallback success both land here.
@@ -651,24 +697,59 @@ export function useBookingFlow() {
     const currentSession = sessionId;
     if (currentSession) {
       clearCachedGuestTrip(currentSession);
-      void fetch("/api/guest-trip/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: currentSession }),
-      });
+      // ProfileScreen's "Clear booking & sign out" / "Sign out" is one
+      // button either way (Phone Session Login plan keeps that existing
+      // copy/behavior), so this also signs out of the durable 7-day login
+      // cookie — never implicitly from any other action, and this never
+      // cancels a booking on its own (cancel below only ever acts on the
+      // current trip).
+      //
+      // These two calls MUST be sequenced, not fired in parallel:
+      // - /api/guest-trip/cancel looks up this tab's trip via the
+      //   guest_trip_sessions row for currentSession; /api/auth/session's
+      //   DELETE best-effort-deletes that very row. Firing both at once
+      //   races cancel against its own lookup data disappearing, so cancel
+      //   can silently 404 and never actually abandon the trip.
+      // - Rotating this tab's session_id (below) must wait until the
+      //   cookie is actually cleared, otherwise the brand-new session_id's
+      //   hydration fetch (GET /api/auth/session) can still see the
+      //   not-yet-cleared cookie and re-link the "signed out" tab straight
+      //   back to the trip we just cancelled.
+      void (async () => {
+        try {
+          await fetch("/api/guest-trip/cancel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: currentSession }),
+          });
+        } catch {
+          // Best-effort — sign-out must still proceed below either way.
+        }
+        try {
+          await fetch("/api/auth/session", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: currentSession }),
+          });
+        } catch {
+          // Best-effort — the cookie may already be gone/expired.
+        }
+        if (typeof window !== "undefined") {
+          setSessionId(resetClientSessionId());
+        }
+      })();
+    } else if (typeof window !== "undefined") {
+      setSessionId(resetClientSessionId());
     }
     activePollTripRequestId.current = null;
     seenQuoteIdsRef.current = new Set();
     clearDispatchTimers();
     clearPhoneEmailResumeState();
 
-    if (typeof window !== "undefined") {
-      setSessionId(resetClientSessionId());
-    }
-
     setTripRequestId(null);
     setBooking(null);
     setIsVerified(false);
+    setCustomerIdentity(null);
     setOtp(createOtpState());
     setDraft(createDraft());
     setDispatchRows([]);
@@ -720,6 +801,10 @@ export function useBookingFlow() {
 
   const recommendation = buildRecommendation(draft.days, draft.paxCount, draft.vehicleType);
   const requestRef = buildRequestRef(tripRequestId);
+  // Full E.164 from the durable login session — takes priority over
+  // otp.phone (local 10 digits, only ever set during an in-progress OTP
+  // flow) for display purposes, since it survives refreshes/new tabs.
+  const verifiedPhoneE164 = customerIdentity?.phoneE164 ?? null;
 
   return {
     screen,
@@ -737,6 +822,7 @@ export function useBookingFlow() {
     requestRef,
     tripRequestId,
     sessionId,
+    verifiedPhoneE164,
     tripNotice,
     navigateHome: () => setScreen("home"),
     navigateBooking,

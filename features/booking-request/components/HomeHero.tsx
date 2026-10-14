@@ -125,6 +125,8 @@ function VerifiedOperatorsMarquee() {
 
 interface HomeHeroProps {
   hasBooking: boolean;
+  /** OTP resume entry — hidden when the tourist already has a trip or login session. */
+  showAlreadyBookedCta: boolean;
   onOpenRequest: () => void;
   onContinue: () => void;
   onViewBooking: () => void;
@@ -132,6 +134,7 @@ interface HomeHeroProps {
 
 export function HomeHero({
   hasBooking,
+  showAlreadyBookedCta,
   onOpenRequest,
   onContinue,
   onViewBooking,
@@ -218,14 +221,16 @@ export function HomeHero({
           </button>
         )}
 
-        <button
-          type="button"
-          onClick={onContinue}
-          aria-label="Already booked? Check your trip"
-          className="mx-auto inline-flex min-h-[44px] items-center justify-center self-center px-1 py-2 font-archivo text-sm font-bold text-kmr-muted-1 underline transition-colors hover:text-kmr-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kmr-blue"
-        >
-          Already booked? Check your trip
-        </button>
+        {showAlreadyBookedCta ? (
+          <button
+            type="button"
+            onClick={onContinue}
+            aria-label="Already booked? Check your trip"
+            className="mx-auto inline-flex min-h-[44px] items-center justify-center self-center px-1 py-2 font-archivo text-sm font-bold text-kmr-muted-1 underline transition-colors hover:text-kmr-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kmr-blue"
+          >
+            Already booked? Check your trip
+          </button>
+        ) : null}
       </div>
     </div>
   );

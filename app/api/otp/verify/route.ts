@@ -6,6 +6,7 @@ import { OTP_CODE_LENGTH, OTP_MAX_ATTEMPTS } from "@/lib/otp/config";
 import { verifyOtpCode } from "@/lib/otp/hashOtpCode";
 import { completePhoneVerification } from "@/lib/otp/completePhoneVerification";
 import { phoneLast4 } from "@/lib/utils/phone";
+import { setCustomerSessionCookie } from "@/lib/auth/customerSession";
 
 const otpVerifySchema = z.object({
   session_id: z.string().min(1),
@@ -112,9 +113,14 @@ export async function POST(request: NextRequest) {
   }
 
   console.info("[otp verify] ok");
-  return jsonOk({
+  const response = jsonOk({
     verified: true,
     trip_request_id: completionResult.tripRequestId,
     resumed_existing: completionResult.resumedExisting,
   });
+  // Phone Session Login plan: a real OTP-code verification is one of the
+  // two events (the other is Phone.Email) that mints the durable 7-day
+  // login cookie — never minted from client-supplied data alone.
+  await setCustomerSessionCookie(response, { touristId: completionResult.touristId, phoneE164: phone_e164 });
+  return response;
 }

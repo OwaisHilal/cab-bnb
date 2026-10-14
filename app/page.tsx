@@ -46,6 +46,7 @@ function HomeContent() {
       {flow.screen === "home" && (
         <HomeHero
           hasBooking={Boolean(flow.tripRequestId)}
+          showAlreadyBookedCta={!flow.tripRequestId && !flow.customerIdentity}
           onOpenRequest={flow.openSheet}
           onContinue={flow.openResume}
           onViewBooking={flow.viewCurrentBooking}
@@ -76,7 +77,7 @@ function HomeContent() {
       {flow.screen === "profile" && (
         <ProfileScreen
           profile={{
-            phoneDisplay: flow.otp.phone ? `+91 ${flow.otp.phone}` : "Not verified yet",
+            phoneDisplay: flow.verifiedPhoneE164 ?? (flow.otp.phone ? `+91 ${flow.otp.phone}` : "Not verified yet"),
             hasActiveBooking: Boolean(flow.tripRequestId),
             activeBookingLabel: flow.booking?.summaryLabel ?? null,
           }}

@@ -6,6 +6,7 @@ import { loadGuestTrip } from "@/lib/guest-trip/loadGuestTrip";
 import { OTP_CODE_LENGTH, OTP_MAX_ATTEMPTS } from "@/lib/otp/config";
 import { verifyOtpCode } from "@/lib/otp/hashOtpCode";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { setCustomerSessionCookie } from "@/lib/auth/customerSession";
 
 export const dynamic = "force-dynamic";
 
@@ -83,7 +84,13 @@ export async function POST(request: NextRequest) {
     if (!saved) return jsonError(503, "This device could not be saved to your trip yet.");
     const snapshot = await loadGuestTrip(supabase, { sessionId: session_id, confirming: null });
     if (!snapshot) return jsonError(404, "No trip for this phone");
-    return jsonOk(snapshot);
+    const response = jsonOk(snapshot);
+    // "Already booked? Check your trip" is the third verification source
+    // (alongside OTP-code and Phone.Email) that must mint the same durable
+    // login cookie — the tourist row already exists here (resume only
+    // works for phones that already have a trip).
+    await setCustomerSessionCookie(response, { touristId: tourist.id as string, phoneE164: phone_e164 });
+    return response;
   } catch (error) {
     return jsonError(500, error instanceof Error ? error.message : "Failed to resume trip");
   }

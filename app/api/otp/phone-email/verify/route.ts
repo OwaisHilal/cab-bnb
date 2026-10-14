@@ -4,6 +4,7 @@ import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { jsonError, jsonOk, jsonValidationError } from "@/lib/api/errors";
 import { verifyPhoneEmailProof } from "@/lib/phone-email/verifyPhoneEmailProof";
 import { completePhoneVerification } from "@/lib/otp/completePhoneVerification";
+import { setCustomerSessionCookie } from "@/lib/auth/customerSession";
 
 const providerPayloadSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("access_token"), access_token: z.string().min(1) }),
@@ -63,11 +64,18 @@ export async function POST(request: NextRequest) {
     return jsonError(completionResult.status, completionResult.message);
   }
 
-  return jsonOk({
+  const response = jsonOk({
     verified: true,
     channel: "phone_email" as const,
     phone_e164: proofResult.user.phoneE164,
     trip_request_id: completionResult.tripRequestId,
     resumed_existing: completionResult.resumedExisting,
   });
+  // Same durable login cookie as the OTP-code path (app/api/otp/verify) —
+  // both verification sources must land the user in the same session.
+  await setCustomerSessionCookie(response, {
+    touristId: completionResult.touristId,
+    phoneE164: proofResult.user.phoneE164,
+  });
+  return response;
 }
