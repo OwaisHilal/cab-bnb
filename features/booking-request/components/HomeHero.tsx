@@ -61,7 +61,7 @@ const TRUST_BADGES: TrustBadge[] = [
   {
     id: "no-app-download",
     label: "No app to download",
-    description: "Everything runs in the browser, start to finish",
+    description: "Complete you booking through the website or WhatsApp!",
     icon: (
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
         <rect x="6" y="3" width="12" height="18" rx="2" stroke="currentColor" strokeWidth="1.8" />
