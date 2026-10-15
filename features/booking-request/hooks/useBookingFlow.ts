@@ -17,8 +17,9 @@ import type {
   BookingRequestStep,
   VehicleTypeCode,
 } from "@/features/booking-request/types";
-import { QUOTE_REVEAL_DELAY_MS } from "@/features/quote-dispatch/constants";
+import { OTP_SHEET_REVEAL_DELAY_MS, QUOTE_REVEAL_DELAY_MS } from "@/features/quote-dispatch/constants";
 import type { DispatchVendorRow } from "@/features/quote-dispatch/types";
+import { computeVerifiedTransitionDelayMs } from "@/features/quote-dispatch/transitionTiming";
 import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
 import type { OtpDeliveryChannel, OtpState } from "@/features/whatsapp-otp/types";
 import type { BookingSummaryUi } from "@/features/booking-status/types";
@@ -35,7 +36,7 @@ import type { PhoneEmailResumePayload } from "@/lib/phone-email/resumeState";
 import { clearCachedGuestTrip, fetchGuestTrip } from "@/features/guest-trip/guestTripClient";
 
 type PrimaryScreen = "home" | "booking" | "profile";
-type Overlay = "none" | "sheet" | "dispatch" | "otp" | "mock_chat";
+type Overlay = "none" | "sheet" | "otp" | "mock_chat";
 
 interface TripRequestCreateResponse {
   trip_request_id: string;
@@ -45,6 +46,11 @@ interface TripRequestCreateResponse {
 }
 
 const ONE_BOOKING_NOTICE = "Only 1 booking is allowed for now.";
+
+// How long the "You're in." success state holds at minimum before handing
+// off to the booking screen — see computeVerifiedTransitionDelayMs, which
+// extends this when the matching animation is still running.
+const VERIFIED_SUCCESS_BEAT_MS = 900;
 
 function createDraft(): BookingRequestDraft {
   return {
@@ -105,6 +111,11 @@ export function useBookingFlow() {
   const [sheetStep, setSheetStep] = useState<BookingRequestStep>(0);
   const [draft, setDraft] = useState<BookingRequestDraft>(createDraft);
   const [dispatchRows, setDispatchRows] = useState<DispatchVendorRow[]>([]);
+  // Whether the "Matching your trip." screen should render. Decoupled from
+  // `overlay` so it can keep showing underneath the OTP sheet once that
+  // rises on top of it (simultaneous matching + verify reveal) instead of
+  // the two being mutually exclusive.
+  const [isDispatchActive, setIsDispatchActive] = useState(false);
   const [otp, setOtp] = useState<OtpState>(createOtpState);
   const [isVerified, setIsVerified] = useState(false);
   const [booking, setBooking] = useState<BookingSummaryUi | null>(null);
@@ -129,6 +140,13 @@ export function useBookingFlow() {
 
   const dispatchTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const dispatchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const otpRevealTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const verifiedTransitionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Wall-clock timestamp the matching animation started, so a later
+  // successful verification can tell how much of it is still left to play
+  // out (computeVerifiedTransitionDelayMs). Null when no matching animation
+  // is in flight (e.g. the "Already booked?" resume flow).
+  const dispatchStartedAtRef = useRef<number | null>(null);
   const activePollTripRequestId = useRef<string | null>(null);
   const seenQuoteIdsRef = useRef<Set<string>>(new Set());
 
@@ -162,6 +180,14 @@ export function useBookingFlow() {
     if (dispatchTimeout.current) {
       clearTimeout(dispatchTimeout.current);
       dispatchTimeout.current = null;
+    }
+    if (otpRevealTimeout.current) {
+      clearTimeout(otpRevealTimeout.current);
+      otpRevealTimeout.current = null;
+    }
+    if (verifiedTransitionTimeout.current) {
+      clearTimeout(verifiedTransitionTimeout.current);
+      verifiedTransitionTimeout.current = null;
     }
   }, []);
 
@@ -249,14 +275,17 @@ export function useBookingFlow() {
   }, []);
 
   // Paces the "checking vendors" animation to the trip's actual matched
-  // vendor count (Checklist Phase 4 / Plan §5) while still guaranteeing the
-  // OTP modal appears after exactly QUOTE_REVEAL_DELAY_MS, regardless of
-  // how many rows there are to animate through.
+  // vendor count (Checklist Phase 4 / Plan §5). The matching screen and OTP
+  // sheet now reveal concurrently rather than as two sequential steps: the
+  // sheet rises over the still-animating matching screen a short beat after
+  // it appears (OTP_SHEET_REVEAL_DELAY_MS), instead of waiting for the full
+  // QUOTE_REVEAL_DELAY_MS animation to finish first.
   const runDispatch = useCallback(
     (vendorCount: number) => {
       clearDispatchTimers();
       setDispatchRows(createDispatchRows(vendorCount));
-      setOverlay("dispatch");
+      setIsDispatchActive(true);
+      dispatchStartedAtRef.current = Date.now();
 
       const rowIntervalMs = Math.max(300, Math.floor(dispatchDelayMs / (vendorCount + 1)));
       let index = 0;
@@ -275,13 +304,25 @@ export function useBookingFlow() {
         }
       }, rowIntervalMs);
 
-      dispatchTimeout.current = setTimeout(() => {
-        clearDispatchTimers();
-        if (isVerified) {
+      if (isVerified) {
+        // Already verified earlier this session (e.g. resumed login) — no
+        // OTP sheet needed, just let the theatrical animation play out once
+        // and land straight on the booking screen.
+        dispatchTimeout.current = setTimeout(() => {
+          clearDispatchTimers();
+          setIsDispatchActive(false);
           setOverlay("none");
           setScreen("booking");
-          return;
-        }
+        }, dispatchDelayMs);
+        return;
+      }
+
+      // Not verified yet: bring the OTP sheet up over the matching screen a
+      // short beat after it appears, so the two read as one continuous
+      // reveal instead of a second popup. The matching animation keeps
+      // playing underneath; completeVerification() decides when it's safe
+      // to move on.
+      otpRevealTimeout.current = setTimeout(() => {
         setOtp((prev) => ({
           ...prev,
           step: "phone",
@@ -290,7 +331,7 @@ export function useBookingFlow() {
           isSubmitting: false,
         }));
         setOverlay("otp");
-      }, dispatchDelayMs);
+      }, OTP_SHEET_REVEAL_DELAY_MS);
     },
     [clearDispatchTimers, dispatchDelayMs, isVerified],
   );
@@ -488,11 +529,30 @@ export function useBookingFlow() {
     });
     setIsVerified(true);
     setOtp((prev) => ({ ...prev, isSubmitting: false, step: "verified", error: null }));
-    setTimeout(() => {
+
+    // Never let the "You're in." success beat cut the matching animation
+    // short: if it's still mid-flight (dispatchStartedAtRef set, i.e. a new
+    // request's runDispatch is active), hold until it would have finished
+    // anyway. Resume-flow verifications never set dispatchStartedAtRef, so
+    // this falls straight back to the baseline success-beat duration.
+    const elapsedSinceDispatchStart = dispatchStartedAtRef.current
+      ? Date.now() - dispatchStartedAtRef.current
+      : Number.POSITIVE_INFINITY;
+    const transitionDelay = computeVerifiedTransitionDelayMs(
+      elapsedSinceDispatchStart,
+      dispatchDelayMs,
+      VERIFIED_SUCCESS_BEAT_MS,
+    );
+
+    if (verifiedTransitionTimeout.current) clearTimeout(verifiedTransitionTimeout.current);
+    verifiedTransitionTimeout.current = setTimeout(() => {
+      verifiedTransitionTimeout.current = null;
+      clearDispatchTimers();
+      setIsDispatchActive(false);
       setOverlay("none");
       setScreen("booking");
-    }, 900);
-  }, [draft.days, draft.paxCount, draft.vehicleType, tripRequestId]);
+    }, transitionDelay);
+  }, [clearDispatchTimers, dispatchDelayMs, draft.days, draft.paxCount, draft.vehicleType, tripRequestId]);
 
   const sendOtp = useCallback(async (prefer?: "whatsapp") => {
     const localDigits = sanitizeIndianPhoneInput(otp.phone);
@@ -743,6 +803,7 @@ export function useBookingFlow() {
     }
     activePollTripRequestId.current = null;
     seenQuoteIdsRef.current = new Set();
+    dispatchStartedAtRef.current = null;
     clearDispatchTimers();
     clearPhoneEmailResumeState();
 
@@ -753,6 +814,7 @@ export function useBookingFlow() {
     setOtp(createOtpState());
     setDraft(createDraft());
     setDispatchRows([]);
+    setIsDispatchActive(false);
     setRequestError(null);
     setIsSubmittingRequest(false);
     setSheetStep(0);
@@ -812,6 +874,7 @@ export function useBookingFlow() {
     sheetStep,
     draft,
     dispatchRows,
+    isDispatchActive,
     otp,
     booking,
     selectedQuote,

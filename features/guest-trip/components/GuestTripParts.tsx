@@ -59,34 +59,61 @@ interface QuoteOptionProps {
 }
 
 /** One tappable operator quote. Selection behavior is passed in unchanged. */
-export const QuoteOption = ({ quote, disabled, onSelect }: QuoteOptionProps) => (
+export const QuoteOption = ({ quote, disabled, onSelect }: QuoteOptionProps) => {
+  const isFeatured = quote.isBestPrice
+  const ratingTextClass = isFeatured
+    ? "font-mono text-[13px] font-bold tracking-[0.3px] text-kmr-ink"
+    : "font-mono text-[12px] font-semibold tracking-[0.4px] text-kmr-muted-1"
+  const ratingStarSize = isFeatured ? 14 : 13
+
+  return (
   <button
     type="button"
     aria-label={`Select ${quote.vendorName}`}
     disabled={disabled}
     onClick={onSelect}
     className={cn(
-      "group relative flex w-full items-center gap-3 rounded-md border bg-white p-3.5 text-left shadow-kmr-card transition-all",
+      "group relative flex w-full items-center gap-3 rounded-md border bg-white text-left shadow-kmr-card transition-all",
       "hover:border-kmr-blue/40 active:scale-[0.99] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-kmr-blue",
       "disabled:cursor-not-allowed disabled:opacity-60",
-      quote.isBestPrice ? "border-kmr-blue/30" : "border-black/5",
+      isFeatured
+        ? "gap-3.5 border-2 border-kmr-blue/45 bg-gradient-to-br from-kmr-blue/[0.08] to-white p-4 ring-2 ring-kmr-blue/15 shadow-[0_2px_8px_rgba(22,49,219,0.14),0_8px_22px_rgba(16,17,24,0.06)]"
+        : "border border-black/5 p-3.5",
     )}
   >
-    <span className="flex size-11 flex-none items-center justify-center rounded-full bg-kmr-blue/10 font-archivo text-[17px] font-extrabold text-kmr-blue">
+    {isFeatured ? (
+      <span
+        className="pointer-events-none absolute inset-y-2 left-0 w-1 rounded-r-full bg-kmr-blue"
+        aria-hidden="true"
+      />
+    ) : null}
+    <span
+      className={cn(
+        "flex flex-none items-center justify-center rounded-full bg-kmr-blue/10 font-archivo font-extrabold text-kmr-blue",
+        isFeatured ? "size-12 text-[18px] bg-kmr-blue/15" : "size-11 text-[17px]",
+      )}
+    >
       {quote.vendorName.charAt(0).toUpperCase()}
     </span>
     <span className="flex min-w-0 flex-1 flex-col gap-1">
       <span className="flex items-center gap-2">
-        <span className="truncate font-archivo text-[15px] font-extrabold text-kmr-ink">{quote.vendorName}</span>
-        {quote.isBestPrice ? (
-          <span className="flex-none rounded-full bg-kmr-orange px-2 py-0.5 font-mono text-[7.5px] font-bold tracking-[1px] text-white">
+        <span
+          className={cn(
+            "truncate font-archivo text-[15px] font-extrabold",
+            isFeatured ? "text-kmr-blue" : "text-kmr-ink",
+          )}
+        >
+          {quote.vendorName}
+        </span>
+        {isFeatured ? (
+          <span className="flex-none rounded-full bg-kmr-orange px-2.5 py-0.5 font-mono text-[8px] font-bold tracking-[1px] text-white shadow-sm">
             BEST
           </span>
         ) : null}
       </span>
       {quote.rating !== null ? (
-        <span className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold tracking-[0.4px] text-kmr-muted-1">
-          <StarIcon className="text-amber-400" />
+        <span className={cn("inline-flex items-center gap-1", ratingTextClass)}>
+          <StarIcon size={ratingStarSize} className="text-amber-400" />
           {quote.rating.toFixed(1)}
         </span>
       ) : null}
@@ -97,9 +124,15 @@ export const QuoteOption = ({ quote, disabled, onSelect }: QuoteOptionProps) => 
       </span>
       <span className="font-mono text-[8.5px] font-semibold tracking-[1px] text-kmr-muted-2">PER DAY</span>
     </span>
-    <ChevronRightIcon className="flex-none text-kmr-muted-3 transition-transform group-hover:translate-x-0.5 group-hover:text-kmr-blue" />
+    <ChevronRightIcon
+      className={cn(
+        "flex-none transition-transform group-hover:translate-x-0.5",
+        isFeatured ? "text-kmr-blue" : "text-kmr-muted-3 group-hover:text-kmr-blue",
+      )}
+    />
   </button>
-)
+  )
+}
 
 /** Placeholder rows shown while quotes are still being matched. */
 export const QuoteSkeletons = ({ count = 3 }: { count?: number }) => (

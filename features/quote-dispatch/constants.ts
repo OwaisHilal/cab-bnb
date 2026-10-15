@@ -9,3 +9,10 @@
  * exactly this many milliseconds regardless of vendor count.
  */
 export const QUOTE_REVEAL_DELAY_MS = 4500;
+
+/**
+ * How long after the matching screen appears the OTP sheet rises over it.
+ * Short enough to read as one continuous reveal, long enough that the two
+ * don't pop in on the same frame.
+ */
+export const OTP_SHEET_REVEAL_DELAY_MS = 500;

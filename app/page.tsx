@@ -28,7 +28,7 @@ function HomeContent() {
   const continueRequested = searchParams.get("continue") === "1";
   const confirmingParam = searchParams.get("confirming");
   const confirming = confirmingParam === "balance" || confirmingParam === "token" ? confirmingParam : null;
-  const showBottomNav = flow.overlay === "none";
+  const showBottomNav = flow.overlay === "none" && !flow.isDispatchActive;
 
   useEffect(() => {
     if (!continueRequested) return;
@@ -104,7 +104,7 @@ function HomeContent() {
         />
       )}
 
-      {flow.overlay === "dispatch" && (
+      {flow.isDispatchActive && (
         <DispatchScreen
           rows={flow.dispatchRows}
           summaryLabel={`${flow.draft.days} days · ${flow.draft.paxCount} travellers · ${flow.draft.vehicleType.toUpperCase()}`}
