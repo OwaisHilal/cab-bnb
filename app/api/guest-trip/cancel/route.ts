@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { jsonError, jsonOk, jsonValidationError } from "@/lib/api/errors";
+import { isCancelRequestEnabled } from "@/lib/guest-trip/cancelRequestEnabled";
 import { listTripIdsForGuestSession } from "@/lib/guest-trip/loadGuestTrip";
 import { resolveKeeperTripId } from "@/lib/guest-trip/settleGuestTrips";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server";
@@ -12,6 +13,8 @@ const cancelSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  if (!isCancelRequestEnabled()) return jsonError(404, "Cancel request is not available");
+
   let body: unknown;
   try {
     body = await request.json();

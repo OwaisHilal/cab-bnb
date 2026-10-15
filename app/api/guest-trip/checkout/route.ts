@@ -159,22 +159,31 @@ export async function POST(request: NextRequest) {
   }
 }
 
+const loadIntentById = async (
+  supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
+  crqid: string,
+): Promise<IntentRow | null> => {
+  const { data, error } = await supabase
+    .from("whatsapp_payment_intents")
+    .select("id, status, purpose, cf_order_id, amount_inr, customer_number, trip_request_id, booking_id")
+    .eq("id", crqid)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to fetch payment intent: ${error.message}`);
+  return (data as IntentRow | null) ?? null;
+};
+
 const resolveIntent = async (
   supabase: ReturnType<typeof getSupabaseServiceRoleClient>,
   sessionId: string,
   crqid: string | undefined,
 ): Promise<IntentRow | null> => {
-  if (crqid) {
-    const { data, error } = await supabase
-      .from("whatsapp_payment_intents")
-      .select("id, status, purpose, cf_order_id, amount_inr, customer_number, trip_request_id, booking_id")
-      .eq("id", crqid)
-      .maybeSingle();
-    if (error) throw new Error(`Failed to fetch payment intent: ${error.message}`);
-    return (data as IntentRow | null) ?? null;
-  }
+  if (crqid) return loadIntentById(supabase, crqid);
 
   const snapshot = await loadGuestTrip(supabase, { sessionId, confirming: null });
+  // A full-page return has no trip snapshot yet, so the client cannot send crqid.
+  // The lock step's token intent is on that snapshot; only a balance step with no
+  // intent yet needs one created below.
+  if (snapshot?.paymentCrqid) return loadIntentById(supabase, snapshot.paymentCrqid);
   if (!snapshot || snapshot.step !== "balance") return null;
 
   const { data: booking, error: bookingError } = await supabase

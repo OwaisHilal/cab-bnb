@@ -69,6 +69,7 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
   const confirmingPaymentRef = useRef(false)
   const recheckPaymentRef = useRef(false)
   const unknownTimedOutRef = useRef(false)
+  const paymentCheckSeq = useRef(0)
   const appliedEpochRef = useRef(0)
   const payingRef = useRef(false)
   const sessionRef = useRef(sessionId)
@@ -131,6 +132,8 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
 
   const checkPaymentOutcome = useCallback(async () => {
     if (!sessionId) return
+    const seq = paymentCheckSeq.current + 1
+    paymentCheckSeq.current = seq
     const current = snapshotRef.current
     try {
       const response = await fetch("/api/guest-trip/checkout", {
@@ -143,7 +146,7 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
         }),
       })
       const data = (await response.json().catch(() => null)) as CheckoutPayload | null
-      if (sessionRef.current !== sessionId) return
+      if (seq !== paymentCheckSeq.current || sessionRef.current !== sessionId) return
       if (!response.ok || !data?.outcome) {
         setLoadError(null)
         setPaymentPanel("unknown")
@@ -194,7 +197,8 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
       setLocalConfirming(null)
       setUnknownTimedOut(data.outcome === "unknown")
     } catch {
-      if (sessionRef.current === sessionId) setPaymentPanel("unknown")
+      if (seq !== paymentCheckSeq.current || sessionRef.current !== sessionId) return
+      setPaymentPanel("unknown")
     }
   }, [refresh, sessionId])
 
@@ -421,12 +425,17 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
       : {
           ...snapshot,
           hidePay:
-            snapshot.hidePay ||
-            (confirmingStepNow &&
-              (paymentPanel === null ||
-                paymentPanel === "pending" ||
-                paymentPanel === "review" ||
-                (paymentPanel === "unknown" && !unknownTimedOut))),
+            (paymentPanel === "dropped" ||
+            paymentPanel === "declined" ||
+            paymentPanel === "expired" ||
+            (paymentPanel === "unknown" && unknownTimedOut))
+              ? false
+              : snapshot.hidePay ||
+                (confirmingStepNow &&
+                  (paymentPanel === null ||
+                    paymentPanel === "pending" ||
+                    paymentPanel === "review" ||
+                    (paymentPanel === "unknown" && !unknownTimedOut))),
         }
     : null
 

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
+import { isCancelRequestEnabled } from "@/lib/guest-trip/cancelRequestEnabled"
 import type { GuestStep, GuestTripSnapshot } from "@/lib/guest-trip/types"
 import { useGuestTrip } from "@/features/guest-trip/hooks/useGuestTrip"
 import {
@@ -357,19 +358,21 @@ export const GuestTripScreen = ({
           </div>
         ) : null}
 
-        <button
-          type="button"
-          aria-label="Cancel request"
-          aria-busy={trip.cancelling}
-          disabled={trip.cancelling}
-          onClick={() => {
-            void handleCancel()
-          }}
-          className="mx-auto inline-flex items-center gap-2 py-1 font-archivo text-sm font-bold text-kmr-muted-1 underline transition-colors hover:text-kmr-ink disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {trip.cancelling ? <Spinner tone="ink" size="sm" /> : null}
-          Cancel request
-        </button>
+        {isCancelRequestEnabled() ? (
+          <button
+            type="button"
+            aria-label="Cancel request"
+            aria-busy={trip.cancelling}
+            disabled={trip.cancelling}
+            onClick={() => {
+              void handleCancel()
+            }}
+            className="mx-auto inline-flex items-center gap-2 py-1 font-archivo text-sm font-bold text-kmr-muted-1 underline transition-colors hover:text-kmr-ink disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {trip.cancelling ? <Spinner tone="ink" size="sm" /> : null}
+            Cancel request
+          </button>
+        ) : null}
       </div>
     </div>
   )
