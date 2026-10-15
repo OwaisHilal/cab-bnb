@@ -2,11 +2,13 @@ import type { ReactNode } from "react"
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server"
 import { formatInr } from "@/lib/whatsapp/formatInr"
 import { buildCheckoutReturnUrl } from "@/lib/cashfree/buildCheckoutReturnUrl"
+import { classifyCashfreeAttempt } from "@/lib/cashfree/classifyCashfreeAttempt"
+import { fetchCashfreeOrderPayments } from "@/lib/cashfree/fetchOrderPayments"
+import { fetchCashfreeOrderStatus } from "@/lib/cashfree/fetchOrderStatus"
 import { getAppBaseUrl } from "@/lib/utils/appUrl"
 import { sessionIdToAdopt } from "@/lib/utils/clientSession"
 import { CashfreeCheckoutButton } from "@/features/token-payment/components/CashfreeCheckoutButton"
-import { RefreshStatusButton } from "@/features/token-payment/components/RefreshStatusButton"
-import { Spinner } from "@/components/ui/Spinner"
+import { PaymentReturnPanel } from "@/features/token-payment/components/PaymentReturnPanel"
 import { StepTracker } from "@/components/ui/StepTracker"
 import { TopBar } from "@/components/ui/TopBar"
 import { CheckIcon, InfoIcon, LockIcon, ShieldCheckIcon } from "@/components/ui/icons"
@@ -24,6 +26,7 @@ interface TokenPaymentIntentRow {
   amount_inr: number
   payment_session_id: string | null
   cashfree_order_status: string | null
+  cf_order_id: string | null
   purpose: string | null
   trip_request_id: string | null
 }
@@ -32,7 +35,7 @@ async function loadPaymentIntent(crqid: string): Promise<TokenPaymentIntentRow |
   const supabase = getSupabaseServiceRoleClient()
   const { data, error } = await supabase
     .from("whatsapp_payment_intents")
-    .select("status, amount_inr, payment_session_id, cashfree_order_status, purpose, trip_request_id")
+    .select("status, amount_inr, payment_session_id, cashfree_order_status, cf_order_id, purpose, trip_request_id")
     .eq("id", crqid)
     .maybeSingle()
 
@@ -103,13 +106,14 @@ export default async function TokenPaymentPage({
   searchParams,
 }: {
   params: Promise<{ crqid: string }>
-  searchParams: Promise<{ order_id?: string | string[]; sid?: string | string[] }>
+  searchParams: Promise<{ order_id?: string | string[]; sid?: string | string[]; returned?: string | string[] }>
 }) {
   const { crqid } = await params
-  const { order_id: orderIdParam, sid: sidParam } = await searchParams
+  const { order_id: orderIdParam, sid: sidParam, returned: returnedParam } = await searchParams
   const sidValue = Array.isArray(sidParam) ? sidParam[0] : sidParam
+  const returnedValue = Array.isArray(returnedParam) ? returnedParam[0] : returnedParam
   const returnSessionId = sessionIdToAdopt(true, sidValue ?? null)
-  const returningFromCheckout = Boolean(orderIdParam)
+  const returningFromCheckout = Boolean(orderIdParam) || returnedValue === "1"
 
   const intent = await loadPaymentIntent(crqid)
   const tripHref = (confirming: "token" | "balance" | null) =>
@@ -167,31 +171,79 @@ export default async function TokenPaymentPage({
     )
   }
 
+  const appBaseUrl = getAppBaseUrl()
+  const environment: "sandbox" | "production" =
+    process.env.CASHFREE_ENVIRONMENT?.trim().toLowerCase() === "sandbox" ? "sandbox" : "production"
+  const returnUrl = returnSessionId
+    ? buildCheckoutReturnUrl({ appBaseUrl, confirming, sessionId: returnSessionId })
+    : `${appBaseUrl}/?continue=1&confirming=${confirming}`
+  const payButton = intent.payment_session_id ? (
+    <CashfreeCheckoutButton
+      paymentSessionId={intent.payment_session_id}
+      returnUrl={returnUrl}
+      environment={environment}
+      amountInr={intent.amount_inr}
+    />
+  ) : null
+
+  if (returningFromCheckout) {
+    const [orderStatus, payments] = intent.cf_order_id
+      ? await Promise.all([
+          fetchCashfreeOrderStatus(intent.cf_order_id),
+          fetchCashfreeOrderPayments(intent.cf_order_id),
+        ])
+      : ["ACTIVE" as string | null, [] as Awaited<ReturnType<typeof fetchCashfreeOrderPayments>>]
+    const outcome = classifyCashfreeAttempt({ orderStatus, payments })
+    if (outcome === "paid") {
+      return (
+        <PaymentPageShell stepIndex={isBalance ? 4 : 2}>
+          <PaymentStatusBlock
+            icon={<CheckIcon size={32} />}
+            tone="green"
+            title="Payment received"
+            description={
+              isBalance
+                ? `Your ${formatInr(intent.amount_inr)} balance is confirmed.`
+                : `Your ${formatInr(intent.amount_inr)} token is confirmed.`
+            }
+          >
+            <TripLink href={tripHref(confirming)} />
+          </PaymentStatusBlock>
+        </PaymentPageShell>
+      )
+    }
+
+    const sessionReusable =
+      Boolean(payButton) &&
+      (orderStatus === "ACTIVE" || (orderStatus === null && intent.cashfree_order_status === "ACTIVE"))
+    return (
+      <PaymentPageShell stepIndex={isBalance ? 3 : 1}>
+        <PaymentReturnPanel
+          outcome={outcome}
+          attemptKey={crqid}
+          pay={sessionReusable ? payButton : null}
+          back={<TripLink href={tripHref(confirming)} />}
+        />
+      </PaymentPageShell>
+    )
+  }
+
   const orderIsPayable = Boolean(intent.payment_session_id) && intent.cashfree_order_status === "ACTIVE"
 
   if (!orderIsPayable) {
     return (
       <PaymentPageShell stepIndex={isBalance ? 3 : 1}>
         <PaymentStatusBlock
-          icon={returningFromCheckout ? <Spinner tone="blue" size="lg" /> : <InfoIcon size={30} />}
-          tone={returningFromCheckout ? "blue" : "orange"}
-          title={returningFromCheckout ? "Confirming your payment…" : "This payment link needs a refresh"}
-          description={
-            returningFromCheckout
-              ? "If you already paid, you'll get a WhatsApp message shortly. This can take a few seconds. Please don't close this page."
-              : "This link has expired or was already used."
-          }
+          icon={<InfoIcon size={30} />}
+          tone="orange"
+          title="This payment link needs a refresh"
+          description="This link has expired or was already used."
         >
-          {returningFromCheckout && <RefreshStatusButton />}
-          <TripLink href={returningFromCheckout ? tripHref(confirming) : "/?continue=1"} />
+          <TripLink href="/?continue=1" />
         </PaymentStatusBlock>
       </PaymentPageShell>
     )
   }
-
-  const appBaseUrl = getAppBaseUrl()
-  const environment: "sandbox" | "production" =
-    process.env.CASHFREE_ENVIRONMENT?.trim().toLowerCase() === "sandbox" ? "sandbox" : "production"
 
   return (
     <PaymentPageShell stepIndex={isBalance ? 3 : 1}>
@@ -216,16 +268,7 @@ export default async function TokenPaymentPage({
         </p>
       </div>
       <div className="mt-2">
-        <CashfreeCheckoutButton
-          paymentSessionId={intent.payment_session_id as string}
-          returnUrl={
-            returnSessionId
-              ? buildCheckoutReturnUrl({ appBaseUrl, confirming, sessionId: returnSessionId })
-              : `${appBaseUrl}/?continue=1&confirming=${confirming}`
-          }
-          environment={environment}
-          amountInr={intent.amount_inr}
-        />
+        {payButton}
       </div>
     </PaymentPageShell>
   )

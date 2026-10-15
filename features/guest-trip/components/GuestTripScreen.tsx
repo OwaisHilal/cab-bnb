@@ -12,12 +12,14 @@ import {
   TripReceipt,
   TripSummaryPills,
 } from "@/features/guest-trip/components/GuestTripParts"
+import { paymentOutcomeCopy, type PaymentPanelOutcome } from "@/lib/cashfree/classifyCashfreeAttempt"
 import { Spinner } from "@/components/ui/Spinner"
 import { StatusPanel } from "@/components/ui/StatusPanel"
 import { BOOKING_STEP_LABELS, StepTracker } from "@/components/ui/StepTracker"
 import { TopBar } from "@/components/ui/TopBar"
 import {
   CarIcon,
+  InfoIcon,
   LockIcon,
   PhoneIcon,
   ShieldCheckIcon,
@@ -174,10 +176,30 @@ export const GuestTripScreen = ({
     )
   }
 
+  const payableStep = snapshot.step === "lock" || snapshot.step === "balance"
+  const namedOutcome =
+    trip.paymentPanel === "dropped" ||
+    trip.paymentPanel === "declined" ||
+    trip.paymentPanel === "expired" ||
+    trip.paymentPanel === "review" ||
+    trip.paymentPanel === "pending"
+      ? trip.paymentPanel
+      : null
+  const panelOutcome: PaymentPanelOutcome | null = !payableStep
+    ? null
+    : namedOutcome
+      ? namedOutcome
+      : trip.paymentPanel === "unknown"
+        ? trip.unknownTimedOut
+          ? "unknown"
+          : "pending"
+        : trip.confirmingPayment
+          ? "pending"
+          : null
+  const outcomeCopy = panelOutcome ? paymentOutcomeCopy(panelOutcome) : null
   const showQuotes = snapshot.step === "quotes" && !trip.confirmingPayment
   const showPay =
     (snapshot.step === "lock" || snapshot.step === "balance") && !snapshot.hidePay && !trip.confirmingPayment
-  const showConfirming = trip.confirmingPayment && (snapshot.step === "lock" || snapshot.step === "balance")
   const trackerIndex = trackerIndexFor(snapshot.step)
 
   return (
@@ -200,13 +222,14 @@ export const GuestTripScreen = ({
       {notice ? <InlineAlert tone="info">{notice}</InlineAlert> : null}
       {trip.loadError ? <InlineAlert tone="error">{trip.loadError}</InlineAlert> : null}
 
-      {showConfirming ? (
+      {outcomeCopy ? (
         <StatusPanel
-          pulse
-          icon={<Spinner tone="blue" size="lg" />}
-          title="Confirming your payment."
-          description="Please don't close this page or press back. This usually takes a few seconds."
-          liveLabel="WAITING FOR YOUR BANK"
+          pulse={outcomeCopy.pulse}
+          tone={outcomeCopy.tone}
+          icon={outcomeCopy.tone === "blue" ? <Spinner tone="blue" size="lg" /> : <InfoIcon size={26} />}
+          title={outcomeCopy.title}
+          description={outcomeCopy.description}
+          liveLabel={outcomeCopy.liveLabel ?? undefined}
         />
       ) : null}
 

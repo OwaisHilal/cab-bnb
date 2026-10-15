@@ -11,11 +11,33 @@ import {
   readCachedGuestTrip,
 } from "@/features/guest-trip/guestTripClient"
 import { canLaunchCheckout } from "@/lib/cashfree/canLaunchCheckout"
+import type { CashfreeAttemptClass } from "@/lib/cashfree/classifyCashfreeAttempt"
 import { openCashfreeCheckout } from "@/lib/cashfree/openCashfreeCheckout"
 import type { GuestStep, GuestTripSnapshot } from "@/lib/guest-trip/types"
 
 const FAST_POLL_MS = 3000
 const SLOW_POLL_MS = 15000
+const UNKNOWN_PAYMENT_WAIT_MS = 45_000
+
+type PaymentPanel = Exclude<CashfreeAttemptClass, "paid">
+
+interface CheckoutPayload {
+  error?: string
+  outcome?: string
+  href?: string
+  paymentSessionId?: string
+  returnUrl?: string
+  environment?: string
+  step?: "token_received" | "driver_contact"
+  bodyText?: string
+  driverPhone?: string | null
+  driverName?: string | null
+  vehicleLabel?: string | null
+  vehicleNumber?: string | null
+  operatorName?: string | null
+  footerText?: string | null
+  rideGroupInviteUrl?: string | null
+}
 
 type Confirming = "token" | "balance" | null
 
@@ -40,9 +62,13 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
   const [localConfirming, setLocalConfirming] = useState<Confirming>(confirming)
   const [missing, setMissing] = useState(() => (sessionId ? guestTripIsKnownMissing(sessionId) : false))
   const [ahead, setAhead] = useState<AheadStep | null>(null)
+  const [paymentPanel, setPaymentPanel] = useState<PaymentPanel | null>(null)
+  const [unknownTimedOut, setUnknownTimedOut] = useState(false)
   const snapshotRef = useRef<GuestTripSnapshot | null>(snapshot)
   const stepRef = useRef<GuestStep | null>(snapshot?.step ?? null)
   const confirmingPaymentRef = useRef(false)
+  const recheckPaymentRef = useRef(false)
+  const unknownTimedOutRef = useRef(false)
   const appliedEpochRef = useRef(0)
   const payingRef = useRef(false)
   const sessionRef = useRef(sessionId)
@@ -80,6 +106,10 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
     setAhead((current) => (current && data.step === current.step ? null : current))
     if (localConfirming === "token" && data.step !== "lock") setLocalConfirming(null)
     if (localConfirming === "balance" && data.step !== "balance") setLocalConfirming(null)
+    if (data.step !== "lock" && data.step !== "balance") {
+      setPaymentPanel(null)
+      setUnknownTimedOut(false)
+    }
   }, [localConfirming])
 
   const refresh = useCallback(async (fresh = false) => {
@@ -99,6 +129,86 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
     }
   }, [applySnapshot, localConfirming, sessionId])
 
+  const checkPaymentOutcome = useCallback(async () => {
+    if (!sessionId) return
+    const current = snapshotRef.current
+    try {
+      const response = await fetch("/api/guest-trip/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          returned: true,
+          ...(current?.paymentCrqid ? { crqid: current.paymentCrqid } : {}),
+        }),
+      })
+      const data = (await response.json().catch(() => null)) as CheckoutPayload | null
+      if (sessionRef.current !== sessionId) return
+      if (!response.ok || !data?.outcome) {
+        setLoadError(null)
+        setPaymentPanel("unknown")
+        return
+      }
+      setLoadError(null)
+      if (data.outcome === "already_paid") {
+        setPaymentPanel(null)
+        setUnknownTimedOut(false)
+        setLocalConfirming(null)
+        await refresh(true)
+        return
+      }
+      if (data.outcome === "show_next_step" && data.step) {
+        setPaymentPanel(null)
+        setUnknownTimedOut(false)
+        setLocalConfirming(null)
+        setAhead({
+          step: data.step,
+          bodyText: data.bodyText ?? "",
+          driverPhone: data.driverPhone ?? null,
+          driverName: data.driverName ?? null,
+          vehicleLabel: data.vehicleLabel ?? null,
+          vehicleNumber: data.vehicleNumber ?? null,
+          operatorName: data.operatorName ?? null,
+          footerText: data.footerText ?? null,
+          rideGroupInviteUrl: data.rideGroupInviteUrl ?? null,
+        })
+        return
+      }
+      if (
+        data.outcome !== "pending" &&
+        data.outcome !== "review" &&
+        data.outcome !== "declined" &&
+        data.outcome !== "dropped" &&
+        data.outcome !== "expired" &&
+        data.outcome !== "unknown"
+      ) {
+        return
+      }
+      setPaymentPanel(data.outcome)
+      const stillWaiting = data.outcome === "pending" || data.outcome === "review" || (data.outcome === "unknown" && !unknownTimedOutRef.current)
+      if (stillWaiting) {
+        setLocalConfirming(current?.step === "balance" ? "balance" : "token")
+        if (data.outcome !== "unknown") setUnknownTimedOut(false)
+        return
+      }
+      setLocalConfirming(null)
+      setUnknownTimedOut(data.outcome === "unknown")
+    } catch {
+      if (sessionRef.current === sessionId) setPaymentPanel("unknown")
+    }
+  }, [refresh, sessionId])
+
+  const confirmingStepNow =
+    (localConfirming === "token" && snapshot?.step === "lock") ||
+    (localConfirming === "balance" && snapshot?.step === "balance")
+  const shouldRecheckPayment =
+    paymentPanel === "pending" ||
+    paymentPanel === "review" ||
+    paymentPanel === "unknown" ||
+    (paymentPanel === null && confirmingStepNow) ||
+    (confirming !== null && (snapshot?.step === "lock" || snapshot?.step === "balance"))
+  recheckPaymentRef.current = shouldRecheckPayment
+
   useEffect(() => {
     if (!sessionId || !active) return
     let cancelled = false
@@ -108,14 +218,17 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
     const refreshNow = !guestTripCacheIsFresh(sessionId) && !guestTripIsKnownMissing(sessionId)
 
     const schedule = () => {
-      const fast = confirmingPaymentRef.current || stepRef.current === "quotes_waiting"
+      const fast = confirmingPaymentRef.current || recheckPaymentRef.current || stepRef.current === "quotes_waiting"
       timer = window.setTimeout(() => {
         void run()
       }, fast ? FAST_POLL_MS : SLOW_POLL_MS)
     }
     const run = async () => {
       if (cancelled) return
-      if (document.visibilityState === "visible") await refresh()
+      if (document.visibilityState === "visible") {
+        await refresh()
+        if (recheckPaymentRef.current) await checkPaymentOutcome()
+      }
       if (!cancelled) schedule()
     }
     if (refreshNow) void run()
@@ -124,7 +237,22 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [active, applySnapshot, refresh, sessionId])
+  }, [active, applySnapshot, checkPaymentOutcome, refresh, sessionId, shouldRecheckPayment])
+
+  useEffect(() => {
+    if (!active || !sessionId || !confirming) return
+    void checkPaymentOutcome()
+  }, [active, checkPaymentOutcome, confirming, sessionId])
+
+  useEffect(() => {
+    if (paymentPanel !== "unknown" || unknownTimedOut) return
+    const timer = window.setTimeout(() => {
+      unknownTimedOutRef.current = true
+      setUnknownTimedOut(true)
+      setLocalConfirming(null)
+    }, UNKNOWN_PAYMENT_WAIT_MS)
+    return () => window.clearTimeout(timer)
+  }, [paymentPanel, unknownTimedOut])
 
   const handleSelect = useCallback(
     async (quoteId: string) => {
@@ -156,6 +284,9 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
     if (!current) return
     payingRef.current = true
     setPaying(true)
+    setLoadError(null)
+    setPaymentPanel(null)
+    setUnknownTimedOut(false)
     let keepPayingLock = false
     try {
       const response = await fetch("/api/guest-trip/checkout", {
@@ -224,7 +355,7 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
             return
           }
           if (result.reason === "cancelled") {
-            setLoadError(result.message)
+            await checkPaymentOutcome()
             return
           }
           setLoadError(result.message)
@@ -242,7 +373,7 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
         setPaying(false)
       }
     }
-  }, [refresh, sessionId])
+  }, [checkPaymentOutcome, refresh, sessionId])
 
   const handleCancel = useCallback(async () => {
     setCancelling(true)
@@ -289,15 +420,24 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
         }
       : {
           ...snapshot,
-          hidePay: snapshot.hidePay || localConfirming === "token" && snapshot.step === "lock" || localConfirming === "balance" && snapshot.step === "balance",
+          hidePay:
+            snapshot.hidePay ||
+            (confirmingStepNow &&
+              (paymentPanel === null ||
+                paymentPanel === "pending" ||
+                paymentPanel === "review" ||
+                (paymentPanel === "unknown" && !unknownTimedOut))),
         }
     : null
 
-  const confirmingPayment = Boolean(
-    (localConfirming === "token" && snapshot?.step === "lock") ||
-      (localConfirming === "balance" && snapshot?.step === "balance"),
-  )
-  confirmingPaymentRef.current = confirmingPayment
+  const waitingForBank =
+    paymentPanel === "pending" ||
+    paymentPanel === "review" ||
+    (paymentPanel === "unknown" && !unknownTimedOut) ||
+    (paymentPanel === null && confirmingStepNow)
+  confirmingPaymentRef.current = waitingForBank
+  unknownTimedOutRef.current = unknownTimedOut
+  const confirmingPayment = waitingForBank
   stepRef.current = snapshot?.step ?? stepRef.current
 
   return {
@@ -309,6 +449,8 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
     paying,
     cancelling,
     confirmingPayment,
+    paymentPanel,
+    unknownTimedOut,
     missing,
     handleSelect,
     handlePay,

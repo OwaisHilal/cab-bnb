@@ -36,6 +36,12 @@ export function CashfreeCheckoutButton({
 
     const result = await openCashfreeCheckout({ paymentSessionId, returnUrl, environment })
     if (!result.ok) {
+      if (result.reason === "cancelled") {
+        const url = new URL(window.location.href)
+        url.searchParams.set("returned", "1")
+        window.location.assign(url.toString())
+        return
+      }
       setError(result.message)
       setLoading(false)
     }

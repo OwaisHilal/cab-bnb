@@ -1,7 +1,9 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { buildCheckoutReturnUrl } from "@/lib/cashfree/buildCheckoutReturnUrl";
+import { classifyCashfreeAttempt } from "@/lib/cashfree/classifyCashfreeAttempt";
 import { decideCheckout } from "@/lib/cashfree/decideCheckout";
+import { fetchCashfreeOrderPayments } from "@/lib/cashfree/fetchOrderPayments";
 import { fetchCashfreeOrderStatus } from "@/lib/cashfree/fetchOrderStatus";
 import { jsonError, jsonOk, jsonValidationError } from "@/lib/api/errors";
 import { loadGuestTrip, sessionCanReadTrip } from "@/lib/guest-trip/loadGuestTrip";
@@ -87,7 +89,7 @@ export async function POST(request: NextRequest) {
       return jsonOk({ outcome: "already_paid" });
     }
 
-    if (decision === "already_paid") {
+    const showPaidStep = async () => {
       const step = intent.purpose === "balance" ? "driver_contact" : "token_received";
       const preview = await loadGuestTrip(supabase, {
         sessionId: parsed.data.session_id,
@@ -106,10 +108,18 @@ export async function POST(request: NextRequest) {
         footerText: preview?.footerText ?? null,
         rideGroupInviteUrl: preview?.rideGroupInviteUrl ?? null,
       });
-    }
+    };
+
+    if (decision === "already_paid") return showPaidStep();
 
     if (parsed.data.returned) {
-      return jsonOk({ outcome: "confirming" });
+      const payments = intent.cf_order_id ? await fetchCashfreeOrderPayments(intent.cf_order_id) : [];
+      const outcome = classifyCashfreeAttempt({
+        orderStatus: intent.cf_order_id ? cashfreeOrderStatus : "ACTIVE",
+        payments,
+      });
+      if (outcome === "paid") return showPaidStep();
+      return jsonOk({ outcome });
     }
 
     const phone = await loadTouristPhone(supabase, intent.trip_request_id);
