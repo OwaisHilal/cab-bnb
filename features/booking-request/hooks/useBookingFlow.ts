@@ -23,7 +23,8 @@ import { computeVerifiedTransitionDelayMs } from "@/features/quote-dispatch/tran
 import { OTP_CODE_LENGTH } from "@/features/whatsapp-otp/types";
 import type { OtpDeliveryChannel, OtpState } from "@/features/whatsapp-otp/types";
 import type { BookingSummaryUi } from "@/features/booking-status/types";
-import { getOrCreateClientSessionId, resetClientSessionId } from "@/lib/utils/clientSession";
+import { shouldOpenReturnOtp, type CookieLookup, type DirectLookup } from "@/lib/booking/shouldOpenReturnOtp";
+import { adoptClientSessionId, getOrCreateClientSessionId, resetClientSessionId } from "@/lib/utils/clientSession";
 import { toIndianE164, isValidIndianMobile, sanitizeIndianPhoneInput, phoneLast4 } from "@/lib/utils/phone";
 import { getPhoneEmailProviderMode } from "@/features/phone-email/components/PhoneEmailAdapter";
 import {
@@ -105,7 +106,7 @@ function bookingSummaryFromPhoneEmailResume(payload: PhoneEmailResumePayload): B
   };
 }
 
-export function useBookingFlow() {
+export function useBookingFlow(sidFromReturnUrl: string | null = null, continueRequested = false) {
   const [screen, setScreen] = useState<PrimaryScreen>("home");
   const [overlay, setOverlay] = useState<Overlay>("none");
   const [sheetStep, setSheetStep] = useState<BookingRequestStep>(0);
@@ -137,6 +138,8 @@ export function useBookingFlow() {
   // Login plan) — distinct from sessionId above, which stays the per-tab
   // device id. null until GET /api/auth/session confirms a valid cookie.
   const [customerIdentity, setCustomerIdentity] = useState<{ touristId: string; phoneE164: string } | null>(null);
+  const [directLookup, setDirectLookup] = useState<DirectLookup>("pending");
+  const [cookieLookup, setCookieLookup] = useState<CookieLookup>("pending");
 
   const dispatchTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const dispatchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,6 +152,11 @@ export function useBookingFlow() {
   const dispatchStartedAtRef = useRef<number | null>(null);
   const activePollTripRequestId = useRef<string | null>(null);
   const seenQuoteIdsRef = useRef<Set<string>>(new Set());
+  const openedReturnOtpRef = useRef(false);
+  const resumeModeRef = useRef(resumeMode);
+  const sidFromReturnUrlRef = useRef(sidFromReturnUrl);
+  resumeModeRef.current = resumeMode;
+  sidFromReturnUrlRef.current = sidFromReturnUrl;
 
   useLayoutEffect(() => {
     const payload = peekVerifiedPhoneEmailResume();
@@ -168,8 +176,22 @@ export function useBookingFlow() {
       setTripNotice(payload.resumedExisting ? ONE_BOOKING_NOTICE : null);
       clearVerifiedPhoneEmailResume();
     }
-    setSessionId(getOrCreateClientSessionId());
+    const sid = sidFromReturnUrlRef.current;
+    let resolvedSessionId: string;
+    if (sid) {
+      resolvedSessionId = adoptClientSessionId(sid);
+    } else {
+      try {
+        resolvedSessionId = getOrCreateClientSessionId();
+      } catch {
+        resolvedSessionId = crypto.randomUUID();
+      }
+    }
+    setSessionId(resolvedSessionId);
     setIsClientBootstrapped(true);
+    // The return-url sid is only needed on this first paint. Re-running after
+    // router.replace("/") drops it would replay the Phone.Email resume peek.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const clearDispatchTimers = useCallback(() => {
@@ -428,7 +450,12 @@ export function useBookingFlow() {
     void (async () => {
       try {
         const result = await fetchGuestTrip(sessionId, null);
-        if (cancelled || !result.ok) return;
+        if (cancelled) return;
+        if (!result.ok) {
+          setDirectLookup(result.status === 404 ? "missing" : "failed");
+          return;
+        }
+        setDirectLookup("found");
         setTripRequestId(result.snapshot.tripRequestId);
         setBooking({
           bookingRef: buildRequestRef(result.snapshot.tripRequestId),
@@ -440,6 +467,7 @@ export function useBookingFlow() {
         setIsVerified(true);
         setScreen("booking");
       } catch {
+        if (!cancelled) setDirectLookup("failed");
         // A refresh with no network keeps the home screen. The booking tab retries.
       }
     })();
@@ -475,16 +503,28 @@ export function useBookingFlow() {
           tripRequestId?: string | null;
         } | null;
 
-        if (!response.ok || !data?.authenticated || !data.touristId || !data.phoneE164) return;
+        if (!response.ok) {
+          setCookieLookup("failed");
+          return;
+        }
+        if (!data?.authenticated || !data.touristId || !data.phoneE164) {
+          setCookieLookup("absent");
+          return;
+        }
         setCustomerIdentity({ touristId: data.touristId, phoneE164: data.phoneE164 });
 
-        if (!data.tripRequestId) return;
+        if (!data.tripRequestId) {
+          setCookieLookup("absent");
+          return;
+        }
 
         // Server already linked this tab's sessionId above — fresh=true
         // bypasses the client cache so this read isn't skipped as a dedupe
         // of the (likely 404, pre-link) call the effect above just made.
         const result = await fetchGuestTrip(sessionId, null, true);
-        if (cancelled || !result.ok) return;
+        if (cancelled) return;
+        setCookieLookup("found");
+        if (!result.ok) return;
         setTripRequestId(result.snapshot.tripRequestId);
         setBooking({
           bookingRef: buildRequestRef(result.snapshot.tripRequestId),
@@ -496,6 +536,7 @@ export function useBookingFlow() {
         setIsVerified(true);
         setScreen("booking");
       } catch {
+        if (!cancelled) setCookieLookup("failed");
         // Offline on first paint: stays in guest mode: the next visit (or
         // this tab's own guest-trip polling, once a trip exists) retries.
       }
@@ -830,6 +871,33 @@ export function useBookingFlow() {
     setOverlay("otp");
   }, []);
 
+  const noteReturnTripMissing = useCallback(() => {
+    setDirectLookup((current) => (current === "found" ? current : "missing"));
+  }, []);
+
+  useEffect(() => {
+    if (!continueRequested || !tripRequestId || !resumeModeRef.current) return;
+    setOverlay("none");
+    setResumeMode(false);
+  }, [continueRequested, resumeMode, tripRequestId]);
+
+  useEffect(() => {
+    if (openedReturnOtpRef.current) return;
+    if (
+      !shouldOpenReturnOtp({
+        continueRequested,
+        directLookup,
+        cookieLookup,
+        tripFound: Boolean(tripRequestId),
+        phoneEmailResumeApplied,
+      })
+    ) {
+      return;
+    }
+    openedReturnOtpRef.current = true;
+    openResume();
+  }, [continueRequested, cookieLookup, directLookup, openResume, phoneEmailResumeApplied, tripRequestId]);
+
   const startFromNoBooking = useCallback(() => {
     setResumeMode(false);
     setOtp((prev) => ({
@@ -911,6 +979,7 @@ export function useBookingFlow() {
     closeMockChat,
     clearBooking,
     openResume,
+    noteReturnTripMissing,
     startFromNoBooking,
     viewCurrentBooking,
     rememberSnapshot,

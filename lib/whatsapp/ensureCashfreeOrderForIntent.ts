@@ -52,7 +52,7 @@ export const ensureCashfreeOrderForIntent = async (
     returnUrl: string
     notifyUrl: string
   },
-): Promise<{ success: boolean; error?: string }> => {
+): Promise<{ success: boolean; error?: string; paymentSessionId?: string }> => {
   const { data: existing, error: loadError } = await supabase
     .from("whatsapp_payment_intents")
     .select("cf_order_id, payment_session_id, cashfree_order_status, cashfree_order_expires_at")
@@ -65,7 +65,7 @@ export const ensureCashfreeOrderForIntent = async (
 
   const existingRow = existing as CashfreeOrderStateRow | null
   if (existingRow && isReusableCashfreeOrder(existingRow)) {
-    return { success: true }
+    return { success: true, paymentSessionId: existingRow.payment_session_id ?? undefined }
   }
 
   const orderId = existingRow?.cf_order_id ? `${input.crqid}-${randomUUID().slice(0, 8)}` : input.crqid
@@ -108,5 +108,5 @@ export const ensureCashfreeOrderForIntent = async (
     return { success: false, error: `Failed to persist Cashfree order: ${updateError.message}` }
   }
 
-  return { success: true }
+  return { success: true, paymentSessionId: result.paymentSessionId }
 }

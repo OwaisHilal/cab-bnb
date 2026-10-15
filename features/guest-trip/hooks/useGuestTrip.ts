@@ -10,6 +10,8 @@ import {
   guestTripSnapshotKey,
   readCachedGuestTrip,
 } from "@/features/guest-trip/guestTripClient"
+import { canLaunchCheckout } from "@/lib/cashfree/canLaunchCheckout"
+import { openCashfreeCheckout } from "@/lib/cashfree/openCashfreeCheckout"
 import type { GuestStep, GuestTripSnapshot } from "@/lib/guest-trip/types"
 
 const FAST_POLL_MS = 3000
@@ -42,6 +44,7 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
   const stepRef = useRef<GuestStep | null>(snapshot?.step ?? null)
   const confirmingPaymentRef = useRef(false)
   const appliedEpochRef = useRef(0)
+  const payingRef = useRef(false)
   const sessionRef = useRef(sessionId)
   const sessionSeenRef = useRef(sessionId)
   sessionRef.current = sessionId
@@ -148,9 +151,12 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
   )
 
   const handlePay = useCallback(async () => {
+    if (payingRef.current) return
     const current = snapshotRef.current
     if (!current) return
+    payingRef.current = true
     setPaying(true)
+    let keepPayingLock = false
     try {
       const response = await fetch("/api/guest-trip/checkout", {
         method: "POST",
@@ -164,6 +170,9 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
         error?: string
         outcome?: string
         href?: string
+        paymentSessionId?: string
+        returnUrl?: string
+        environment?: string
         step?: "token_received" | "driver_contact"
         bodyText?: string
         driverPhone?: string | null
@@ -202,13 +211,36 @@ export const useGuestTrip = (sessionId: string, confirming: Confirming, active =
         setLocalConfirming(current.step === "balance" ? "balance" : "token")
         return
       }
-      if (data.outcome === "checkout" && data.href) {
-        window.location.href = data.href
+      if (data.outcome === "checkout") {
+        const fallbackHref = data.href
+        if (canLaunchCheckout(data)) {
+          const result = await openCashfreeCheckout({
+            paymentSessionId: data.paymentSessionId,
+            returnUrl: data.returnUrl,
+            environment: data.environment,
+          })
+          if (result.ok) {
+            keepPayingLock = true
+            return
+          }
+          if (result.reason === "cancelled") {
+            setLoadError(result.message)
+            return
+          }
+          setLoadError(result.message)
+        }
+        if (fallbackHref) {
+          keepPayingLock = true
+          window.location.href = fallbackHref
+        }
       }
     } catch {
       setLoadError("Still trying to refresh this trip.")
     } finally {
-      setPaying(false)
+      if (!keepPayingLock) {
+        payingRef.current = false
+        setPaying(false)
+      }
     }
   }, [refresh, sessionId])
 

@@ -1,8 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { load } from "@cashfreepayments/cashfree-js"
 import { Button } from "@/components/ui/Button"
+import { openCashfreeCheckout } from "@/lib/cashfree/openCashfreeCheckout"
 import { formatInr } from "@/lib/whatsapp/formatInr"
 
 export interface CashfreeCheckoutButtonProps {
@@ -34,31 +34,13 @@ export function CashfreeCheckoutButton({
     setLoading(true)
     setError(null)
 
-    try {
-      const cashfree = await load({ mode: environment })
-
-      if (!cashfree) {
-        setError("Payments aren't available in this browser. Please try again.")
-        setLoading(false)
-        return
-      }
-
-      const result = await cashfree.checkout({
-        paymentSessionId,
-        returnUrl,
-        redirectTarget: "_self",
-      })
-
-      if (result?.error) {
-        setError(result.error.message ?? "Payment was cancelled or failed. Please try again.")
-        setLoading(false)
-      }
-      // On success Cashfree redirects this same tab to returnUrl — nothing
-      // else to do here.
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong starting the payment.")
+    const result = await openCashfreeCheckout({ paymentSessionId, returnUrl, environment })
+    if (!result.ok) {
+      setError(result.message)
       setLoading(false)
     }
+    // On success Cashfree redirects this same tab to returnUrl — nothing
+    // else to do here.
   }
 
   return (

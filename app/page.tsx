@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { MobileShell } from "@/components/ui/MobileShell";
 import { BottomNav } from "@/components/ui/BottomNav";
 import { useBookingFlow } from "@/features/booking-request/hooks/useBookingFlow";
+import { sessionIdToAdopt } from "@/lib/utils/clientSession";
 import { HomeHero } from "@/features/booking-request/components/HomeHero";
 import { RequestSheet } from "@/features/booking-request/components/RequestSheet";
 import { DispatchScreen } from "@/features/quote-dispatch/components/DispatchScreen";
@@ -22,10 +23,11 @@ export default function Home() {
 }
 
 function HomeContent() {
-  const flow = useBookingFlow();
   const router = useRouter();
   const searchParams = useSearchParams();
   const continueRequested = searchParams.get("continue") === "1";
+  const sidToAdopt = sessionIdToAdopt(continueRequested, searchParams.get("sid"));
+  const flow = useBookingFlow(sidToAdopt, continueRequested);
   const confirmingParam = searchParams.get("confirming");
   const confirming = confirmingParam === "balance" || confirmingParam === "token" ? confirmingParam : null;
   const showBottomNav = flow.overlay === "none" && !flow.isDispatchActive;
@@ -60,7 +62,7 @@ function HomeContent() {
           notice={flow.tripNotice}
           active
           onMissing={() => {
-            if (continueRequested) flow.openResume();
+            if (continueRequested) flow.noteReturnTripMissing();
           }}
           onClosed={flow.clearBooking}
           onCancel={flow.clearBooking}

@@ -1,7 +1,9 @@
 import type { ReactNode } from "react"
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/server"
 import { formatInr } from "@/lib/whatsapp/formatInr"
+import { buildCheckoutReturnUrl } from "@/lib/cashfree/buildCheckoutReturnUrl"
 import { getAppBaseUrl } from "@/lib/utils/appUrl"
+import { sessionIdToAdopt } from "@/lib/utils/clientSession"
 import { CashfreeCheckoutButton } from "@/features/token-payment/components/CashfreeCheckoutButton"
 import { RefreshStatusButton } from "@/features/token-payment/components/RefreshStatusButton"
 import { Spinner } from "@/components/ui/Spinner"
@@ -101,10 +103,12 @@ export default async function TokenPaymentPage({
   searchParams,
 }: {
   params: Promise<{ crqid: string }>
-  searchParams: Promise<{ order_id?: string | string[] }>
+  searchParams: Promise<{ order_id?: string | string[]; sid?: string | string[] }>
 }) {
   const { crqid } = await params
-  const { order_id: orderIdParam } = await searchParams
+  const { order_id: orderIdParam, sid: sidParam } = await searchParams
+  const sidValue = Array.isArray(sidParam) ? sidParam[0] : sidParam
+  const returnSessionId = sessionIdToAdopt(true, sidValue ?? null)
   const returningFromCheckout = Boolean(orderIdParam)
 
   const intent = await loadPaymentIntent(crqid)
@@ -214,7 +218,11 @@ export default async function TokenPaymentPage({
       <div className="mt-2">
         <CashfreeCheckoutButton
           paymentSessionId={intent.payment_session_id as string}
-          returnUrl={`${appBaseUrl}/?continue=1&confirming=${confirming}`}
+          returnUrl={
+            returnSessionId
+              ? buildCheckoutReturnUrl({ appBaseUrl, confirming, sessionId: returnSessionId })
+              : `${appBaseUrl}/?continue=1&confirming=${confirming}`
+          }
           environment={environment}
           amountInr={intent.amount_inr}
         />

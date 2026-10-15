@@ -101,7 +101,7 @@ export function WhatsAppOtpSheet({
               </span>
             </div>
             <h2 className="font-archivo text-[23px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink">
-              Your quotes are matched. Verify your number to see them.
+              Your quotes are being matched. Verify your number to see them.
             </h2>
             <p className="font-archivo text-[12.5px] font-medium leading-[1.55] text-kmr-muted-1">
               Every matched vendor quote lands in your WhatsApp chat the moment

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
+import { buildCheckoutReturnUrl } from "@/lib/cashfree/buildCheckoutReturnUrl";
 import { decideCheckout } from "@/lib/cashfree/decideCheckout";
 import { fetchCashfreeOrderStatus } from "@/lib/cashfree/fetchOrderStatus";
 import { jsonError, jsonOk, jsonValidationError } from "@/lib/api/errors";
@@ -116,12 +117,19 @@ export async function POST(request: NextRequest) {
 
     const confirming = intent.purpose === "balance" ? "balance" : "token";
     const appBaseUrl = getAppBaseUrl();
+    const returnUrl = buildCheckoutReturnUrl({
+      appBaseUrl,
+      confirming,
+      sessionId: parsed.data.session_id,
+    });
+    const environment =
+      process.env.CASHFREE_ENVIRONMENT?.trim().toLowerCase() === "sandbox" ? "sandbox" : "production";
     const orderResult = await ensureCashfreeOrderForIntent(supabase, {
       crqid: intent.id,
       touristPhone: phone,
       customerNumber: intent.customer_number,
       amountInr: Number(intent.amount_inr),
-      returnUrl: `${appBaseUrl}/?continue=1&confirming=${confirming}`,
+      returnUrl,
       notifyUrl: `${appBaseUrl}/webhooks/cashfree`,
     });
 
@@ -129,7 +137,13 @@ export async function POST(request: NextRequest) {
       return jsonError(500, orderResult.error ?? "Couldn't start checkout");
     }
 
-    return jsonOk({ outcome: "checkout", href: `/pay/token/${intent.id}` });
+    return jsonOk({
+      outcome: "checkout",
+      href: `/pay/token/${intent.id}?sid=${encodeURIComponent(parsed.data.session_id)}`,
+      paymentSessionId: orderResult.paymentSessionId,
+      returnUrl,
+      environment,
+    });
   } catch (error) {
     return jsonError(500, error instanceof Error ? error.message : "Failed to start checkout");
   }
