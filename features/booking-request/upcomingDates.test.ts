@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 
-import { getUpcomingDates } from "./upcomingDates"
+import { getDateChipParts, getUpcomingDates } from "./upcomingDates"
 
 describe("getUpcomingDates", () => {
   it("starts from the given date and returns consecutive local calendar days", () => {
@@ -22,7 +22,7 @@ describe("getUpcomingDates", () => {
     )
   })
 
-  it("defaults to today plus the next 3 days when called with no arguments", () => {
+  it("defaults to today plus the next 6 days when called with no arguments", () => {
     const today = new Date()
     const expectedFirstIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
       today.getDate(),
@@ -30,7 +30,7 @@ describe("getUpcomingDates", () => {
 
     const dates = getUpcomingDates()
 
-    assert.equal(dates.length, 4)
+    assert.equal(dates.length, 7)
     assert.equal(dates[0].id, "d1")
     assert.equal(dates[0].isoDate, expectedFirstIso)
   })
@@ -38,5 +38,14 @@ describe("getUpcomingDates", () => {
   it("supports a custom count", () => {
     const dates = getUpcomingDates(new Date(2026, 7, 15), 2)
     assert.equal(dates.length, 2)
+  })
+})
+
+describe("getDateChipParts", () => {
+  it("splits an iso date into weekday and day-month primary", () => {
+    assert.deepEqual(getDateChipParts("2026-08-15"), {
+      weekday: "Sat",
+      primary: "15 Aug",
+    })
   })
 })

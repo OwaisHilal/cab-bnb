@@ -22,24 +22,53 @@ const MONTH_LABELS = [
   "Dec",
 ] as const
 
-const toIsoDate = (date: Date): string => {
+export const toIsoDate = (date: Date): string => {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
   const day = String(date.getDate()).padStart(2, "0")
   return `${year}-${month}-${day}`
 }
 
+export const getTodayIsoDate = (now: Date = new Date()): string =>
+  toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate()))
+
 const formatShortDateLabel = (date: Date): string =>
   `${WEEKDAY_LABELS[date.getDay()]} ${date.getDate()} ${MONTH_LABELS[date.getMonth()]}`
 
+export const formatIsoDateShortLabel = (iso: string): string => {
+  const [year, month, day] = iso.split("-").map((part) => Number(part))
+  if (!year || !month || !day) return iso
+  return formatShortDateLabel(new Date(year, month - 1, day))
+}
+
+export type DateChipParts = {
+  weekday: string
+  primary: string
+}
+
+const parseLocalIsoDate = (iso: string): Date | null => {
+  const [year, month, day] = iso.split("-").map((part) => Number(part))
+  if (!year || !month || !day) return null
+  return new Date(year, month - 1, day)
+}
+
+export const getDateChipParts = (iso: string): DateChipParts => {
+  const date = parseLocalIsoDate(iso)
+  if (!date) return { weekday: "", primary: iso }
+  return {
+    weekday: WEEKDAY_LABELS[date.getDay()],
+    primary: `${date.getDate()} ${MONTH_LABELS[date.getMonth()]}`,
+  }
+}
+
 /**
  * Builds `count` quick-pick date chips for consecutive local calendar days
- * starting from `now`'s date (defaults to today). Always driven by Date's
- * local getters/constructor — never UTC — so the chip shown to a guest in
- * IST always matches their own "today", and so a booking made late at
- * night doesn't silently offer yesterday.
+ * starting from `now`'s date (defaults to today). Default count is 7 (today
+ * plus the next six days). Always driven by Date's local getters/constructor
+ * — never UTC — so the chip shown to a guest in IST always matches their own
+ * "today", and so a booking made late at night doesn't silently offer yesterday.
  */
-export function getUpcomingDates(now: Date = new Date(), count = 4): DateOption[] {
+export function getUpcomingDates(now: Date = new Date(), count = 7): DateOption[] {
   return Array.from({ length: count }, (_, index) => {
     const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + index)
     return {

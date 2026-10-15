@@ -207,3 +207,11 @@ body {
 .font-mono {
   font-family: var(--font-ibm-plex-mono), monospace;
 }
+
+.kmr-scrollbar-none {
+  scrollbar-width: none;
+}
+
+.kmr-scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

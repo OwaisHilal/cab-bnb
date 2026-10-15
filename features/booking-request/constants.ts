@@ -2,9 +2,27 @@ import type { DateOption, TripPreset, VehicleTypeOption, VehicleTypeCode } from 
 import { getUpcomingDates } from "./upcomingDates";
 
 export const VEHICLE_TYPES: VehicleTypeOption[] = [
-  { code: "sedan", label: "Sedan", seatCapacity: 4, who: "Couples & small families" },
-  { code: "suv", label: "SUV", seatCapacity: 6, who: "Groups up to 6" },
-  { code: "tempo", label: "Tempo Traveller", seatCapacity: 12, who: "Large groups" },
+  {
+    code: "sedan",
+    label: "Sedan",
+    seatCapacity: 4,
+    who: "Couples & small families",
+    iconSrc: "/CabIcons/Sedan.svg",
+  },
+  {
+    code: "suv",
+    label: "SUV",
+    seatCapacity: 6,
+    who: "Groups up to 6",
+    iconSrc: "/CabIcons/Suv.svg",
+  },
+  {
+    code: "tempo",
+    label: "Tempo Traveller",
+    seatCapacity: 12,
+    who: "Large groups",
+    iconSrc: "/CabIcons/Tempo.svg",
+  },
 ];
 
 /**
@@ -30,7 +48,7 @@ export const TRIP_PRESETS: TripPreset[] = [
 // Was a hardcoded Aug 2026 array that silently went stale once "today"
 // passed those dates — quick-pick chips kept offering days in the past.
 // Computed fresh (from the real clock) every time this module loads.
-export const UPCOMING_DATES: DateOption[] = getUpcomingDates();
+export const UPCOMING_DATES: DateOption[] = getUpcomingDates(undefined, 7);
 
 export const MIN_TRIP_DAYS = 1;
 export const MAX_TRIP_DAYS = 14;

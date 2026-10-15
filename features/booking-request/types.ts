@@ -5,6 +5,7 @@ export interface VehicleTypeOption {
   label: string;
   seatCapacity: number;
   who: string;
+  iconSrc: string;
 }
 
 export interface TripPreset {

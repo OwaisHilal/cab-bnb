@@ -1,10 +1,16 @@
 "use client";
 
-import type { ReactNode } from "react";
+import Image from "next/image";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/Button";
+import { CalendarIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/utils/cn";
 import { UPCOMING_DATES, VEHICLE_TYPES } from "@/features/booking-request/constants";
 import { resolveTripStartDate } from "@/features/booking-request/resolveTripStartDate";
+import { DateChipScrollRow } from "@/features/booking-request/components/DateChipScrollRow";
+import { DatePickChip } from "@/features/booking-request/components/DatePickChip";
+import { LaterDatePickChip } from "@/features/booking-request/components/LaterDatePickChip";
+import { getDateChipParts, getTodayIsoDate } from "@/features/booking-request/upcomingDates";
 import type {
   BookingRequestDraft,
   BookingRequestStep,
@@ -44,6 +50,15 @@ export function RequestSheet({
   onSubmit,
 }: RequestSheetProps) {
   const canGoBack = step > 0;
+  const canGetQuotes = canSubmitBookingSummary(draft);
+
+  const handlePrimaryAction = () => {
+    if (step < 3) {
+      onStepChange((step + 1) as BookingRequestStep);
+      return;
+    }
+    onSubmit();
+  };
 
   return (
     <>
@@ -54,81 +69,111 @@ export function RequestSheet({
         }}
         aria-hidden
       />
-      <div className="absolute inset-x-0 bottom-0 flex max-h-[92%] flex-col gap-3.5 overflow-y-auto rounded-t-xl bg-white px-5 pb-6 pt-3 animate-kmr-sheet-up">
-        <span className="mx-auto h-1 w-9 rounded-full bg-black/15" />
+      <div
+        className={cn(
+          "absolute inset-x-0 bottom-0 flex max-h-[92%] flex-col rounded-t-xl bg-white px-5 pt-3 animate-kmr-sheet-up",
+          step >= 2 && "min-h-[min(92vh,520px)]",
+        )}
+      >
+        <div className="flex shrink-0 flex-col gap-3.5">
+          <span className="mx-auto h-1 w-9 rounded-full bg-black/15" />
 
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => {
-              if (isSubmitting) return;
-              if (canGoBack) onStepChange((step - 1) as BookingRequestStep);
-              else onClose();
-            }}
-            disabled={isSubmitting}
-            aria-label="Back"
-            className="flex size-8 items-center justify-center rounded-sm bg-kmr-surface font-archivo text-base font-semibold text-kmr-ink disabled:opacity-50"
-          >
-            ‹
-          </button>
-          <span
-            key={step}
-            aria-live="polite"
-            className="animate-kmr-step-label-fade font-mono text-[9.5px] font-semibold tracking-[1.5px] text-kmr-muted-2"
-          >
-            {STEP_LABELS[step]}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSubmitting}
-            aria-label="Close"
-            className="flex size-8 items-center justify-center rounded-sm bg-kmr-surface font-archivo text-sm font-semibold text-kmr-ink disabled:opacity-50"
-          >
-            ×
-          </button>
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                if (isSubmitting) return;
+                if (canGoBack) onStepChange((step - 1) as BookingRequestStep);
+                else onClose();
+              }}
+              disabled={isSubmitting}
+              aria-label="Back"
+              className="flex size-8 items-center justify-center rounded-sm bg-kmr-surface font-archivo text-base font-semibold text-kmr-ink disabled:opacity-50"
+            >
+              ‹
+            </button>
+            <span
+              key={step}
+              aria-live="polite"
+              className="animate-kmr-step-label-fade font-mono text-[9.5px] font-semibold tracking-[1.5px] text-kmr-muted-2"
+            >
+              {STEP_LABELS[step]}
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              aria-label="Close"
+              className="flex size-8 items-center justify-center rounded-sm bg-kmr-surface font-archivo text-sm font-semibold text-kmr-ink disabled:opacity-50"
+            >
+              ×
+            </button>
+          </div>
+
+          <StepProgress step={step} />
         </div>
 
-        <StepProgress step={step} />
+        <div
+          className={cn(
+            "overflow-y-auto pb-3.5",
+            step >= 2
+              ? "min-h-0 flex-1"
+              : "flex flex-col justify-center py-2",
+          )}
+        >
+          <StepContentFade step={step}>
+            {step === 0 && <StepDays days={draft.days} onDaysChange={onDaysChange} />}
+            {step === 1 && (
+              <StepTravellers paxCount={draft.paxCount} onPaxChange={onPaxChange} />
+            )}
+            {step === 2 && (
+              <StepVehicle
+                selected={draft.vehicleType}
+                paxCount={draft.paxCount}
+                recommendation={recommendation}
+                onSelect={onVehicleChange}
+              />
+            )}
+            {step === 3 && (
+              <StepSummary
+                draft={draft}
+                recommendation={recommendation}
+                requestError={requestError}
+                onSelectDate={onSelectDate}
+                onCustomDate={onCustomDate}
+                onEditDays={() => onStepChange(0)}
+                onEditPax={() => onStepChange(1)}
+                onEditVehicle={() => onStepChange(2)}
+              />
+            )}
+          </StepContentFade>
+        </div>
 
-        <StepContentFade step={step}>
-          {step === 0 && (
-            <StepDays days={draft.days} onDaysChange={onDaysChange} onNext={() => onStepChange(1)} />
+        <div
+          className="shrink-0 border-t border-black/5 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+        >
+          {step < 3 ? (
+            <Button onClick={handlePrimaryAction} disabled={isSubmitting}>
+              Continue
+            </Button>
+          ) : (
+            <Button
+              onClick={handlePrimaryAction}
+              loading={isSubmitting}
+              loadingLabel="Matching operators…"
+              disabled={!canGetQuotes}
+            >
+              Get my quotes
+            </Button>
           )}
-          {step === 1 && (
-            <StepTravellers
-              paxCount={draft.paxCount}
-              onPaxChange={onPaxChange}
-              onNext={() => onStepChange(2)}
-            />
-          )}
-          {step === 2 && (
-            <StepVehicle
-              selected={draft.vehicleType}
-              paxCount={draft.paxCount}
-              recommendation={recommendation}
-              onSelect={onVehicleChange}
-              onNext={() => onStepChange(3)}
-            />
-          )}
-          {step === 3 && (
-            <StepSummary
-              draft={draft}
-              recommendation={recommendation}
-              requestError={requestError}
-              isSubmitting={isSubmitting}
-              onSelectDate={onSelectDate}
-              onCustomDate={onCustomDate}
-              onEditDays={() => onStepChange(0)}
-              onEditPax={() => onStepChange(1)}
-              onEditVehicle={() => onStepChange(2)}
-              onSubmit={onSubmit}
-            />
-          )}
-        </StepContentFade>
+        </div>
       </div>
     </>
   );
+}
+
+function canSubmitBookingSummary(draft: BookingRequestDraft): boolean {
+  return resolveTripStartDate(draft) !== null;
 }
 
 function StepContentFade({
@@ -139,7 +184,7 @@ function StepContentFade({
   children: ReactNode;
 }) {
   return (
-    <div key={step} className="animate-kmr-step-fade min-h-[260px]">
+    <div key={step} className="animate-kmr-step-fade flex min-h-0 flex-1 flex-col">
       {children}
     </div>
   );
@@ -187,70 +232,87 @@ function StepProgress({ step }: { step: BookingRequestStep }) {
   );
 }
 
-function StepDays({
-  days,
-  onDaysChange,
-  onNext,
+function CounterStepLayout({
+  title,
+  value,
+  decreaseLabel,
+  increaseLabel,
+  onDecrease,
+  onIncrease,
+  helper,
 }: {
-  days: number;
-  onDaysChange: (delta: number) => void;
-  onNext: () => void;
+  title: string;
+  value: number;
+  decreaseLabel: string;
+  increaseLabel: string;
+  onDecrease: () => void;
+  onIncrease: () => void;
+  helper: string;
 }) {
   return (
     <div className="flex flex-col gap-3.5">
-      <h2 className="font-archivo text-[22px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink">
-        How many days should your cab stay with you?
+      <h2
+        className="min-h-[4.75rem] font-archivo text-[22px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink"
+      >
+        {title}
       </h2>
       <div className="flex items-center justify-center gap-5 py-2">
-        <StepperButton label="Decrease days" onClick={() => onDaysChange(-1)}>
+        <StepperButton label={decreaseLabel} onClick={onDecrease}>
           −
         </StepperButton>
         <span className="min-w-[96px] text-center font-archivo text-[62px] font-black leading-none tracking-[-2px] text-kmr-blue">
-          {days}
+          {value}
         </span>
-        <StepperButton label="Increase days" onClick={() => onDaysChange(1)}>
+        <StepperButton label={increaseLabel} onClick={onIncrease}>
           +
         </StepperButton>
       </div>
-      <p className="text-center font-archivo text-[11.5px] font-medium leading-[1.5] text-kmr-muted-2">
-        Airport to airport. Most first-timers do 4–5 days — Srinagar, Gulmarg, Pahalgam,
-        done properly.
-      </p>
-      <Button onClick={onNext}>Continue</Button>
+      <div className="flex min-h-[3.5rem] items-center justify-center">
+        <p className="text-center font-archivo text-[11.5px] font-medium leading-[1.5] text-kmr-muted-2">
+          {helper}
+        </p>
+      </div>
     </div>
+  );
+}
+
+function StepDays({
+  days,
+  onDaysChange,
+}: {
+  days: number;
+  onDaysChange: (delta: number) => void;
+}) {
+  return (
+    <CounterStepLayout
+      title="How many days should your cab stay with you?"
+      value={days}
+      decreaseLabel="Decrease days"
+      increaseLabel="Increase days"
+      onDecrease={() => onDaysChange(-1)}
+      onIncrease={() => onDaysChange(1)}
+      helper="Airport to airport. Most first-timers do 4–5 days — Srinagar, Gulmarg, Pahalgam, done properly."
+    />
   );
 }
 
 function StepTravellers({
   paxCount,
   onPaxChange,
-  onNext,
 }: {
   paxCount: number;
   onPaxChange: (delta: number) => void;
-  onNext: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-3.5">
-      <h2 className="font-archivo text-[22px] font-extrabold leading-[1.15] tracking-[-0.5px] text-kmr-ink">
-        How many of you are coming?
-      </h2>
-      <div className="flex items-center justify-center gap-5 py-2">
-        <StepperButton label="Decrease travellers" onClick={() => onPaxChange(-1)}>
-          −
-        </StepperButton>
-        <span className="min-w-[96px] text-center font-archivo text-[62px] font-black leading-none tracking-[-2px] text-kmr-blue">
-          {paxCount}
-        </span>
-        <StepperButton label="Increase travellers" onClick={() => onPaxChange(1)}>
-          +
-        </StepperButton>
-      </div>
-      <p className="text-center font-archivo text-[11.5px] font-medium leading-[1.5] text-kmr-muted-2">
-        We match vehicle capacity to your group automatically on the next step.
-      </p>
-      <Button onClick={onNext}>Continue</Button>
-    </div>
+    <CounterStepLayout
+      title="How many of you are coming?"
+      value={paxCount}
+      decreaseLabel="Decrease travellers"
+      increaseLabel="Increase travellers"
+      onDecrease={() => onPaxChange(-1)}
+      onIncrease={() => onPaxChange(1)}
+      helper="We match vehicle capacity to your group automatically on the next step."
+    />
   );
 }
 
@@ -259,13 +321,11 @@ function StepVehicle({
   paxCount,
   recommendation,
   onSelect,
-  onNext,
 }: {
   selected: BookingRequestDraft["vehicleType"];
   paxCount: number;
   recommendation: string | null;
   onSelect: (vehicleType: BookingRequestDraft["vehicleType"]) => void;
-  onNext: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -285,8 +345,17 @@ function StepVehicle({
                 isActive ? "bg-kmr-blue/10" : "bg-kmr-surface hover:bg-kmr-surface-hover",
               )}
             >
-              <span className="flex size-11 flex-none items-center justify-center rounded-sm bg-white font-mono text-[8px] font-semibold tracking-[0.5px] text-kmr-muted-3">
-                {vehicle.seatCapacity} SEATS
+              <span
+                className="relative size-11 flex-none overflow-hidden rounded-sm bg-white ring-1 ring-black/5"
+                aria-hidden
+              >
+                <Image
+                  src={vehicle.iconSrc}
+                  alt=""
+                  fill
+                  sizes="44px"
+                  className="object-contain p-1"
+                />
               </span>
               <span className="flex flex-1 flex-col gap-0.5">
                 <span
@@ -317,7 +386,6 @@ function StepVehicle({
       <span className="text-center font-mono text-[9px] font-medium tracking-[1px] text-kmr-muted-3">
         NO FIXED FARES HERE — OPERATORS QUOTE, YOU CHOOSE
       </span>
-      <Button onClick={onNext}>Continue</Button>
     </div>
   );
 }
@@ -326,28 +394,36 @@ function StepSummary({
   draft,
   recommendation,
   requestError,
-  isSubmitting,
   onSelectDate,
   onCustomDate,
   onEditDays,
   onEditPax,
   onEditVehicle,
-  onSubmit,
 }: {
   draft: BookingRequestDraft;
   recommendation: string | null;
   requestError: string | null;
-  isSubmitting: boolean;
   onSelectDate: (dateId: string) => void;
   onCustomDate: (isoDate: string) => void;
   onEditDays: () => void;
   onEditPax: () => void;
   onEditVehicle: () => void;
-  onSubmit: () => void;
 }) {
+  const [isLaterPickerOpen, setIsLaterPickerOpen] = useState(false);
   const vehicleLabel =
     VEHICLE_TYPES.find((vehicle) => vehicle.code === draft.vehicleType)?.label ?? "cab";
-  const canGetQuotes = resolveTripStartDate(draft) !== null;
+  const customDateValue = draft.customDate?.trim() ?? "";
+  const hasCustomDate = customDateValue.length > 0;
+  const minTripDate = getTodayIsoDate();
+
+  const handleCustomDateChange = (isoDate: string) => {
+    if (!isoDate.trim()) return;
+    onCustomDate(isoDate);
+  };
+
+  const laterChipParts = hasCustomDate
+    ? getDateChipParts(customDateValue)
+    : { weekday: "", primary: "Later" };
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -360,39 +436,39 @@ function StepSummary({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        {UPCOMING_DATES.map((date) => {
-          const isActive = draft.selectedDateId === date.id;
-          return (
-            <button
-              key={date.id}
-              type="button"
-              onClick={() => onSelectDate(date.id)}
-              className={cn(
-                "whitespace-nowrap rounded-sm px-2.5 py-2 font-mono text-[9.5px] font-semibold tracking-[0.5px]",
-                isActive ? "bg-kmr-blue text-white" : "bg-kmr-surface text-kmr-ink",
-              )}
-            >
-              {date.shortLabel}
-            </button>
-          );
-        })}
-        <label
-          className={cn(
-            "flex items-center gap-1.5 rounded-sm px-2.5 py-1.5",
-            draft.customDate ? "bg-kmr-blue text-white" : "bg-kmr-surface text-kmr-ink",
-          )}
-        >
-          <span className="font-mono text-[9.5px] font-semibold tracking-[0.5px]">
-            OTHER
-          </span>
-          <input
-            type="date"
-            value={draft.customDate ?? ""}
-            onChange={(event) => onCustomDate(event.target.value)}
-            className="w-3.5 border-none bg-transparent font-mono text-[9.5px] font-semibold outline-none"
-          />
-        </label>
+      <div className="flex items-start gap-2">
+        <DateChipScrollRow>
+          {UPCOMING_DATES.map((date) => {
+            const isActive =
+              draft.selectedDateId === date.id && !isLaterPickerOpen;
+            const chipParts = getDateChipParts(date.isoDate);
+            return (
+              <div key={date.id} className="shrink-0 snap-start">
+                <DatePickChip
+                  selected={isActive}
+                  onClick={() => onSelectDate(date.id)}
+                  weekday={chipParts.weekday}
+                  primary={chipParts.primary}
+                />
+              </div>
+            );
+          })}
+        </DateChipScrollRow>
+        <LaterDatePickChip
+          minDate={minTripDate}
+          value={customDateValue}
+          selected={hasCustomDate || isLaterPickerOpen}
+          weekday={laterChipParts.weekday}
+          primary={laterChipParts.primary}
+          icon={
+            hasCustomDate ? undefined : (
+              <CalendarIcon size={12} className="text-kmr-ink" />
+            )
+          }
+          onFocus={() => setIsLaterPickerOpen(true)}
+          onBlur={() => setIsLaterPickerOpen(false)}
+          onChange={handleCustomDateChange}
+        />
       </div>
 
       <div className="flex flex-col gap-2 rounded-sm bg-[#F6F6F7] p-4">
@@ -437,15 +513,6 @@ function StepSummary({
           {requestError}
         </span>
       )}
-
-      <Button
-        onClick={onSubmit}
-        loading={isSubmitting}
-        loadingLabel="Matching operators…"
-        disabled={!canGetQuotes}
-      >
-        Get my quotes
-      </Button>
     </div>
   );
 }
